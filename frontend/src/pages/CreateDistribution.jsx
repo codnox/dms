@@ -6,10 +6,10 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { devices, subDistributors, operators } from '../data/mockData';
-import { Truck, Save, X, Plus, Trash2, Search } from 'lucide-react';
+import { Truck, Save, X, Plus, Trash2, Search, ShieldAlert } from 'lucide-react';
 
 const CreateDistribution = () => {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useNotifications();
   const [loading, setLoading] = useState(false);
@@ -20,13 +20,24 @@ const CreateDistribution = () => {
     notes: ''
   });
 
-  const isSubDistributor = user?.role === 'sub-distributor';
+  // Only admin and manager can create distributions
+  const canCreateDistribution = hasRole(['admin', 'manager']);
+  
+  if (!canCreateDistribution) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="text-xl font-bold text-gray-800 text-center">Access Denied</h1>
+        <p className="text-gray-500 mt-2 text-center">Only Admins and Managers can create distributions.</p>
+        <Button className="mt-4" onClick={() => navigate('/distributions')}>
+          Back to Distributions
+        </Button>
+      </div>
+    );
+  }
   
   // Filter available devices based on role
   const availableDevices = devices.filter(d => {
-    if (isSubDistributor) {
-      return d.currentHolder === 'Sub Distributor Alpha' && d.status !== 'defective';
-    }
     return d.currentLocation === 'main-distribution' && d.status !== 'defective';
   });
 
@@ -36,7 +47,8 @@ const CreateDistribution = () => {
     d.serialNumber.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const recipients = isSubDistributor ? operators : subDistributors;
+  // Recipients - distributors and sub-distributors
+  const recipients = [...subDistributors, ...operators];
 
   const handleAddDevice = (device) => {
     if (!selectedDevices.find(d => d.id === device.id)) {
@@ -72,14 +84,14 @@ const CreateDistribution = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-800">Create Distribution</h1>
-        <p className="text-gray-500 mt-1">
-          {isSubDistributor ? 'Assign devices to operators' : 'Distribute devices to sub-distributors'}
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Create Distribution</h1>
+        <p className="text-gray-500 mt-1 text-sm sm:text-base">
+          Distribute devices to distributors, sub-distributors, or operators
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Available Devices */}
           <Card title="Available Devices" icon={Search}>
             <div className="space-y-4">
@@ -88,7 +100,7 @@ const CreateDistribution = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by MAC, model, or serial..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
               
               <div className="max-h-80 overflow-y-auto space-y-2">
@@ -164,15 +176,15 @@ const CreateDistribution = () => {
 
         {/* Distribution Details */}
         <Card title="Distribution Details">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {isSubDistributor ? 'Select Operator' : 'Select Sub-Distributor'} <span className="text-red-500">*</span>
+                Select Recipient <span className="text-red-500">*</span>
               </label>
               <select
                 value={formData.toDistributor}
                 onChange={(e) => setFormData(prev => ({ ...prev, toDistributor: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 required
               >
                 <option value="">Select recipient...</option>
@@ -227,11 +239,11 @@ const CreateDistribution = () => {
           </Card>
         )}
 
-        <div className="flex items-center justify-end gap-3">
-          <Button variant="secondary" onClick={() => navigate('/distributions')} icon={X}>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+          <Button variant="secondary" onClick={() => navigate('/distributions')} icon={X} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button type="submit" loading={loading} icon={Save}>
+          <Button type="submit" loading={loading} icon={Save} className="w-full sm:w-auto">
             Create Distribution
           </Button>
         </div>

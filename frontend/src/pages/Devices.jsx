@@ -80,21 +80,21 @@ const Devices = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Devices</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Devices</h1>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">
             {user?.role === 'operator' ? 'Your assigned devices' : 'Manage all registered devices'}
           </p>
         </div>
         {canRegister && (
-          <div className="flex gap-2">
-            <Link to="/devices/bulk-import">
-              <Button variant="secondary" icon={Upload}>Bulk Import</Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Link to="/devices/bulk-import" className="w-full sm:w-auto">
+              <Button variant="secondary" icon={Upload} className="w-full sm:w-auto">Bulk Import</Button>
             </Link>
-            <Link to="/devices/register">
-              <Button icon={Plus}>Register Device</Button>
+            <Link to="/devices/register" className="w-full sm:w-auto">
+              <Button icon={Plus} className="w-full sm:w-auto">Register Device</Button>
             </Link>
           </div>
         )}

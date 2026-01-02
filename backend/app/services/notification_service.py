@@ -41,6 +41,16 @@ async def get_unread_count(user_id: str) -> int:
     return await db.notifications.count_documents({"user_id": user_id, "is_read": False})
 
 
+async def get_latest_notifications(user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Get latest notifications for a user"""
+    db = get_database()
+    
+    cursor = db.notifications.find({"user_id": user_id}).sort("created_at", -1).limit(limit)
+    notifications = await cursor.to_list(length=limit)
+    
+    return serialize_docs(notifications)
+
+
 async def create_notification(
     user_id: str,
     title: str,

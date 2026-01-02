@@ -13,7 +13,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', footer }) => {
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="flex min-h-screen items-end sm:items-center justify-center p-0 sm:p-4">
         {/* Backdrop */}
         <div
           className="fixed inset-0 bg-black/50 transition-opacity"
@@ -22,11 +22,11 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', footer }) => {
 
         {/* Modal */}
         <div
-          className={`relative bg-white rounded-xl shadow-xl w-full ${sizeClasses[size]} animate-fadeIn`}
+          className={`relative bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full ${sizeClasses[size]} animate-fadeIn max-h-[90vh] sm:max-h-[85vh] flex flex-col`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 flex-shrink-0">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-800">{title}</h3>
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -36,11 +36,11 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', footer }) => {
           </div>
 
           {/* Content */}
-          <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
+          <div className="px-4 sm:px-6 py-4 overflow-y-auto flex-1">{children}</div>
 
           {/* Footer */}
           {footer && (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+            <div className="flex items-center justify-end gap-3 px-4 sm:px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex-shrink-0">
               {footer}
             </div>
           )}

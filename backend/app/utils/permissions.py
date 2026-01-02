@@ -12,9 +12,9 @@ ROLE_HIERARCHY = {
 
 # Permission definitions
 PERMISSIONS = {
-    # User management
+    # User management - Admin only for creating accounts
     "users:read": [UserRole.ADMIN, UserRole.MANAGER],
-    "users:create": [UserRole.ADMIN, UserRole.MANAGER],
+    "users:create": [UserRole.ADMIN],  # Only admin can create users
     "users:update": [UserRole.ADMIN, UserRole.MANAGER],
     "users:delete": [UserRole.ADMIN],
     
@@ -24,12 +24,12 @@ PERMISSIONS = {
     "devices:update": [UserRole.ADMIN, UserRole.MANAGER],
     "devices:delete": [UserRole.ADMIN],
     
-    # Distribution management
+    # Distribution management - Only admin and manager can create
     "distributions:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
-    "distributions:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR],
+    "distributions:create": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
     "distributions:update": [UserRole.ADMIN, UserRole.MANAGER],
     "distributions:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "distributions:approve": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR],
+    "distributions:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
     
     # Defect management
     "defects:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
@@ -43,18 +43,18 @@ PERMISSIONS = {
     "returns:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
     "returns:update": [UserRole.ADMIN, UserRole.MANAGER],
     "returns:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "returns:approve": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR],
+    "returns:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
     
-    # Approval management
-    "approvals:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR],
-    "approvals:approve": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR],
-    "approvals:reject": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR],
+    # Approval management - Only admin and manager
+    "approvals:read": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
+    "approvals:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
+    "approvals:reject": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
     
     # Operator management
     "operators:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR],
-    "operators:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
-    "operators:update": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
-    "operators:delete": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
+    "operators:create": [UserRole.ADMIN],  # Changed: Only admin
+    "operators:update": [UserRole.ADMIN, UserRole.MANAGER],
+    "operators:delete": [UserRole.ADMIN],
     
     # Reports
     "reports:read": [UserRole.ADMIN, UserRole.MANAGER],

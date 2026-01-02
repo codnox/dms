@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Download, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Download, ChevronDown, MoreVertical } from 'lucide-react';
 
 const DataTable = ({
   columns,
@@ -11,11 +11,13 @@ const DataTable = ({
   searchable = true,
   exportable = true,
   pageSize = 10,
+  searchPlaceholder = "Search...",
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [selectedRows, setSelectedRows] = useState([]);
+  const [expandedRow, setExpandedRow] = useState(null);
 
   // Filter data based on search
   const filteredData = data.filter((row) => {
@@ -119,8 +121,8 @@ const DataTable = ({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
+      {/* Table - Desktop View */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -197,19 +199,88 @@ const DataTable = ({
         </table>
       </div>
 
+      {/* Mobile Card View */}
+      <div className="md:hidden divide-y divide-gray-200">
+        {paginatedData.length === 0 ? (
+          <div className="px-4 py-8 text-center text-gray-500">
+            No data found
+          </div>
+        ) : (
+          paginatedData.map((row) => {
+            const primaryCol = columns[0];
+            const secondaryCol = columns[1];
+            const actionCol = columns.find(c => c.key === 'actions');
+            const otherCols = columns.filter(c => c !== primaryCol && c !== secondaryCol && c.key !== 'actions');
+            const isExpanded = expandedRow === row.id;
+            
+            return (
+              <div
+                key={row.id}
+                className={`p-4 ${selectedRows.includes(row.id) ? 'bg-blue-50' : ''}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0" onClick={() => onRowClick?.(row)}>
+                    {/* Primary info */}
+                    <div className="mb-1">
+                      {primaryCol?.render ? primaryCol.render(row[primaryCol.key], row) : row[primaryCol?.key]}
+                    </div>
+                    {/* Secondary info */}
+                    {secondaryCol && (
+                      <div className="text-sm text-gray-500">
+                        {secondaryCol.render ? secondaryCol.render(row[secondaryCol.key], row) : row[secondaryCol.key]}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {actionCol && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {actionCol.render ? actionCol.render(row[actionCol.key], row) : row[actionCol.key]}
+                      </div>
+                    )}
+                    {otherCols.length > 0 && (
+                      <button
+                        onClick={() => setExpandedRow(isExpanded ? null : row.id)}
+                        className="p-1.5 hover:bg-gray-100 rounded-lg"
+                      >
+                        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Expanded details */}
+                {isExpanded && otherCols.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+                    {otherCols.map((col) => (
+                      <div key={col.key}>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-0.5">{col.label}</p>
+                        <div className="text-sm text-gray-800">
+                          {col.render ? col.render(row[col.key], row) : row[col.key] || '-'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
       {/* Pagination */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
-        <div className="text-sm text-gray-600">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
+        <div className="text-sm text-gray-600 text-center sm:text-left">
           Showing {((currentPage - 1) * pageSize) + 1} to{' '}
           {Math.min(currentPage * pageSize, sortedData.length)} of{' '}
           {sortedData.length} entries
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center justify-center gap-1">
           <button
             onClick={() => setCurrentPage(1)}
             disabled={currentPage === 1}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hidden sm:block"
           >
             <ChevronsLeft className="w-4 h-4" />
           </button>
@@ -221,43 +292,51 @@ const DataTable = ({
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            let pageNum;
-            if (totalPages <= 5) {
-              pageNum = i + 1;
-            } else if (currentPage <= 3) {
-              pageNum = i + 1;
-            } else if (currentPage >= totalPages - 2) {
-              pageNum = totalPages - 4 + i;
-            } else {
-              pageNum = currentPage - 2 + i;
-            }
-            return (
-              <button
-                key={pageNum}
-                onClick={() => setCurrentPage(pageNum)}
-                className={`w-8 h-8 text-sm font-medium rounded-lg ${
-                  currentPage === pageNum
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {pageNum}
-              </button>
-            );
-          })}
+          {/* Mobile: Show current/total */}
+          <span className="sm:hidden px-3 py-1 text-sm text-gray-600">
+            {currentPage} / {totalPages || 1}
+          </span>
+
+          {/* Desktop: Show page numbers */}
+          <div className="hidden sm:flex items-center gap-1">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-8 h-8 text-sm font-medium rounded-lg ${
+                    currentPage === pageNum
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+          </div>
 
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
+            disabled={currentPage === totalPages || totalPages === 0}
             className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
           <button
             onClick={() => setCurrentPage(totalPages)}
-            disabled={currentPage === totalPages}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={currentPage === totalPages || totalPages === 0}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hidden sm:block"
           >
             <ChevronsRight className="w-4 h-4" />
           </button>

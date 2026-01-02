@@ -9,27 +9,27 @@ const StatCard = ({ title, value, change, changeType, icon: Icon, color = 'blue'
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-2xl font-bold text-gray-800 mt-1">{value}</p>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs sm:text-sm font-medium text-gray-500 truncate">{title}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-800 mt-1">{value}</p>
           {change !== undefined && (
-            <div className="flex items-center gap-1 mt-2">
+            <div className="flex items-center gap-1 mt-2 flex-wrap">
               <span
-                className={`text-sm font-medium ${
+                className={`text-xs sm:text-sm font-medium ${
                   changeType === 'increase' ? 'text-green-600' : 'text-red-600'
                 }`}
               >
                 {changeType === 'increase' ? '+' : '-'}{change}%
               </span>
-              <span className="text-sm text-gray-500">from last month</span>
+              <span className="text-xs sm:text-sm text-gray-500 hidden sm:inline">from last month</span>
             </div>
           )}
         </div>
         {Icon && (
-          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
-            <Icon className="w-6 h-6" />
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${colorClasses[color]}`}>
+            <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         )}
       </div>

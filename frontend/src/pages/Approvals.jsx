@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import Card from '../components/ui/Card';
 import Modal from '../components/ui/Modal';
@@ -10,11 +11,12 @@ import { useNotifications } from '../context/NotificationContext';
 import { distributions, returnRequests, defectReports } from '../data/mockData';
 import { 
   Check, X, Eye, Filter, Clock, CheckCircle, 
-  XCircle, Package, RotateCcw, AlertTriangle 
+  XCircle, Package, RotateCcw, AlertTriangle, ShieldAlert 
 } from 'lucide-react';
 
 const Approvals = () => {
   const { user, hasRole } = useAuth();
+  const navigate = useNavigate();
   const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
@@ -22,6 +24,22 @@ const Approvals = () => {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+
+  // Only admin and manager can access approvals
+  const canAccessApprovals = hasRole(['admin', 'manager']);
+
+  if (!canAccessApprovals) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="text-xl font-bold text-gray-800 text-center">Access Denied</h1>
+        <p className="text-gray-500 mt-2 text-center">Only Admins and Managers can access approvals.</p>
+        <Button className="mt-4" onClick={() => navigate('/')}>
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
 
   // Combine all pending approvals
   const allPendingItems = useMemo(() => {

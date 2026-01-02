@@ -1,29 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import api from '../services/api';
 import { 
   Settings as SettingsIcon, Bell, Moon, Sun, Globe, 
   Lock, Mail, Save, ToggleLeft, ToggleRight 
 } from 'lucide-react';
 
 const Settings = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, setUser } = useAuth();
   const { addNotification } = useNotifications();
+  const [loading, setLoading] = useState(false);
 
   const [settings, setSettings] = useState({
     // Notifications
-    emailNotifications: true,
-    pushNotifications: true,
+    emailNotifications: user?.email_notifications ?? true,
+    pushNotifications: user?.push_notifications ?? true,
     distributionAlerts: true,
     defectAlerts: true,
     returnAlerts: true,
     systemUpdates: false,
     
     // Appearance
-    theme: 'light',
-    compactMode: false,
+    theme: user?.theme ?? 'light',
+    compactMode: user?.compact_mode ?? false,
     animationsEnabled: true,
     
     // Privacy
@@ -37,16 +39,94 @@ const Settings = () => {
     backupFrequency: 'daily'
   });
 
+  // Load user settings on mount
+  useEffect(() => {
+    if (user) {
+      setSettings(prev => ({
+        ...prev,
+        emailNotifications: user.email_notifications ?? true,
+        pushNotifications: user.push_notifications ?? true,
+        theme: user.theme ?? 'light',
+        compactMode: user.compact_mode ?? false
+      }));
+      
+      // Apply theme to document
+      if (user.theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      
+      // Apply compact mode to document
+      if (user.compact_mode) {
+        document.documentElement.classList.add('compact');
+      } else {
+        document.documentElement.classList.remove('compact');
+      }
+    }
+  }, [user]);
+
   const handleToggle = (key) => {
     setSettings(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSave = () => {
-    addNotification({
-      type: 'success',
-      title: 'Settings Saved',
-      message: 'Your settings have been updated successfully.'
-    });
+  const handleThemeChange = (newTheme) => {
+    setSettings(prev => ({ ...prev, theme: newTheme }));
+    
+    // Apply theme immediately for preview
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else if (newTheme === 'light') {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const handleCompactModeChange = () => {
+    const newCompactMode = !settings.compactMode;
+    setSettings(prev => ({ ...prev, compactMode: newCompactMode }));
+    
+    // Apply compact mode immediately for preview
+    if (newCompactMode) {
+      document.documentElement.classList.add('compact');
+    } else {
+      document.documentElement.classList.remove('compact');
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      // Prepare update data
+      const updateData = {
+        theme: settings.theme,
+        compact_mode: settings.compactMode,
+        email_notifications: settings.emailNotifications,
+        push_notifications: settings.pushNotifications
+      };
+
+      // Call API to update user settings
+      const response = await api.put(`/users/${user.id}`, updateData);
+      
+      if (response.data.success) {
+        // Update user in context
+        setUser({ ...user, ...updateData });
+        
+        addNotification({
+          type: 'success',
+          title: 'Settings Saved',
+          message: 'Your settings have been updated successfully.'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      addNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message: 'Failed to save settings. Please try again.'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const Toggle = ({ enabled, onChange }) => (
@@ -71,8 +151,8 @@ const Settings = () => {
           <h1 className="text-2xl font-bold text-gray-800">Settings</h1>
           <p className="text-gray-500 mt-1">Configure your application preferences</p>
         </div>
-        <Button icon={Save} onClick={handleSave}>
-          Save Changes
+        <Button icon={Save} onClick={handleSave} disabled={loading}>
+          {loading ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
 
@@ -159,7 +239,7 @@ const Settings = () => {
               {['light', 'dark', 'system'].map(theme => (
                 <button
                   key={theme}
-                  onClick={() => setSettings(prev => ({ ...prev, theme }))}
+                  onClick={() => handleThemeChange(theme)}
                   className={`px-3 py-2 rounded-lg capitalize transition-colors ${
                     settings.theme === theme
                       ? 'bg-blue-600 text-white'
@@ -181,7 +261,7 @@ const Settings = () => {
             </div>
             <Toggle 
               enabled={settings.compactMode} 
-              onChange={() => handleToggle('compactMode')} 
+              onChange={handleCompactModeChange} 
             />
           </div>
 

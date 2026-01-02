@@ -192,7 +192,7 @@ const Users = () => {
           <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
           <p className="text-gray-500 mt-1">Manage system users and their permissions</p>
         </div>
-        {hasRole(['admin', 'manager']) && (
+        {hasRole(['admin']) && (
           <Button 
             icon={UserPlus}
             onClick={() => setShowAddModal(true)}

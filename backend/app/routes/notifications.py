@@ -43,6 +43,24 @@ async def get_unread_count(
     }
 
 
+@router.get("/latest")
+async def get_latest_notifications(
+    limit: int = Query(5, ge=1, le=20),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get latest notifications for the user"""
+    notifications = await notification_service.get_latest_notifications(
+        user_id=current_user["id"],
+        limit=limit
+    )
+    
+    return {
+        "success": True,
+        "message": "Latest notifications retrieved",
+        "data": notifications
+    }
+
+
 @router.patch("/{notification_id}/read")
 async def mark_as_read(
     notification_id: str,

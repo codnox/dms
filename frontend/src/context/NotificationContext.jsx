@@ -1,36 +1,38 @@
 import { createContext, useContext, useState, useCallback } from 'react';
+import api from '../services/api';
 
 const NotificationContext = createContext(null);
 
 export const NotificationProvider = ({ children }) => {
-  const [notifications, setNotifications] = useState([
-    {
-      id: '1',
-      title: 'New Device Distribution',
-      message: '50 devices have been distributed to Sub Distributor A',
-      type: 'info',
-      read: false,
-      timestamp: new Date(Date.now() - 3600000).toISOString()
-    },
-    {
-      id: '2',
-      title: 'Pending Approval',
-      message: 'You have 5 devices pending approval',
-      type: 'warning',
-      read: false,
-      timestamp: new Date(Date.now() - 7200000).toISOString()
-    },
-    {
-      id: '3',
-      title: 'Return Request',
-      message: 'New return request from Operator John',
-      type: 'error',
-      read: true,
-      timestamp: new Date(Date.now() - 86400000).toISOString()
-    }
-  ]);
-
+  const [notifications, setNotifications] = useState([]);
   const [toasts, setToasts] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchLatestNotifications = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get('/notifications/latest?limit=5');
+      if (response.data.success) {
+        const formattedNotifications = response.data.data.map(notif => ({
+          id: notif.id,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type,
+          read: notif.is_read,
+          timestamp: notif.created_at,
+          link: notif.link,
+          category: notif.category
+        }));
+        setNotifications(formattedNotifications);
+      }
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error);
+      // Don't show error toast on initial load, just use empty array
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const addNotification = useCallback((notification) => {
     const newNotification = {
@@ -39,21 +41,36 @@ export const NotificationProvider = ({ children }) => {
       read: false,
       timestamp: new Date().toISOString()
     };
-    setNotifications(prev => [newNotification, ...prev]);
+    setNotifications(prev => [newNotification, ...prev].slice(0, 5)); // Keep only latest 5
   }, []);
 
-  const markAsRead = useCallback((id) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
+  const markAsRead = useCallback(async (id) => {
+    try {
+      await api.patch(`/notifications/${id}/read`);
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, read: true } : n))
+      );
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
   }, []);
 
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllAsRead = useCallback(async () => {
+    try {
+      await api.patch('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
   }, []);
 
-  const removeNotification = useCallback((id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const removeNotification = useCallback(async (id) => {
+    try {
+      await api.delete(`/notifications/${id}`);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (error) {
+      console.error('Failed to remove notification:', error);
+    }
   }, []);
 
   const showToast = useCallback((message, type = 'success') => {
@@ -71,11 +88,13 @@ export const NotificationProvider = ({ children }) => {
       notifications,
       toasts,
       unreadCount,
+      loading,
       addNotification,
       markAsRead,
       markAllAsRead,
       removeNotification,
-      showToast
+      showToast,
+      fetchLatestNotifications
     }}>
       {children}
     </NotificationContext.Provider>

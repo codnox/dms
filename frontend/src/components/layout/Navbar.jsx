@@ -19,13 +19,20 @@ import { formatDistanceToNow } from 'date-fns';
 
 const Navbar = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchLatestNotifications } = useNotifications();
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const profileRef = useRef(null);
   const notifRef = useRef(null);
+
+  // Fetch notifications when user is logged in
+  useEffect(() => {
+    if (user) {
+      fetchLatestNotifications();
+    }
+  }, [user]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -106,7 +113,7 @@ const Navbar = ({ onMenuClick }) => {
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-w-sm bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
                   <h3 className="font-semibold text-gray-800">Notifications</h3>
                   {unreadCount > 0 && (
