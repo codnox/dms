@@ -75,15 +75,9 @@ async def get_distribution(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_distribution(
     dist_data: DistributionCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_admin_or_manager)
 ):
-    """Create a new distribution request"""
-    # Check permissions
-    if current_user["role"] == "operator":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operators cannot create distributions"
-        )
+    """Create a new distribution request - Admin and Manager only"""
     
     try:
         distribution = await distribution_service.create_distribution(

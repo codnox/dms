@@ -20,15 +20,15 @@ const AdminDashboard = () => {
   const stats = dashboardStats.admin;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-        <p className="text-gray-500 mt-1">Welcome back! Here's an overview of your system.</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+        <p className="text-gray-500 mt-1 text-sm sm:text-base">Welcome back! Here's an overview of your system.</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         <StatCard
           title="Total Devices"
           value={stats.totalDevices}

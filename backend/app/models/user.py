@@ -25,6 +25,10 @@ class UserBase(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
+    theme: Optional[str] = "light"  # light, dark, system
+    compact_mode: Optional[bool] = False
+    email_notifications: Optional[bool] = True
+    push_notifications: Optional[bool] = True
 
 
 class UserCreate(UserBase):
@@ -37,6 +41,10 @@ class UserUpdate(BaseModel):
     department: Optional[str] = None
     location: Optional[str] = None
     status: Optional[UserStatus] = None
+    theme: Optional[str] = None
+    compact_mode: Optional[bool] = None
+    email_notifications: Optional[bool] = None
+    push_notifications: Optional[bool] = None
 
 
 class UserInDB(UserBase):

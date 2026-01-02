@@ -82,19 +82,10 @@ const Sidebar = ({ isOpen, onClose }) => {
       manager: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'Users' },
-        { path: '/devices', icon: Box, label: 'Devices' },
-        { path: '/distributions', icon: Truck, label: 'Distributions' },
-        { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
-        { path: '/returns', icon: RotateCcw, label: 'Returns' },
-        { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
-        { path: '/reports', icon: BarChart3, label: 'Reports' },
-      ],
-      distributor: [
-        ...commonItems,
         {
           key: 'devices',
           icon: Box,
-          label: 'Device Management',
+          label: 'Devices',
           children: [
             { path: '/devices', label: 'All Devices' },
             { path: '/devices/register', label: 'Register Device' },
@@ -110,23 +101,22 @@ const Sidebar = ({ isOpen, onClose }) => {
           ]
         },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
-        { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
+        { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
+        { path: '/reports', icon: BarChart3, label: 'Reports' },
+      ],
+      distributor: [
+        ...commonItems,
+        { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/distributions', icon: Truck, label: 'My Distributions' },
+        { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
       ],
       'sub-distributor': [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
-        {
-          key: 'distribution',
-          icon: Package,
-          label: 'Distributions',
-          children: [
-            { path: '/distributions', label: 'All Distributions' },
-            { path: '/distributions/create', label: 'Assign to Operator' },
-          ]
-        },
-        { path: '/approvals', icon: CheckSquare, label: 'Pending Approvals' },
+        { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
       ],

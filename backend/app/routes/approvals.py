@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import Optional
 from app.models.approval import ApprovalAction
 from app.services import approval_service
-from app.middleware.auth_middleware import get_current_user, require_management
+from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ async def get_approvals(
     status: Optional[str] = None,
     approval_type: Optional[str] = None,
     search: Optional[str] = None,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_admin_or_manager)
 ):
     """Get all pending approvals with pagination"""
     result = await approval_service.get_approvals(
@@ -36,7 +36,7 @@ async def get_approvals(
 @router.get("/{approval_id}")
 async def get_approval(
     approval_id: str,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_admin_or_manager)
 ):
     """Get approval by ID with entity details"""
     approval = await approval_service.get_approval_by_id(approval_id)
@@ -58,7 +58,7 @@ async def get_approval(
 async def approve_request(
     approval_id: str,
     action: Optional[ApprovalAction] = None,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_admin_or_manager)
 ):
     """Approve a pending request"""
     try:
@@ -92,9 +92,9 @@ async def approve_request(
 async def reject_request(
     approval_id: str,
     action: ApprovalAction,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_admin_or_manager)
 ):
-    """Reject a pending request"""
+    """Reject a pending request - Admin and Manager only"""
     try:
         approval = await approval_service.reject_request(
             approval_id=approval_id,
