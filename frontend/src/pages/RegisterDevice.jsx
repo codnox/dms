@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { useNotifications } from '../context/NotificationContext';
-import { Box, Save, X, QrCode } from 'lucide-react';
+import { devicesAPI } from '../services/api';
+import { Box, Save, X, Camera, XCircle, AlertCircle } from 'lucide-react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const RegisterDevice = () => {
   const navigate = useNavigate();
   const { showToast } = useNotifications();
   const [loading, setLoading] = useState(false);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const html5QrCodeRef = useRef(null);
+  
   const [formData, setFormData] = useState({
     macAddress: '',
     serialNumber: '',
@@ -16,9 +21,79 @@ const RegisterDevice = () => {
     manufacturer: '',
     hardwareVersion: '',
     firmwareVersion: '',
+    deviceType: 'ONT',
     condition: 'new',
     notes: ''
   });
+
+  // Initialize camera scanner
+  useEffect(() => {
+    if (showCameraScanner && !html5QrCodeRef.current) {
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0,
+        disableFlip: false,
+      };
+
+      const scanner = new Html5QrcodeScanner('qr-reader', config, false);
+      html5QrCodeRef.current = scanner;
+      scanner.render(onScanSuccess, onScanError);
+    }
+
+    return () => {
+      if (html5QrCodeRef.current) {
+        html5QrCodeRef.current.clear().catch(err => console.error('Failed to clear scanner', err));
+        html5QrCodeRef.current = null;
+      }
+    };
+  }, [showCameraScanner]);
+
+  const onScanSuccess = (decodedText, decodedResult) => {
+    console.log('Scanned:', decodedText);
+    
+    // Parse the scanned text for device info
+    const text = decodedText.toUpperCase();
+    
+    // Try to extract MAC address (various formats)
+    const macMatch = text.match(/([0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2})/);
+    if (macMatch) {
+      const mac = macMatch[1].replace(/[:\-]/g, '');
+      const formattedMac = mac.match(/.{2}/g)?.join(':') || mac;
+      setFormData(prev => ({ ...prev, macAddress: formattedMac }));
+    }
+    
+    // Try to extract serial number
+    const snMatch = text.match(/S\/?N[:\s]*([A-Z0-9\-]+)/i);
+    if (snMatch) {
+      setFormData(prev => ({ ...prev, serialNumber: snMatch[1] }));
+    }
+    
+    // Try to extract model
+    const modelMatch = text.match(/MODEL[:\s]*([A-Z0-9\-]+)/i);
+    if (modelMatch) {
+      setFormData(prev => ({ ...prev, model: modelMatch[1] }));
+    }
+    
+    showToast('Device scanned successfully!', 'success');
+    closeCameraScanner();
+  };
+
+  const onScanError = (errorMessage) => {
+    // Ignore errors during scanning - they're normal when no code is detected
+  };
+
+  const openCameraScanner = () => {
+    setShowCameraScanner(true);
+  };
+
+  const closeCameraScanner = () => {
+    if (html5QrCodeRef.current) {
+      html5QrCodeRef.current.clear().catch(err => console.error('Failed to clear scanner', err));
+      html5QrCodeRef.current = null;
+    }
+    setShowCameraScanner(false);
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -29,22 +104,29 @@ const RegisterDevice = () => {
     e.preventDefault();
     setLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    showToast('Device registered successfully!', 'success');
-    navigate('/devices');
-    setLoading(false);
-  };
+    try {
+      const deviceData = {
+        device_type: formData.deviceType,
+        model: formData.model,
+        serial_number: formData.serialNumber,
+        mac_address: formData.macAddress,
+        manufacturer: formData.manufacturer,
+        metadata: {
+          hardware_version: formData.hardwareVersion,
+          firmware_version: formData.firmwareVersion,
+          condition: formData.condition,
+          notes: formData.notes
+        }
+      };
 
-  const handleScan = () => {
-    // Simulate QR/Barcode scan
-    setFormData(prev => ({
-      ...prev,
-      macAddress: 'AA:BB:CC:DD:EE:' + Math.random().toString(16).slice(2, 4).toUpperCase(),
-      serialNumber: 'SN-2024-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-    }));
-    showToast('Device scanned successfully!', 'info');
+      await devicesAPI.createDevice(deviceData);
+      showToast('Device registered successfully!', 'success');
+      navigate('/devices');
+    } catch (error) {
+      showToast(error.message || 'Failed to register device', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,16 +136,59 @@ const RegisterDevice = () => {
         <p className="text-gray-500 mt-1">Add a new device to the inventory from NOC</p>
       </div>
 
+      {/* Camera Scanner Modal */}
+      {showCameraScanner && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Camera className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Camera Scanner</h3>
+                    <p className="text-sm text-gray-500">Position the barcode/QR code in the frame</p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeCameraScanner}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+
+              <div id="qr-reader" className="rounded-lg overflow-hidden"></div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Tips for best results:</p>
+                    <ul className="space-y-1 ml-4 list-disc">
+                      <li>Hold device steady and ensure good lighting</li>
+                      <li>Position barcode clearly in the scanning area</li>
+                      <li>Works with QR codes, barcodes, and text labels</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Scan Button */}
           <div className="flex justify-center">
             <button
               type="button"
-              onClick={handleScan}
+              onClick={openCameraScanner}
               className="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors"
             >
-              <QrCode className="w-12 h-12 text-gray-400" />
+              <Camera className="w-12 h-12 text-gray-400" />
               <span className="text-sm text-gray-600">Click to scan device barcode/QR code</span>
             </button>
           </div>
@@ -72,6 +197,26 @@ const RegisterDevice = () => {
             <h3 className="text-sm font-medium text-gray-700 mb-4">Or enter details manually</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Device Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="deviceType"
+                  value={formData.deviceType}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="ONT">ONT</option>
+                  <option value="ONU">ONU</option>
+                  <option value="Router">Router</option>
+                  <option value="Switch">Switch</option>
+                  <option value="Modem">Modem</option>
+                  <option value="Access Point">Access Point</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   MAC Address <span className="text-red-500">*</span>
@@ -106,40 +251,30 @@ const RegisterDevice = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Device Model <span className="text-red-500">*</span>
                 </label>
-                <select
+                <input
+                  type="text"
                   name="model"
                   value={formData.model}
                   onChange={handleChange}
+                  placeholder="e.g., SI5520GWV"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
-                >
-                  <option value="">Select model</option>
-                  <option value="Router X500">Router X500</option>
-                  <option value="Router X700">Router X700</option>
-                  <option value="Switch S200">Switch S200</option>
-                  <option value="Switch S300">Switch S300</option>
-                  <option value="Modem M100">Modem M100</option>
-                  <option value="Modem M200">Modem M200</option>
-                </select>
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Manufacturer <span className="text-red-500">*</span>
                 </label>
-                <select
+                <input
+                  type="text"
                   name="manufacturer"
                   value={formData.manufacturer}
                   onChange={handleChange}
+                  placeholder="e.g., Syrotech"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
-                >
-                  <option value="">Select manufacturer</option>
-                  <option value="NetGear">NetGear</option>
-                  <option value="Cisco">Cisco</option>
-                  <option value="TP-Link">TP-Link</option>
-                  <option value="Linksys">Linksys</option>
-                </select>
+                />
               </div>
 
               <div>
@@ -202,11 +337,22 @@ const RegisterDevice = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-            <Button variant="secondary" onClick={() => navigate('/devices')} icon={X}>
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => navigate('/devices')}
+              icon={X}
+            >
               Cancel
             </Button>
-            <Button type="submit" loading={loading} icon={Save}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={loading}
+              icon={Save}
+            >
               Register Device
             </Button>
           </div>
