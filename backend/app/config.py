@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # Server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8080
     
     # Database
     MONGODB_URL: str = os.getenv("MONGODB_URL", "")
