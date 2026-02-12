@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { dashboardStats, recentActivities, users, devices, defectReports, returnRequests } from '../../data/mockData';
+import { dashboardAPI, usersAPI, devicesAPI, defectsAPI, returnsAPI } from '../../services/api';
 import {
   Box,
   Users,
@@ -13,11 +14,41 @@ import {
   TrendingUp,
   Clock,
   ArrowRight,
-  Cpu
+  Cpu,
+  Loader2
 } from 'lucide-react';
 
 const AdminDashboard = () => {
-  const stats = dashboardStats.admin;
+  const [stats, setStats] = useState({});
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [defectReports, setDefectReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [statsRes, usersRes, defectsRes] = await Promise.all([
+          dashboardAPI.getStats().catch(() => ({ data: {} })),
+          usersAPI.getUsers().catch(() => ({ data: [] })),
+          defectsAPI.getDefects().catch(() => ({ data: [] }))
+        ]);
+        setStats(statsRes.data || {});
+        setUsers(usersRes.data || []);
+        setDefectReports(defectsRes.data || []);
+        try {
+          const activitiesRes = await dashboardAPI.getRecentActivities();
+          setRecentActivities(activitiesRes.data || []);
+        } catch (e) { setRecentActivities([]); }
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -31,43 +62,37 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         <StatCard
           title="Total Devices"
-          value={stats.totalDevices}
+          value={stats.total_devices || 0}
           icon={Box}
           color="blue"
-          change={12}
-          changeType="increase"
         />
         <StatCard
           title="Active Devices"
-          value={stats.activeDevices}
+          value={stats.active_devices || 0}
           icon={Cpu}
           color="green"
-          change={8}
-          changeType="increase"
         />
         <StatCard
           title="Total Users"
-          value={stats.totalUsers}
+          value={stats.total_users || users.length}
           icon={Users}
           color="purple"
-          change={5}
-          changeType="increase"
         />
         <StatCard
           title="Pending Approvals"
-          value={stats.pendingApprovals}
+          value={stats.pending_approvals || 0}
           icon={CheckSquare}
           color="yellow"
         />
         <StatCard
           title="Defect Reports"
-          value={stats.defectReports}
+          value={stats.defect_reports || defectReports.length}
           icon={AlertTriangle}
           color="red"
         />
         <StatCard
           title="Return Requests"
-          value={stats.returnRequests}
+          value={stats.return_requests || 0}
           icon={RotateCcw}
           color="indigo"
         />

@@ -25,36 +25,45 @@ Frontend runs on: http://localhost:5173
 .\stop.ps1
 ```
 
-## 📊 Seed Comprehensive Data
+## 📊 Reset & Seed Database
 
 ### Method 1: Using PowerShell
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/seed-comprehensive" -Method Post
+Invoke-RestMethod -Uri "http://localhost:8000/reset-and-seed" -Method Post
 ```
 
 ### Method 2: Using curl
 ```bash
-curl -X POST http://localhost:8000/seed-comprehensive
+curl -X POST http://localhost:8000/reset-and-seed
 ```
 
 ### Method 3: Using Swagger UI
 1. Navigate to http://localhost:8000/docs
-2. Find `/seed-comprehensive` endpoint
+2. Find `/reset-and-seed` endpoint
 3. Click "Try it out"
 4. Click "Execute"
+
+> ⚠️ This will **drop all collections** and re-seed with only the users below.
 
 ## 🔐 Test User Credentials
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@dms.com | admin123 |
-| Manager 1 | manager1@dms.com | manager123 |
-| Manager 2 | manager2@dms.com | manager123 |
-| Manager 3 | manager3@dms.com | manager123 |
-| Distributor 1 | distributor1@dms.com | dist123 |
-| Distributor 2-5 | distributor2-5@dms.com | dist123 |
-| Sub-Distributor 1-10 | subdist1-10@dms.com | subdist123 |
-| Operator 1-20 | operator1-20@dms.com | oper123 |
+| Admin | admin@dms.com | Admin@123 |
+| Manager 1 | manager1@dms.com | Manager@123 |
+| Manager 2 | manager2@dms.com | Manager@123 |
+| Manager 3 | manager3@dms.com | Manager@123 |
+| Distributor 1 | distributor1@dms.com | Dist@123 |
+| Sub-Distributor 1 | subdist1@dms.com | SubDist@123 |
+| Sub-Distributor 2 | subdist2@dms.com | SubDist@123 |
+| Sub-Distributor 3 | subdist3@dms.com | SubDist@123 |
+| Sub-Distributor 4 | subdist4@dms.com | SubDist@123 |
+| Sub-Distributor 5 | subdist5@dms.com | SubDist@123 |
+| Operator 1 | operator1@dms.com | Oper@123 |
+| Operator 2 | operator2@dms.com | Oper@123 |
+| Operator 3 | operator3@dms.com | Oper@123 |
+| Operator 4 | operator4@dms.com | Oper@123 |
+| Operator 5 | operator5@dms.com | Oper@123 |
 
 ## 🎨 Testing Theme & Settings
 

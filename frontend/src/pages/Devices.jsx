@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
-import { devices } from '../data/mockData';
+import { devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Edit, Trash2, Box, Download, Upload } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, Box, Download, Upload, Loader2 } from 'lucide-react';
 
 const Devices = () => {
   const { user } = useAuth();
@@ -16,17 +16,36 @@ const Devices = () => {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDevices();
+  }, []);
+
+  const fetchDevices = async () => {
+    try {
+      setLoading(true);
+      const response = await devicesAPI.getDevices({ page_size: 100 });
+      setDevices(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch devices:', error);
+      showToast('Failed to load devices', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const canRegister = ['admin', 'distributor'].includes(user?.role);
 
   const columns = [
-    { key: 'macAddress', label: 'MAC Address' },
-    { key: 'serialNumber', label: 'Serial Number' },
+    { key: 'mac_address', label: 'MAC Address' },
+    { key: 'serial_number', label: 'Serial Number' },
     { key: 'model', label: 'Model' },
     { key: 'manufacturer', label: 'Manufacturer' },
     {
-      key: 'condition',
-      label: 'Condition',
+      key: 'device_type',
+      label: 'Type',
       render: (value) => <StatusBadge status={value} size="sm" />
     },
     {
@@ -34,7 +53,7 @@ const Devices = () => {
       label: 'Status',
       render: (value) => <StatusBadge status={value} />
     },
-    { key: 'currentHolder', label: 'Current Holder' },
+    { key: 'current_holder_name', label: 'Current Holder', render: (value) => value || 'NOC' },
     {
       key: 'actions',
       label: 'Actions',
@@ -73,10 +92,16 @@ const Devices = () => {
     }
   ];
 
-  const handleDelete = () => {
-    showToast(`Device ${selectedDevice.macAddress} deleted successfully`, 'success');
-    setShowDeleteModal(false);
-    setSelectedDevice(null);
+  const handleDelete = async () => {
+    try {
+      await devicesAPI.deleteDevice(selectedDevice.id);
+      showToast(`Device ${selectedDevice.mac_address} deleted successfully`, 'success');
+      setShowDeleteModal(false);
+      setSelectedDevice(null);
+      fetchDevices();
+    } catch (error) {
+      showToast('Failed to delete device', 'error');
+    }
   };
 
   return (
@@ -107,16 +132,16 @@ const Devices = () => {
           <p className="text-2xl font-bold text-gray-800">{devices.length}</p>
         </Card>
         <Card className="!p-4">
-          <p className="text-sm text-gray-500">Active</p>
-          <p className="text-2xl font-bold text-green-600">{devices.filter(d => d.status === 'active').length}</p>
+          <p className="text-sm text-gray-500">Available</p>
+          <p className="text-2xl font-bold text-green-600">{devices.filter(d => d.status === 'available').length}</p>
+        </Card>
+        <Card className="!p-4">
+          <p className="text-sm text-gray-500">Distributed</p>
+          <p className="text-2xl font-bold text-blue-600">{devices.filter(d => d.status === 'distributed').length}</p>
         </Card>
         <Card className="!p-4">
           <p className="text-sm text-gray-500">In Use</p>
-          <p className="text-2xl font-bold text-blue-600">{devices.filter(d => d.status === 'in-use').length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Stored</p>
-          <p className="text-2xl font-bold text-purple-600">{devices.filter(d => d.status === 'stored').length}</p>
+          <p className="text-2xl font-bold text-purple-600">{devices.filter(d => d.status === 'in_use').length}</p>
         </Card>
         <Card className="!p-4">
           <p className="text-sm text-gray-500">Defective</p>
@@ -128,15 +153,22 @@ const Devices = () => {
         </Card>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={devices}
-        selectable={canRegister}
-        onRowClick={(row) => {
-          setSelectedDevice(row);
-          setShowModal(true);
-        }}
-      />
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-500">Loading devices...</span>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={devices}
+          selectable={canRegister}
+          onRowClick={(row) => {
+            setSelectedDevice(row);
+            setShowModal(true);
+          }}
+        />
+      )}
 
       {/* View Device Modal */}
       <Modal
@@ -150,7 +182,7 @@ const Devices = () => {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            <Link to={`/track-device?mac=${selectedDevice?.macAddress}`}>
+            <Link to={`/track-device?serial=${selectedDevice?.serial_number}`}>
               <Button>Track Device</Button>
             </Link>
           </>
@@ -163,10 +195,9 @@ const Devices = () => {
                 <Box className="w-8 h-8 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-800">{selectedDevice.model}</h3>
-                <p className="text-gray-500">{selectedDevice.manufacturer}</p>
+                <h3 className="text-lg font-semibold text-gray-800">{selectedDevice.model || selectedDevice.device_type}</h3>
+                <p className="text-gray-500">{selectedDevice.manufacturer || 'N/A'}</p>
                 <div className="flex gap-2 mt-2">
-                  <StatusBadge status={selectedDevice.condition} />
                   <StatusBadge status={selectedDevice.status} />
                 </div>
               </div>
@@ -175,35 +206,35 @@ const Devices = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">MAC Address</label>
-                <p className="font-medium text-gray-800 font-mono">{selectedDevice.macAddress}</p>
+                <p className="font-medium text-gray-800 font-mono">{selectedDevice.mac_address}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Serial Number</label>
-                <p className="font-medium text-gray-800">{selectedDevice.serialNumber}</p>
+                <p className="font-medium text-gray-800">{selectedDevice.serial_number}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Hardware Version</label>
-                <p className="font-medium text-gray-800">{selectedDevice.hardwareVersion}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Device Type</label>
+                <p className="font-medium text-gray-800">{selectedDevice.device_type}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Firmware Version</label>
-                <p className="font-medium text-gray-800">{selectedDevice.firmwareVersion}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Device ID</label>
+                <p className="font-medium text-gray-800">{selectedDevice.device_id}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Current Location</label>
-                <p className="font-medium text-gray-800 capitalize">{selectedDevice.currentLocation.replace('-', ' ')}</p>
+                <p className="font-medium text-gray-800 capitalize">{selectedDevice.current_location ? selectedDevice.current_location.replace('-', ' ') : 'N/A'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Current Holder</label>
-                <p className="font-medium text-gray-800">{selectedDevice.currentHolder}</p>
+                <p className="font-medium text-gray-800">{selectedDevice.current_holder_name || 'N/A'}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Registered At</label>
-                <p className="font-medium text-gray-800">{selectedDevice.registeredAt}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Created At</label>
+                <p className="font-medium text-gray-800">{selectedDevice.created_at ? new Date(selectedDevice.created_at).toLocaleDateString() : 'N/A'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Registered By</label>
-                <p className="font-medium text-gray-800">{selectedDevice.registeredBy}</p>
+                <p className="font-medium text-gray-800">{selectedDevice.registered_by_name || 'N/A'}</p>
               </div>
             </div>
           </div>
@@ -224,7 +255,7 @@ const Devices = () => {
         }
       >
         <p className="text-gray-600">
-          Are you sure you want to delete device <span className="font-medium">{selectedDevice?.macAddress}</span>? 
+          Are you sure you want to delete device <span className="font-medium">{selectedDevice?.mac_address}</span>? 
           This action cannot be undone.
         </p>
       </Modal>

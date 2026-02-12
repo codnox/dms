@@ -1,9 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
-import { dashboardStats, devices, defectReports, returnRequests } from '../../data/mockData';
+import { dashboardAPI, devicesAPI, defectsAPI, returnsAPI } from '../../services/api';
 import {
   Box,
   AlertTriangle,
@@ -11,25 +12,39 @@ import {
   Cpu,
   ArrowRight,
   Plus,
-  Eye
+  Eye,
+  Loader2
 } from 'lucide-react';
 
 const OperatorDashboard = () => {
-  const stats = dashboardStats.operator;
-  const myDevices = devices.filter(d => 
-    d.currentHolder === 'Tom Operator' || 
-    d.currentHolder === 'Emma Wilson' ||
-    d.currentHolder === 'Anna Smith'
-  );
-  const myDefects = defectReports.filter(d => 
-    d.reportedBy === 'Tom Operator' || 
-    d.reportedBy === 'Emma Wilson'
-  );
-  const myReturns = returnRequests.filter(r => 
-    r.initiatedBy === 'Tom Operator' || 
-    r.initiatedBy === 'Emma Wilson' ||
-    r.initiatedBy === 'Anna Smith'
-  );
+  const [stats, setStats] = useState({});
+  const [myDevices, setMyDevices] = useState([]);
+  const [myDefects, setMyDefects] = useState([]);
+  const [myReturns, setMyReturns] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [statsRes, devRes, defRes, retRes] = await Promise.all([
+          dashboardAPI.getStats().catch(() => ({ data: {} })),
+          devicesAPI.getDevices().catch(() => ({ data: [] })),
+          defectsAPI.getDefects().catch(() => ({ data: [] })),
+          returnsAPI.getReturns().catch(() => ({ data: [] }))
+        ]);
+        setStats(statsRes.data || {});
+        setMyDevices(devRes.data || []);
+        setMyDefects(defRes.data || []);
+        setMyReturns(retRes.data || []);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -49,11 +64,11 @@ const OperatorDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard title="Assigned Devices" value={stats.assignedDevices} icon={Box} color="blue" />
-        <StatCard title="Active" value={stats.activeDevices} icon={Cpu} color="green" />
-        <StatCard title="In Use" value={stats.inUseDevices} icon={Cpu} color="purple" />
-        <StatCard title="My Defect Reports" value={stats.defectReports} icon={AlertTriangle} color="red" />
-        <StatCard title="Pending Returns" value={stats.pendingReturns} icon={RotateCcw} color="yellow" />
+        <StatCard title="Assigned Devices" value={stats.assigned_devices || myDevices.length} icon={Box} color="blue" />
+        <StatCard title="Active" value={stats.active_devices || myDevices.filter(d => d.status === 'active').length} icon={Cpu} color="green" />
+        <StatCard title="In Use" value={stats.in_use_devices || myDevices.filter(d => d.status === 'in_use').length} icon={Cpu} color="purple" />
+        <StatCard title="My Defect Reports" value={stats.defect_reports || myDefects.length} icon={AlertTriangle} color="red" />
+        <StatCard title="Pending Returns" value={stats.pending_returns || myReturns.filter(r => r.status === 'pending').length} icon={RotateCcw} color="yellow" />
       </div>
 
       {/* My Devices */}
@@ -75,11 +90,11 @@ const OperatorDashboard = () => {
                 </div>
                 <StatusBadge status={device.status} />
               </div>
-              <h4 className="font-medium text-gray-800">{device.model}</h4>
-              <p className="text-sm text-gray-500 mt-1">{device.macAddress}</p>
-              <p className="text-xs text-gray-400 mt-2">SN: {device.serialNumber}</p>
+              <h4 className="font-medium text-gray-800">{device.model || device.device_type}</h4>
+              <p className="text-sm text-gray-500 mt-1">{device.mac_address}</p>
+              <p className="text-xs text-gray-400 mt-2">SN: {device.serial_number}</p>
               <div className="flex items-center gap-2 mt-3">
-                <Link to={`/devices/track?mac=${encodeURIComponent(device.macAddress)}`} className="flex-1">
+                <Link to={`/devices/track?serial=${encodeURIComponent(device.serial_number)}`} className="flex-1">
                   <Button variant="outline" size="sm" className="w-full" icon={Eye}>
                     View
                   </Button>
@@ -125,11 +140,11 @@ const OperatorDashboard = () => {
                 <div key={defect.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-800">{defect.device.model}</p>
+                      <p className="text-sm font-medium text-gray-800">{defect.device_name || defect.device_type || 'Unknown'}</p>
                       <StatusBadge status={defect.severity} size="sm" />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{defect.defectType}</p>
-                    <p className="text-xs text-gray-400">{defect.reportedAt}</p>
+                    <p className="text-xs text-gray-500 mt-1">{defect.defect_type}</p>
+                    <p className="text-xs text-gray-400">{defect.created_at}</p>
                   </div>
                   <StatusBadge status={defect.status} />
                 </div>
@@ -160,9 +175,9 @@ const OperatorDashboard = () => {
               myReturns.map((ret) => (
                 <div key={ret.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{ret.device.model}</p>
+                    <p className="text-sm font-medium text-gray-800">{ret.device_name || ret.device_type || 'Unknown'}</p>
                     <p className="text-xs text-gray-500">{ret.reason}</p>
-                    <p className="text-xs text-gray-400 mt-1">{ret.createdAt}</p>
+                    <p className="text-xs text-gray-400 mt-1">{ret.created_at}</p>
                   </div>
                   <StatusBadge status={ret.status} />
                 </div>

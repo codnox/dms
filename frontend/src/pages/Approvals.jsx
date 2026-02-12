@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import Card from '../components/ui/Card';
@@ -8,22 +8,24 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Timeline from '../components/ui/Timeline';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { distributions, returnRequests, defectReports } from '../data/mockData';
+import { approvalsAPI, distributionsAPI, returnsAPI, defectsAPI } from '../services/api';
 import { 
   Check, X, Eye, Filter, Clock, CheckCircle, 
-  XCircle, Package, RotateCcw, AlertTriangle, ShieldAlert 
+  XCircle, Package, RotateCcw, AlertTriangle, ShieldAlert, Loader2 
 } from 'lucide-react';
 
 const Approvals = () => {
   const { user, hasRole } = useAuth();
   const navigate = useNavigate();
-  const { addNotification } = useNotifications();
+  const { addNotification, showToast } = useNotifications();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [allPendingItems, setAllPendingItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Only admin and manager can access approvals
   const canAccessApprovals = hasRole(['admin', 'manager']);
@@ -41,54 +43,73 @@ const Approvals = () => {
     );
   }
 
-  // Combine all pending approvals
-  const allPendingItems = useMemo(() => {
-    const items = [];
+  const fetchPendingItems = async () => {
+    try {
+      setLoading(true);
+      const items = [];
 
-    // Pending distributions
-    distributions
-      .filter(d => d.status === 'pending')
-      .forEach(d => {
-        items.push({
-          ...d,
-          type: 'distribution',
-          icon: Package,
-          title: `Distribution to ${d.toDistributor}`,
-          requestedBy: d.fromDistributor,
-          requestDate: d.createdAt
+      try {
+        const distResponse = await distributionsAPI.getDistributions({ status: 'pending' });
+        (distResponse.data || []).forEach(d => {
+          items.push({
+            ...d,
+            id: d._id || d.id,
+            type: 'distribution',
+            icon: Package,
+            title: `Distribution to ${d.to_name || 'Unknown'}`,
+            requestedBy: d.from_name || 'Unknown',
+            requestDate: d.created_at,
+            status: d.status
+          });
         });
-      });
+      } catch (e) { console.error('Failed to fetch distributions:', e); }
 
-    // Pending returns
-    returnRequests
-      .filter(r => r.status === 'pending')
-      .forEach(r => {
-        items.push({
-          ...r,
-          type: 'return',
-          icon: RotateCcw,
-          title: `Return - ${r.device?.model || 'Unknown Device'}`,
-          requestedBy: r.initiatedBy,
-          requestDate: r.createdAt
+      try {
+        const retResponse = await returnsAPI.getReturns({ status: 'pending' });
+        (retResponse.data || []).forEach(r => {
+          items.push({
+            ...r,
+            id: r._id || r.id,
+            type: 'return',
+            icon: RotateCcw,
+            title: `Return - ${r.device_name || r.device_type || 'Unknown Device'}`,
+            requestedBy: r.initiated_by_name || 'Unknown',
+            requestDate: r.created_at,
+            status: r.status
+          });
         });
-      });
+      } catch (e) { console.error('Failed to fetch returns:', e); }
 
-    // Pending defect reports (for review)
-    defectReports
-      .filter(d => d.status === 'open' || d.status === 'pending')
-      .forEach(d => {
-        items.push({
-          ...d,
-          type: 'defect',
-          icon: AlertTriangle,
-          title: `Defect Report - ${d.device?.model || 'Unknown Device'}`,
-          requestedBy: d.reportedBy,
-          requestDate: d.reportedAt
+      try {
+        const defResponse = await defectsAPI.getDefects({ status: 'open' });
+        (defResponse.data || []).forEach(d => {
+          items.push({
+            ...d,
+            id: d._id || d.id,
+            type: 'defect',
+            icon: AlertTriangle,
+            title: `Defect Report - ${d.device_name || d.device_type || 'Unknown Device'}`,
+            requestedBy: d.reported_by_name || 'Unknown',
+            requestDate: d.created_at,
+            status: d.status
+          });
         });
-      });
+      } catch (e) { console.error('Failed to fetch defects:', e); }
 
-    return items.sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate));
-  }, []);
+      items.sort((a, b) => new Date(b.requestDate || 0) - new Date(a.requestDate || 0));
+      setAllPendingItems(items);
+    } catch (error) {
+      console.error('Failed to fetch approvals:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (canAccessApprovals) {
+      fetchPendingItems();
+    }
+  }, [canAccessApprovals]);
 
   const filteredItems = useMemo(() => {
     if (activeTab === 'all') return allPendingItems;
@@ -102,33 +123,45 @@ const Approvals = () => {
     { id: 'defect', label: 'Defects', count: allPendingItems.filter(i => i.type === 'defect').length }
   ];
 
-  const handleApprove = () => {
-    addNotification({
-      type: 'success',
-      title: 'Approved',
-      message: `${selectedItem.type} request has been approved successfully.`
-    });
-    setShowApproveModal(false);
-    setSelectedItem(null);
+  const handleApprove = async () => {
+    try {
+      if (selectedItem.type === 'distribution') {
+        await distributionsAPI.updateDistributionStatus(selectedItem.id, 'approved');
+      } else if (selectedItem.type === 'return') {
+        await returnsAPI.updateReturnStatus(selectedItem.id, 'approved');
+      } else if (selectedItem.type === 'defect') {
+        await defectsAPI.updateDefectStatus(selectedItem.id, 'approved');
+      }
+      showToast(`${selectedItem.type} request approved successfully`, 'success');
+      setShowApproveModal(false);
+      setSelectedItem(null);
+      fetchPendingItems();
+    } catch (error) {
+      showToast('Failed to approve request', 'error');
+    }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Please provide a reason for rejection.'
-      });
+      showToast('Please provide a reason for rejection', 'error');
       return;
     }
-    addNotification({
-      type: 'info',
-      title: 'Rejected',
-      message: `${selectedItem.type} request has been rejected.`
-    });
-    setShowRejectModal(false);
-    setRejectionReason('');
-    setSelectedItem(null);
+    try {
+      if (selectedItem.type === 'distribution') {
+        await distributionsAPI.updateDistributionStatus(selectedItem.id, 'rejected', rejectionReason);
+      } else if (selectedItem.type === 'return') {
+        await returnsAPI.updateReturnStatus(selectedItem.id, 'rejected', rejectionReason);
+      } else if (selectedItem.type === 'defect') {
+        await defectsAPI.updateDefectStatus(selectedItem.id, 'rejected', rejectionReason);
+      }
+      showToast(`${selectedItem.type} request rejected`, 'info');
+      setShowRejectModal(false);
+      setRejectionReason('');
+      setSelectedItem(null);
+      fetchPendingItems();
+    } catch (error) {
+      showToast('Failed to reject request', 'error');
+    }
   };
 
   const getTypeColor = (type) => {
@@ -173,7 +206,7 @@ const Approvals = () => {
     {
       key: 'requestDate',
       label: 'Date',
-      render: (value) => <span className="text-gray-500">{value}</span>
+      render: (value) => <span className="text-gray-500">{value ? new Date(value).toLocaleDateString() : '-'}</span>
     },
     {
       key: 'status',

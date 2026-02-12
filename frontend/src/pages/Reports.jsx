@@ -1,28 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { dashboardStats, devices, distributions, defectReports, returnRequests } from '../data/mockData';
+import { devicesAPI, distributionsAPI, defectsAPI, returnsAPI } from '../services/api';
 import { 
   BarChart3, PieChart, TrendingUp, Download, Calendar, 
-  Filter, Box, Package, AlertTriangle, RotateCcw 
+  Filter, Box, Package, AlertTriangle, RotateCcw, Loader2 
 } from 'lucide-react';
 
 const Reports = () => {
   const [dateRange, setDateRange] = useState('last30');
   const [reportType, setReportType] = useState('overview');
+  const [devices, setDevices] = useState([]);
+  const [distributions, setDistributions] = useState([]);
+  const [defectReports, setDefectReports] = useState([]);
+  const [returnRequests, setReturnRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [devRes, distRes, defRes, retRes] = await Promise.all([
+          devicesAPI.getDevices().catch(() => ({ data: [] })),
+          distributionsAPI.getDistributions().catch(() => ({ data: [] })),
+          defectsAPI.getDefects().catch(() => ({ data: [] })),
+          returnsAPI.getReturns().catch(() => ({ data: [] }))
+        ]);
+        setDevices(devRes.data || []);
+        setDistributions(distRes.data || []);
+        setDefectReports(defRes.data || []);
+        setReturnRequests(retRes.data || []);
+      } catch (error) {
+        console.error('Failed to load report data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Calculate statistics
   const stats = {
     totalDevices: devices.length,
-    activeDevices: devices.filter(d => d.status === 'active').length,
-    inStockDevices: devices.filter(d => d.status === 'in-stock').length,
+    activeDevices: devices.filter(d => d.status === 'active' || d.status === 'available').length,
+    inStockDevices: devices.filter(d => d.status === 'available').length,
     distributedDevices: devices.filter(d => d.status === 'distributed').length,
-    defectiveDevices: devices.filter(d => d.condition === 'defective').length,
+    defectiveDevices: devices.filter(d => d.status === 'defective').length,
     totalDistributions: distributions.length,
     pendingDistributions: distributions.filter(d => d.status === 'pending').length,
-    completedDistributions: distributions.filter(d => d.status === 'delivered').length,
+    completedDistributions: distributions.filter(d => d.status === 'delivered' || d.status === 'approved').length,
     totalDefects: defectReports.length,
-    pendingDefects: defectReports.filter(d => d.status === 'pending').length,
+    pendingDefects: defectReports.filter(d => d.status === 'pending' || d.status === 'open').length,
     totalReturns: returnRequests.length,
     pendingReturns: returnRequests.filter(r => r.status === 'pending').length
   };

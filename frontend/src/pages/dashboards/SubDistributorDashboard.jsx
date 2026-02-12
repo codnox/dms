@@ -1,9 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
-import { dashboardStats, devices, distributions, operators, defectReports, returnRequests } from '../../data/mockData';
+import { dashboardAPI, devicesAPI, distributionsAPI, usersAPI, defectsAPI, returnsAPI } from '../../services/api';
 import {
   Box,
   Users,
@@ -14,14 +15,47 @@ import {
   ArrowRight,
   CheckCircle,
   XCircle,
-  Send
+  Send,
+  Loader2
 } from 'lucide-react';
 
 const SubDistributorDashboard = () => {
-  const stats = dashboardStats['sub-distributor'];
-  const myDevices = devices.filter(d => d.currentHolder === 'Sub Distributor Alpha');
-  const pendingDistributions = distributions.filter(d => d.toDistributor === 'Sub Distributor Alpha' && d.status === 'pending');
-  const myOperators = operators.filter(op => op.subDistributor === 'sd1');
+  const [stats, setStats] = useState({});
+  const [myDevices, setMyDevices] = useState([]);
+  const [distributions, setDistributions] = useState([]);
+  const [myOperators, setMyOperators] = useState([]);
+  const [defectReports, setDefectReports] = useState([]);
+  const [returnRequests, setReturnRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [statsRes, devRes, distRes, usersRes, defRes, retRes] = await Promise.all([
+          dashboardAPI.getStats().catch(() => ({ data: {} })),
+          devicesAPI.getDevices().catch(() => ({ data: [] })),
+          distributionsAPI.getDistributions({ status: 'pending' }).catch(() => ({ data: [] })),
+          usersAPI.getUsers({ role: 'operator' }).catch(() => ({ data: [] })),
+          defectsAPI.getDefects().catch(() => ({ data: [] })),
+          returnsAPI.getReturns().catch(() => ({ data: [] }))
+        ]);
+        setStats(statsRes.data || {});
+        setMyDevices(devRes.data || []);
+        setDistributions(distRes.data || []);
+        setMyOperators(usersRes.data || []);
+        setDefectReports(defRes.data || []);
+        setReturnRequests(retRes.data || []);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const pendingDistributions = distributions.filter(d => d.status === 'pending');
 
   return (
     <div className="space-y-6">
@@ -36,12 +70,12 @@ const SubDistributorDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard title="Received Devices" value={stats.receivedDevices} icon={Box} color="blue" />
-        <StatCard title="Pending Approvals" value={stats.pendingApprovals} icon={CheckSquare} color="yellow" />
-        <StatCard title="My Operators" value={stats.operatorCount} icon={Users} color="purple" />
-        <StatCard title="Defect Reports" value={stats.defectReports} icon={AlertTriangle} color="red" />
-        <StatCard title="Returns" value={stats.returnRequests} icon={RotateCcw} color="indigo" />
-        <StatCard title="Assigned" value={stats.assignedToOperators} icon={Package} color="green" />
+        <StatCard title="Received Devices" value={stats.received_devices || myDevices.length} icon={Box} color="blue" />
+        <StatCard title="Pending Approvals" value={stats.pending_approvals || pendingDistributions.length} icon={CheckSquare} color="yellow" />
+        <StatCard title="My Operators" value={stats.operator_count || myOperators.length} icon={Users} color="purple" />
+        <StatCard title="Defect Reports" value={stats.defect_reports || defectReports.length} icon={AlertTriangle} color="red" />
+        <StatCard title="Returns" value={stats.return_requests || returnRequests.length} icon={RotateCcw} color="indigo" />
+        <StatCard title="Assigned" value={stats.assigned_to_operators || 0} icon={Package} color="green" />
       </div>
 
       {/* Pending Approvals Banner */}
@@ -84,8 +118,8 @@ const SubDistributorDashboard = () => {
               myDevices.slice(0, 4).map((device) => (
                 <div key={device.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{device.model}</p>
-                    <p className="text-xs text-gray-500">{device.macAddress}</p>
+                    <p className="text-sm font-medium text-gray-800">{device.model || device.device_type}</p>
+                    <p className="text-xs text-gray-500">{device.mac_address}</p>
                   </div>
                   <StatusBadge status={device.status} size="sm" />
                 </div>
@@ -111,11 +145,11 @@ const SubDistributorDashboard = () => {
               pendingDistributions.map((dist) => (
                 <div key={dist.id} className="p-3 bg-yellow-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-gray-800">{dist.batchId}</p>
+                    <p className="text-sm font-medium text-gray-800">{dist.batch_id}</p>
                     <StatusBadge status={dist.status} size="sm" />
                   </div>
-                  <p className="text-xs text-gray-500">From: {dist.fromDistributor}</p>
-                  <p className="text-xs text-gray-400 mb-2">{dist.deviceCount} devices</p>
+                  <p className="text-xs text-gray-500">From: {dist.from_name}</p>
+                  <p className="text-xs text-gray-400 mb-2">{dist.device_count || dist.device_ids?.length || 0} devices</p>
                   <div className="flex gap-2">
                     <button className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200">
                       <CheckCircle className="w-3 h-3" /> Approve
@@ -151,7 +185,7 @@ const SubDistributorDashboard = () => {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-800">{op.name}</p>
-                    <p className="text-xs text-gray-500">{op.assignedDevices} devices</p>
+                    <p className="text-xs text-gray-500">{op.email}</p>
                   </div>
                 </div>
                 <StatusBadge status={op.status} size="sm" />
@@ -177,11 +211,11 @@ const SubDistributorDashboard = () => {
               <div key={defect.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800">{defect.device.model}</p>
+                    <p className="text-sm font-medium text-gray-800">{defect.device_name || defect.device_type || 'Unknown'}</p>
                     <StatusBadge status={defect.severity} size="sm" />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">{defect.defectType}</p>
-                  <p className="text-xs text-gray-400">Reported by: {defect.reportedBy}</p>
+                  <p className="text-xs text-gray-500 mt-1">{defect.defect_type}</p>
+                  <p className="text-xs text-gray-400">Reported by: {defect.reported_by_name || 'Unknown'}</p>
                 </div>
                 <StatusBadge status={defect.status} />
               </div>
@@ -203,9 +237,9 @@ const SubDistributorDashboard = () => {
             {returnRequests.filter(r => r.currentApprover === 'sub-distributor').slice(0, 3).map((ret) => (
               <div key={ret.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{ret.device.model}</p>
+                  <p className="text-sm font-medium text-gray-800">{ret.device_name || ret.device_type || 'Unknown'}</p>
                   <p className="text-xs text-gray-500">{ret.reason}</p>
-                  <p className="text-xs text-gray-400 mt-1">By: {ret.initiatedBy}</p>
+                  <p className="text-xs text-gray-400 mt-1">By: {ret.initiated_by_name || 'Unknown'}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={ret.status} />

@@ -29,80 +29,155 @@ const RegisterDevice = () => {
   // Initialize camera scanner
   useEffect(() => {
     if (showCameraScanner && !html5QrCodeRef.current) {
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-        disableFlip: false,
-      };
+      console.log('[RegisterDevice] Initializing camera scanner');
+      try {
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          disableFlip: false,
+          // Suppress error logging from the library
+          verbose: false,
+        };
 
-      const scanner = new Html5QrcodeScanner('qr-reader', config, false);
-      html5QrCodeRef.current = scanner;
-      scanner.render(onScanSuccess, onScanError);
+        const scanner = new Html5QrcodeScanner('qr-reader', config, false);
+        html5QrCodeRef.current = scanner;
+        scanner.render(onScanSuccess, onScanError);
+        console.log('[RegisterDevice] Camera scanner initialized successfully');
+      } catch (error) {
+        console.error('[RegisterDevice] Failed to initialize scanner:', error);
+        showToast('Failed to initialize camera scanner', 'error');
+        setShowCameraScanner(false);
+      }
     }
 
     return () => {
       if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.clear().catch(err => console.error('Failed to clear scanner', err));
+        console.log('[RegisterDevice] Cleaning up camera scanner');
+        html5QrCodeRef.current.clear().catch(err => {
+          console.error('[RegisterDevice] Failed to clear scanner on cleanup:', err);
+        });
         html5QrCodeRef.current = null;
       }
     };
   }, [showCameraScanner]);
 
   const onScanSuccess = (decodedText, decodedResult) => {
-    console.log('Scanned:', decodedText);
+    console.log('[RegisterDevice] Barcode/QR scan successful');
+    console.log('[RegisterDevice] Scanned text:', decodedText);
+    console.log('[RegisterDevice] Decoded result:', decodedResult);
     
-    // Parse the scanned text for device info
-    const text = decodedText.toUpperCase();
-    
-    // Try to extract MAC address (various formats)
-    const macMatch = text.match(/([0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2})/);
-    if (macMatch) {
-      const mac = macMatch[1].replace(/[:\-]/g, '');
-      const formattedMac = mac.match(/.{2}/g)?.join(':') || mac;
-      setFormData(prev => ({ ...prev, macAddress: formattedMac }));
+    try {
+      // Parse the scanned text for device info
+      const text = decodedText.toUpperCase();
+      
+      // Try to extract MAC address (various formats)
+      const macMatch = text.match(/([0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2}[:\-]?[0-9A-F]{2})/);
+      if (macMatch) {
+        const mac = macMatch[1].replace(/[:\-]/g, '');
+        const formattedMac = mac.match(/.{2}/g)?.join(':') || mac;
+        console.log('[RegisterDevice] Extracted MAC address:', formattedMac);
+        setFormData(prev => ({ ...prev, macAddress: formattedMac }));
+      }
+      
+      // Try to extract serial number
+      const snMatch = text.match(/S\/?N[:\s]*([A-Z0-9\-]+)/i);
+      if (snMatch) {
+        console.log('[RegisterDevice] Extracted serial number:', snMatch[1]);
+        setFormData(prev => ({ ...prev, serialNumber: snMatch[1] }));
+      }
+      
+      // Try to extract model
+      const modelMatch = text.match(/MODEL[:\s]*([A-Z0-9\-]+)/i);
+      if (modelMatch) {
+        console.log('[RegisterDevice] Extracted model:', modelMatch[1]);
+        setFormData(prev => ({ ...prev, model: modelMatch[1] }));
+      }
+      
+      // If no patterns matched, just put the scanned text in serial number
+      if (!macMatch && !snMatch && !modelMatch) {
+        console.log('[RegisterDevice] No patterns matched, using text as serial number');
+        setFormData(prev => ({ ...prev, serialNumber: decodedText }));
+      }
+      
+      showToast('Device scanned successfully!', 'success');
+      closeCameraScanner();
+    } catch (error) {
+      console.error('[RegisterDevice] Error parsing scanned data:', error);
+      showToast('Scanned but failed to parse data. Please enter manually.', 'warning');
+      closeCameraScanner();
     }
-    
-    // Try to extract serial number
-    const snMatch = text.match(/S\/?N[:\s]*([A-Z0-9\-]+)/i);
-    if (snMatch) {
-      setFormData(prev => ({ ...prev, serialNumber: snMatch[1] }));
-    }
-    
-    // Try to extract model
-    const modelMatch = text.match(/MODEL[:\s]*([A-Z0-9\-]+)/i);
-    if (modelMatch) {
-      setFormData(prev => ({ ...prev, model: modelMatch[1] }));
-    }
-    
-    showToast('Device scanned successfully!', 'success');
-    closeCameraScanner();
   };
 
-  const onScanError = (errorMessage) => {
-    // Ignore errors during scanning - they're normal when no code is detected
+  const onScanError = (error) => {
+    // The html5-qrcode library passes various types of errors
+    // Convert to string safely for checking
+    let errorString = '';
+    try {
+      if (error === null || error === undefined) {
+        return; // Ignore null/undefined errors
+      }
+      if (typeof error === 'string') {
+        errorString = error;
+      } else if (error instanceof Error) {
+        errorString = error.message || error.toString();
+      } else if (typeof error === 'object') {
+        errorString = JSON.stringify(error);
+      } else {
+        errorString = String(error);
+      }
+    } catch (e) {
+      // If we can't convert the error, just ignore it
+      return;
+    }
+    
+    // Suppress common scanning errors that occur during normal operation
+    // These errors are expected when no code is detected in the current frame
+    if (errorString.includes('NotFoundException') || 
+        errorString.includes('No MultiFormat Readers') ||
+        errorString.includes('QR code parse error') ||
+        errorString.includes('No barcode or QR code detected')) {
+      // Silently ignore - these are normal during scanning
+      return;
+    }
+    
+    // Only log unexpected/critical errors
+    console.warn('[RegisterDevice] Scanner error:', errorString);
   };
 
   const openCameraScanner = () => {
+    console.log('[RegisterDevice] Opening camera scanner');
     setShowCameraScanner(true);
   };
 
   const closeCameraScanner = () => {
-    if (html5QrCodeRef.current) {
-      html5QrCodeRef.current.clear().catch(err => console.error('Failed to clear scanner', err));
-      html5QrCodeRef.current = null;
+    console.log('[RegisterDevice] Closing camera scanner');
+    try {
+      if (html5QrCodeRef.current) {
+        html5QrCodeRef.current.clear().catch(err => {
+          console.error('[RegisterDevice] Failed to clear scanner:', err);
+        });
+        html5QrCodeRef.current = null;
+      }
+      setShowCameraScanner(false);
+    } catch (error) {
+      console.error('[RegisterDevice] Error closing scanner:', error);
+      setShowCameraScanner(false);
     }
-    setShowCameraScanner(false);
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    console.log('[RegisterDevice] Form field changed:', name, '=', value);
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
+    console.log('[RegisterDevice] Submitting device registration');
+    console.log('[RegisterDevice] Form data:', formData);
     
     try {
       const deviceData = {
@@ -119,10 +194,18 @@ const RegisterDevice = () => {
         }
       };
 
-      await devicesAPI.createDevice(deviceData);
+      console.log('[RegisterDevice] Sending device data to API:', deviceData);
+      const response = await devicesAPI.createDevice(deviceData);
+      console.log('[RegisterDevice] Device registered successfully:', response);
+      
       showToast('Device registered successfully!', 'success');
       navigate('/devices');
     } catch (error) {
+      console.error('[RegisterDevice] Failed to register device:', error);
+      console.error('[RegisterDevice] Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
       showToast(error.message || 'Failed to register device', 'error');
     } finally {
       setLoading(false);
