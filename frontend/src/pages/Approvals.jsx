@@ -56,8 +56,8 @@ const Approvals = () => {
             id: d._id || d.id,
             type: 'distribution',
             icon: Package,
-            title: `Distribution to ${d.to_name || 'Unknown'}`,
-            requestedBy: d.from_name || 'Unknown',
+            title: `Distribution to ${d.to_user_name || 'Unknown'}`,
+            requestedBy: d.from_user_name || 'Unknown',
             requestDate: d.created_at,
             status: d.status
           });

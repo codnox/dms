@@ -129,10 +129,10 @@ const DistributorDashboard = () => {
               pendingApprovals.slice(0, 4).map((dist) => (
                 <div key={dist.id} className="p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-800">{dist.batch_id}</p>
+                    <p className="text-sm font-medium text-gray-800">{dist.distribution_id}</p>
                     <StatusBadge status={dist.status} size="sm" />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">To: {dist.to_name}</p>
+                  <p className="text-xs text-gray-500 mt-1">To: {dist.to_user_name}</p>
                   <p className="text-xs text-gray-400">{dist.device_count || dist.device_ids?.length || 0} devices</p>
                 </div>
               ))

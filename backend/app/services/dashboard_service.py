@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
+from datetime import timedelta
 
 from app.database import get_database
 from app.services import device_service, distribution_service, defect_service, return_service, user_service, approval_service, operator_service
@@ -23,7 +24,62 @@ async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
         user_stats = await user_service.get_user_stats()
         approval_stats = await approval_service.get_approval_stats()
         
+        # Calculate this month's distributions
+        now = datetime.utcnow()
+        month_start = datetime(now.year, now.month, 1)
+        distributions_this_month = await db.distributions.count_documents({
+            "created_at": {"$gte": month_start}
+        })
+        
+        # Flatten stats for easy frontend access
         stats = {
+            # Device stats (flattened)
+            "total_devices": device_stats.get("total", 0),
+            "available_devices": device_stats.get("available", 0),
+            "distributed_devices": device_stats.get("distributed", 0),
+            "in_use_devices": device_stats.get("in_use", 0),
+            "defective_devices": device_stats.get("defective", 0),
+            "returned_devices": device_stats.get("returned", 0),
+            # Active devices = available + distributed + in_use (not defective or returned)
+            "active_devices": (
+                device_stats.get("available", 0) + 
+                device_stats.get("distributed", 0) + 
+                device_stats.get("in_use", 0)
+            ),
+            
+            # Distribution stats (flattened)
+            "total_distributions": dist_stats.get("total", 0),
+            "pending_distributions": dist_stats.get("pending", 0),
+            "approved_distributions": dist_stats.get("approved", 0),
+            "delivered_distributions": dist_stats.get("delivered", 0),
+            "rejected_distributions": dist_stats.get("rejected", 0),
+            "distribution_this_month": distributions_this_month,
+            
+            # Defect stats (flattened)
+            "total_defects": defect_stats.get("total", 0),
+            "defect_reports": defect_stats.get("total", 0),  # Alias for compatibility
+            "reported_defects": defect_stats.get("by_status", {}).get("reported", 0),
+            "under_review_defects": defect_stats.get("by_status", {}).get("under_review", 0),
+            "resolved_defects": defect_stats.get("by_status", {}).get("resolved", 0),
+            
+            # Return stats (flattened)
+            "total_returns": return_stats.get("total", 0),
+            "return_requests": return_stats.get("total", 0),  # Alias for compatibility
+            "pending_returns": return_stats.get("by_status", {}).get("pending", 0),
+            "approved_returns": return_stats.get("by_status", {}).get("approved", 0),
+            "received_returns": return_stats.get("by_status", {}).get("received", 0),
+            "rejected_returns": return_stats.get("by_status", {}).get("rejected", 0),
+            
+            # User stats (flattened)
+            "total_users": user_stats.get("total", 0),
+            "active_users": user_stats.get("active", 0),
+            
+            # Approval stats (flattened)
+            "pending_approvals": approval_stats.get("total_pending", 0),
+            "total_approved": approval_stats.get("approved", 0),
+            "total_rejected": approval_stats.get("rejected", 0),
+            
+            # Also include nested objects for detailed breakdowns if needed
             "devices": device_stats,
             "distributions": dist_stats,
             "defects": defect_stats,

@@ -5,7 +5,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
-import { distributionsAPI } from '../services/api';
+import { distributionsAPI, devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { Plus, Eye, Truck, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
@@ -19,6 +19,8 @@ const Distributions = () => {
   const [showModal, setShowModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
+  const [distributionDevices, setDistributionDevices] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
 
   const fetchDistributions = async () => {
     try {
@@ -33,17 +35,43 @@ const Distributions = () => {
     }
   };
 
+  const fetchDistributionDevices = async (deviceIds) => {
+    if (!deviceIds || deviceIds.length === 0) {
+      setDistributionDevices([]);
+      return;
+    }
+    
+    try {
+      setLoadingDevices(true);
+      const devicePromises = deviceIds.map(id => devicesAPI.getDevice(id));
+      const responses = await Promise.all(devicePromises);
+      const devices = responses.map(res => res.data).filter(Boolean);
+      setDistributionDevices(devices);
+    } catch (error) {
+      console.error('Failed to fetch distribution devices:', error);
+      setDistributionDevices([]);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
   useEffect(() => {
     fetchDistributions();
   }, []);
+
+  useEffect(() => {
+    if (showModal && selectedDist) {
+      fetchDistributionDevices(selectedDist.device_ids);
+    }
+  }, [showModal, selectedDist]);
 
   const canCreate = ['admin', 'distributor', 'sub-distributor'].includes(user?.role);
   const canApprove = ['sub-distributor', 'operator'].includes(user?.role);
 
   const columns = [
-    { key: 'batch_id', label: 'Batch ID' },
-    { key: 'from_name', label: 'From' },
-    { key: 'to_name', label: 'To' },
+    { key: 'distribution_id', label: 'Distribution ID' },
+    { key: 'from_user_name', label: 'From' },
+    { key: 'to_user_name', label: 'To' },
     { key: 'device_count', label: 'Devices', render: (value, row) => value || row.device_ids?.length || 0 },
     {
       key: 'status',
@@ -207,6 +235,7 @@ const Distributions = () => {
         onClose={() => {
           setShowModal(false);
           setSelectedDist(null);
+          setDistributionDevices([]);
         }}
         title="Distribution Details"
         size="lg"
@@ -231,8 +260,8 @@ const Distributions = () => {
                 <Truck className="w-8 h-8 text-blue-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-800">{selectedDist.batch_id}</h3>
-                <p className="text-gray-500">{selectedDist.from_name} → {selectedDist.to_name}</p>
+                <h3 className="text-lg font-semibold text-gray-800">{selectedDist.distribution_id}</h3>
+                <p className="text-gray-500">{selectedDist.from_user_name} → {selectedDist.to_user_name}</p>
                 <StatusBadge status={selectedDist.status} />
               </div>
             </div>
@@ -267,7 +296,33 @@ const Distributions = () => {
               </div>
             )}
 
-
+            {/* Devices List */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Devices</label>
+              {loadingDevices ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                  <span className="ml-2 text-gray-500">Loading devices...</span>
+                </div>
+              ) : distributionDevices.length > 0 ? (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {distributionDevices.map((device, index) => (
+                    <div key={device._id || device.id || index} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
+                          <p className="text-sm text-gray-500 font-mono">{device.serial_number}</p>
+                          <p className="text-xs text-gray-400">{device.mac_address}</p>
+                        </div>
+                        <StatusBadge status={device.status} size="sm" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm py-2">No device details available</p>
+              )}
+            </div>
           </div>
         )}
       </Modal>
@@ -296,7 +351,7 @@ const Distributions = () => {
       >
         <div className="space-y-4">
           <p className="text-gray-600">
-            You are about to approve distribution <span className="font-medium">{selectedDist?.batch_id}</span> with {selectedDist?.device_count || selectedDist?.device_ids?.length || 0} devices.
+            You are about to approve distribution <span className="font-medium">{selectedDist?.distribution_id}</span> with {selectedDist?.device_count || selectedDist?.device_ids?.length || 0} devices.
           </p>
           
           <div>
