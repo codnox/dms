@@ -7,6 +7,25 @@ from app.middleware.auth_middleware import get_current_user, require_admin_or_ma
 router = APIRouter()
 
 
+@router.post("/sync-devices")
+async def sync_distribution_devices(
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Sync device holders for all approved distributions (admin fix endpoint)"""
+    try:
+        result = await distribution_service.sync_approved_distributions(user=current_user)
+        return {
+            "success": True,
+            "message": f"Synced {result['devices_synced']} device(s) from {result['total_distributions']} approved distribution(s)",
+            "data": result
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @router.get("")
 async def get_distributions(
     page: int = Query(1, ge=1),

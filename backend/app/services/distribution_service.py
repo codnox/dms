@@ -191,6 +191,22 @@ async def update_distribution_status(
                 }
             }
         )
+        
+        # Update device holders when approved
+        for device_id in distribution["device_ids"]:
+            await device_service.update_device_holder(
+                device_id=device_id,
+                holder_id=distribution["to_user_id"],
+                holder_name=distribution["to_user_name"],
+                holder_type=distribution["to_user_type"],
+                location=distribution["to_user_name"],
+                status=DeviceStatus.DISTRIBUTED.value,
+                performed_by=str(user["_id"]),
+                performed_by_name=user["name"],
+                from_user_id=distribution["from_user_id"],
+                from_user_name=distribution["from_user_name"],
+                notes=f"Distributed via {distribution['distribution_id']}"
+            )
     
     elif status == DistributionStatus.DELIVERED.value:
         update_data["delivery_date"] = datetime.utcnow()
@@ -309,4 +325,48 @@ async def get_distribution_stats() -> Dict[str, int]:
         "approved": approved,
         "delivered": delivered,
         "rejected": rejected
+    }
+
+
+async def sync_approved_distributions(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-process all approved distributions to sync device holders.
+    This fixes devices that weren't updated when distributions were approved
+    before the device-update code was in place."""
+    db = get_database()
+    
+    # Find all approved distributions
+    cursor = db.distributions.find({"status": DistributionStatus.APPROVED.value})
+    distributions = await cursor.to_list(length=500)
+    
+    synced_count = 0
+    errors = []
+    
+    for dist in distributions:
+        for device_id in dist.get("device_ids", []):
+            try:
+                # Check if device is still showing wrong holder
+                device = await db.devices.find_one({"_id": ObjectId(device_id)})
+                if device and (device.get("status") != DeviceStatus.DISTRIBUTED.value or 
+                              device.get("current_holder_id") != dist["to_user_id"]):
+                    await device_service.update_device_holder(
+                        device_id=device_id,
+                        holder_id=dist["to_user_id"],
+                        holder_name=dist["to_user_name"],
+                        holder_type=dist.get("to_user_type", "distributor"),
+                        location=dist["to_user_name"],
+                        status=DeviceStatus.DISTRIBUTED.value,
+                        performed_by=str(user.get("id", user.get("_id", "system"))),
+                        performed_by_name=user.get("name", "System"),
+                        from_user_id=dist.get("from_user_id"),
+                        from_user_name=dist.get("from_user_name"),
+                        notes=f"Synced from approved distribution {dist.get('distribution_id', '')}"
+                    )
+                    synced_count += 1
+            except Exception as e:
+                errors.append(f"Device {device_id}: {str(e)}")
+    
+    return {
+        "total_distributions": len(distributions),
+        "devices_synced": synced_count,
+        "errors": errors
     }

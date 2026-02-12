@@ -145,10 +145,10 @@ const SubDistributorDashboard = () => {
               pendingDistributions.map((dist) => (
                 <div key={dist.id} className="p-3 bg-yellow-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-gray-800">{dist.batch_id}</p>
+                    <p className="text-sm font-medium text-gray-800">{dist.distribution_id}</p>
                     <StatusBadge status={dist.status} size="sm" />
                   </div>
-                  <p className="text-xs text-gray-500">From: {dist.from_name}</p>
+                  <p className="text-xs text-gray-500">From: {dist.from_user_name}</p>
                   <p className="text-xs text-gray-400 mb-2">{dist.device_count || dist.device_ids?.length || 0} devices</p>
                   <div className="flex gap-2">
                     <button className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200">

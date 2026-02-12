@@ -73,8 +73,8 @@ const ManagerDashboard = () => {
             {distributions.slice(0, 5).map((dist) => (
               <div key={dist.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{dist.batch_id}</p>
-                  <p className="text-xs text-gray-500">{dist.from_name} → {dist.to_name}</p>
+                  <p className="text-sm font-medium text-gray-800">{dist.distribution_id}</p>
+                  <p className="text-xs text-gray-500">{dist.from_user_name} → {dist.to_user_name}</p>
                   <p className="text-xs text-gray-400 mt-1">{dist.device_count || dist.device_ids?.length || 0} devices</p>
                 </div>
                 <StatusBadge status={dist.status} />

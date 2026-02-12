@@ -6,6 +6,7 @@ from app.database import get_database
 from app.models.user import UserInDB, UserRole
 from app.models.auth import TokenData
 from app.utils.security import verify_password, get_password_hash, create_access_token, decode_token
+from app.utils.helpers import serialize_doc
 from app.config import settings
 
 
@@ -69,9 +70,12 @@ async def get_current_user_from_token(token: str) -> Optional[dict]:
     if user is None:
         return None
     
+    # Serialize document (converts ObjectId/datetime to strings)
+    user = serialize_doc(user)
+    
     # Don't return password hash
-    user["id"] = str(user["_id"])
-    del user["password_hash"]
+    if "password_hash" in user:
+        del user["password_hash"]
     
     return user
 
