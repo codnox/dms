@@ -79,3 +79,11 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+
+@app.post("/reset-and-seed", tags=["Seed"])
+async def reset_and_seed_endpoint():
+    """Reset database and seed with fresh user accounts"""
+    from app.services.seed_service import reset_and_seed
+    result = await reset_and_seed()
+    return {"success": True, **result}
+

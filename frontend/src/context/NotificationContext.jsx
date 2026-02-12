@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import api from '../services/api';
+import { notificationsAPI } from '../services/api';
 
 const NotificationContext = createContext(null);
 
@@ -11,9 +11,12 @@ export const NotificationProvider = ({ children }) => {
   const fetchLatestNotifications = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/notifications/latest?limit=5');
-      if (response.data.success) {
-        const formattedNotifications = response.data.data.map(notif => ({
+      console.log('[NotificationContext] Fetching latest notifications...');
+      const response = await notificationsAPI.getLatestNotifications(5);
+      console.log('[NotificationContext] Response:', response);
+      
+      if (response.success) {
+        const formattedNotifications = response.data.map(notif => ({
           id: notif.id,
           title: notif.title,
           message: notif.message,
@@ -24,9 +27,14 @@ export const NotificationProvider = ({ children }) => {
           category: notif.category
         }));
         setNotifications(formattedNotifications);
+        console.log('[NotificationContext] Successfully loaded', formattedNotifications.length, 'notifications');
       }
     } catch (error) {
-      console.error('Failed to fetch notifications:', error);
+      console.error('[NotificationContext] Failed to fetch notifications:', error);
+      console.error('[NotificationContext] Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
       // Don't show error toast on initial load, just use empty array
       setNotifications([]);
     } finally {
@@ -46,30 +54,48 @@ export const NotificationProvider = ({ children }) => {
 
   const markAsRead = useCallback(async (id) => {
     try {
-      await api.patch(`/notifications/${id}/read`);
+      console.log('[NotificationContext] Marking notification as read:', id);
+      await notificationsAPI.markAsRead(id);
       setNotifications(prev =>
         prev.map(n => (n.id === id ? { ...n, read: true } : n))
       );
+      console.log('[NotificationContext] Successfully marked notification as read');
     } catch (error) {
-      console.error('Failed to mark notification as read:', error);
+      console.error('[NotificationContext] Failed to mark notification as read:', error);
+      console.error('[NotificationContext] Error details:', {
+        message: error.message,
+        notificationId: id
+      });
     }
   }, []);
 
   const markAllAsRead = useCallback(async () => {
     try {
-      await api.patch('/notifications/read-all');
+      console.log('[NotificationContext] Marking all notifications as read');
+      await notificationsAPI.markAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      console.log('[NotificationContext] Successfully marked all notifications as read');
     } catch (error) {
-      console.error('Failed to mark all notifications as read:', error);
+      console.error('[NotificationContext] Failed to mark all notifications as read:', error);
+      console.error('[NotificationContext] Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
     }
   }, []);
 
   const removeNotification = useCallback(async (id) => {
     try {
-      await api.delete(`/notifications/${id}`);
+      console.log('[NotificationContext] Removing notification:', id);
+      await notificationsAPI.deleteNotification(id);
       setNotifications(prev => prev.filter(n => n.id !== id));
+      console.log('[NotificationContext] Successfully removed notification');
     } catch (error) {
-      console.error('Failed to remove notification:', error);
+      console.error('[NotificationContext] Failed to remove notification:', error);
+      console.error('[NotificationContext] Error details:', {
+        message: error.message,
+        notificationId: id
+      });
     }
   }, []);
 

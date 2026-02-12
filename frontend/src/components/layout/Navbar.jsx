@@ -30,7 +30,14 @@ const Navbar = ({ onMenuClick }) => {
   // Fetch notifications when user is logged in
   useEffect(() => {
     if (user) {
-      fetchLatestNotifications();
+      console.log('[Navbar] User logged in, fetching notifications');
+      try {
+        fetchLatestNotifications();
+      } catch (error) {
+        console.error('[Navbar] Error fetching notifications:', error);
+      }
+    } else {
+      console.log('[Navbar] No user logged in, skipping notification fetch');
     }
   }, [user]);
 
@@ -49,6 +56,7 @@ const Navbar = ({ onMenuClick }) => {
   }, []);
 
   const handleLogout = () => {
+    console.log('[Navbar] User logging out');
     logout();
     navigate('/login');
   };
@@ -56,6 +64,7 @@ const Navbar = ({ onMenuClick }) => {
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      console.log('[Navbar] Searching for device:', searchQuery);
       navigate(`/track-device?q=${encodeURIComponent(searchQuery)}`);
       setSearchQuery('');
     }
@@ -66,6 +75,29 @@ const Navbar = ({ onMenuClick }) => {
       case 'error': return <AlertTriangle className="w-4 h-4 text-red-500" />;
       case 'warning': return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
       default: return <Info className="w-4 h-4 text-blue-500" />;
+    }
+  };
+
+  const handleNotificationClick = (notif) => {
+    console.log('[Navbar] Notification clicked:', notif.id);
+    try {
+      markAsRead(notif.id);
+      if (notif.link) {
+        console.log('[Navbar] Navigating to:', notif.link);
+        navigate(notif.link);
+        setShowNotifications(false);
+      }
+    } catch (error) {
+      console.error('[Navbar] Error handling notification click:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    console.log('[Navbar] Marking all notifications as read');
+    try {
+      await markAllAsRead();
+    } catch (error) {
+      console.error('[Navbar] Error marking all as read:', error);
     }
   };
 
@@ -118,7 +150,7 @@ const Navbar = ({ onMenuClick }) => {
                   <h3 className="font-semibold text-gray-800">Notifications</h3>
                   {unreadCount > 0 && (
                     <button
-                      onClick={markAllAsRead}
+                      onClick={handleMarkAllAsRead}
                       className="text-sm text-blue-600 hover:text-blue-700"
                     >
                       Mark all read
@@ -134,7 +166,7 @@ const Navbar = ({ onMenuClick }) => {
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        onClick={() => markAsRead(notif.id)}
+                        onClick={() => handleNotificationClick(notif)}
                         className={`p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 ${
                           !notif.read ? 'bg-blue-50' : ''
                         }`}

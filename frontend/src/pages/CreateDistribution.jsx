@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { devices, subDistributors, operators } from '../data/mockData';
-import { Truck, Save, X, Plus, Trash2, Search, ShieldAlert } from 'lucide-react';
+import { devicesAPI, usersAPI, distributionsAPI } from '../services/api';
+import { Truck, Save, X, Plus, Trash2, Search, ShieldAlert, Loader2 } from 'lucide-react';
 
 const CreateDistribution = () => {
   const { user, hasRole } = useAuth();
@@ -15,6 +15,9 @@ const CreateDistribution = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDevices, setSelectedDevices] = useState([]);
+  const [availableDevices, setAvailableDevices] = useState([]);
+  const [recipients, setRecipients] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [formData, setFormData] = useState({
     toDistributor: '',
     notes: ''
@@ -22,6 +25,28 @@ const CreateDistribution = () => {
 
   // Only admin and manager can create distributions
   const canCreateDistribution = hasRole(['admin', 'manager']);
+  
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoadingData(true);
+        const [devicesRes, usersRes] = await Promise.all([
+          devicesAPI.getAvailableDevices().catch(() => ({ data: [] })),
+          usersAPI.getUsers().catch(() => ({ data: [] }))
+        ]);
+        setAvailableDevices(devicesRes.data || []);
+        const allUsers = usersRes.data || [];
+        setRecipients(allUsers.filter(u => 
+          ['sub-distributor', 'operator', 'distributor'].includes(u.role) && u.status === 'active'
+        ));
+      } catch (error) {
+        console.error('Failed to load data:', error);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    if (canCreateDistribution) fetchData();
+  }, [canCreateDistribution]);
   
   if (!canCreateDistribution) {
     return (
@@ -36,28 +61,20 @@ const CreateDistribution = () => {
     );
   }
   
-  // Filter available devices based on role
-  const availableDevices = devices.filter(d => {
-    return d.currentLocation === 'main-distribution' && d.status !== 'defective';
-  });
-
   const filteredDevices = availableDevices.filter(d => 
-    d.macAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    d.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    d.serialNumber.toLowerCase().includes(searchQuery.toLowerCase())
+    (d.mac_address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (d.model || d.device_type || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (d.serial_number || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Recipients - distributors and sub-distributors
-  const recipients = [...subDistributors, ...operators];
-
   const handleAddDevice = (device) => {
-    if (!selectedDevices.find(d => d.id === device.id)) {
+    if (!selectedDevices.find(d => (d._id || d.id) === (device._id || device.id))) {
       setSelectedDevices(prev => [...prev, device]);
     }
   };
 
   const handleRemoveDevice = (deviceId) => {
-    setSelectedDevices(prev => prev.filter(d => d.id !== deviceId));
+    setSelectedDevices(prev => prev.filter(d => (d._id || d.id) !== deviceId));
   };
 
   const handleSubmit = async (e) => {
@@ -74,11 +91,19 @@ const CreateDistribution = () => {
     }
 
     setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    showToast('Distribution created successfully!', 'success');
-    navigate('/distributions');
-    setLoading(false);
+    try {
+      await distributionsAPI.createDistribution({
+        device_ids: selectedDevices.map(d => d._id || d.id),
+        to_user_id: formData.toDistributor,
+        notes: formData.notes
+      });
+      showToast('Distribution created successfully!', 'success');
+      navigate('/distributions');
+    } catch (error) {
+      showToast(error.message || 'Failed to create distribution', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -109,20 +134,20 @@ const CreateDistribution = () => {
                 ) : (
                   filteredDevices.map(device => (
                     <div 
-                      key={device.id} 
+                      key={device._id || device.id} 
                       className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedDevices.find(d => d.id === device.id)
+                        selectedDevices.find(d => (d._id || d.id) === (device._id || device.id))
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-blue-300'
                       }`}
                       onClick={() => handleAddDevice(device)}
                     >
                       <div>
-                        <p className="font-medium text-gray-800">{device.model}</p>
-                        <p className="text-sm text-gray-500">{device.macAddress}</p>
+                        <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
+                        <p className="text-sm text-gray-500">{device.mac_address}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <StatusBadge status={device.condition} size="sm" />
+                        <StatusBadge status={device.status} size="sm" />
                         <button
                           type="button"
                           onClick={(e) => {
@@ -152,16 +177,16 @@ const CreateDistribution = () => {
                 ) : (
                   selectedDevices.map(device => (
                     <div 
-                      key={device.id} 
+                      key={device._id || device.id} 
                       className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg"
                     >
                       <div>
-                        <p className="font-medium text-gray-800">{device.model}</p>
-                        <p className="text-sm text-gray-500">{device.macAddress}</p>
+                        <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
+                        <p className="text-sm text-gray-500">{device.mac_address}</p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleRemoveDevice(device.id)}
+                        onClick={() => handleRemoveDevice(device._id || device.id)}
                         className="p-1 text-red-600 hover:bg-red-100 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -188,9 +213,9 @@ const CreateDistribution = () => {
                 required
               >
                 <option value="">Select recipient...</option>
-                {recipients.filter(r => r.status === 'active').map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} {r.location ? `(${r.location})` : ''}
+                {recipients.map(r => (
+                  <option key={r._id || r.id} value={r._id || r.id}>
+                    {r.name} ({r.role})
                   </option>
                 ))}
               </select>

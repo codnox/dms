@@ -1,45 +1,64 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
-import { defectReports } from '../data/mockData';
+import { defectsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, AlertTriangle, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
+import { Plus, Eye, AlertTriangle, CheckCircle, XCircle, MessageSquare, Loader2 } from 'lucide-react';
 
 const DefectReports = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
+  const [defectReports, setDefectReports] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedDefect, setSelectedDefect] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
+
+  const fetchDefects = async () => {
+    try {
+      setLoading(true);
+      const response = await defectsAPI.getDefects();
+      setDefectReports(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch defects:', error);
+      showToast('Failed to load defect reports', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDefects();
+  }, []);
 
   const canReport = ['operator', 'sub-distributor'].includes(user?.role);
   const canReview = ['distributor', 'sub-distributor', 'admin', 'manager'].includes(user?.role);
 
   const columns = [
     {
-      key: 'device',
+      key: 'device_name',
       label: 'Device',
-      render: (device) => (
+      render: (value, row) => (
         <div>
-          <p className="font-medium text-gray-800">{device.model}</p>
-          <p className="text-xs text-gray-500">{device.macAddress}</p>
+          <p className="font-medium text-gray-800">{value || row.device_type || 'Unknown'}</p>
+          <p className="text-xs text-gray-500">{row.serial_number || row.mac_address || ''}</p>
         </div>
       )
     },
-    { key: 'defectType', label: 'Type' },
+    { key: 'defect_type', label: 'Type' },
     {
       key: 'severity',
       label: 'Severity',
       render: (value) => <StatusBadge status={value} size="sm" />
     },
-    { key: 'reportedBy', label: 'Reported By' },
-    { key: 'reportedAt', label: 'Date' },
+    { key: 'reported_by_name', label: 'Reported By' },
+    { key: 'created_at', label: 'Date', render: (value) => value ? new Date(value).toLocaleDateString() : '-' },
     {
       key: 'status',
       label: 'Status',
@@ -78,10 +97,20 @@ const DefectReports = () => {
     }
   ];
 
-  const handleReview = (action) => {
-    showToast(`Defect report ${action}`, action === 'approved' ? 'success' : 'warning');
-    setShowReviewModal(false);
-    setReviewComment('');
+  const handleReview = async (action) => {
+    try {
+      await defectsAPI.updateDefectStatus(
+        selectedDefect._id || selectedDefect.id,
+        action,
+        reviewComment
+      );
+      showToast(`Defect report ${action}`, action === 'approved' ? 'success' : 'warning');
+      setShowReviewModal(false);
+      setReviewComment('');
+      fetchDefects();
+    } catch (error) {
+      showToast('Failed to update defect report', 'error');
+    }
   };
 
   return (
@@ -130,14 +159,21 @@ const DefectReports = () => {
         </Card>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={defectReports}
-        onRowClick={(row) => {
-          setSelectedDefect(row);
-          setShowModal(true);
-        }}
-      />
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-500">Loading defect reports...</span>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={defectReports}
+          onRowClick={(row) => {
+            setSelectedDefect(row);
+            setShowModal(true);
+          }}
+        />
+      )}
 
       {/* View Defect Modal */}
       <Modal
@@ -169,8 +205,8 @@ const DefectReports = () => {
                 <AlertTriangle className="w-8 h-8 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-800">{selectedDefect.device.model}</h3>
-                <p className="text-gray-500">{selectedDefect.device.macAddress}</p>
+                <h3 className="text-lg font-semibold text-gray-800">{selectedDefect.device_name || selectedDefect.device_type || 'Unknown'}</h3>
+                <p className="text-gray-500">{selectedDefect.serial_number || selectedDefect.mac_address || ''}</p>
                 <div className="flex gap-2 mt-2">
                   <StatusBadge status={selectedDefect.severity} />
                   <StatusBadge status={selectedDefect.status} />
@@ -181,19 +217,19 @@ const DefectReports = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Defect Type</label>
-                <p className="font-medium text-gray-800">{selectedDefect.defectType}</p>
+                <p className="font-medium text-gray-800">{selectedDefect.defect_type}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Reported By</label>
-                <p className="font-medium text-gray-800">{selectedDefect.reportedBy}</p>
+                <p className="font-medium text-gray-800">{selectedDefect.reported_by_name || 'N/A'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Reported At</label>
-                <p className="font-medium text-gray-800">{selectedDefect.reportedAt}</p>
+                <p className="font-medium text-gray-800">{selectedDefect.created_at ? new Date(selectedDefect.created_at).toLocaleDateString() : 'N/A'}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Sub-Distributor</label>
-                <p className="font-medium text-gray-800">{selectedDefect.subDistributor}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Location</label>
+                <p className="font-medium text-gray-800">{selectedDefect.location || 'N/A'}</p>
               </div>
             </div>
 
@@ -202,7 +238,7 @@ const DefectReports = () => {
               <p className="text-gray-800 mt-1 p-3 bg-gray-50 rounded-lg">{selectedDefect.description}</p>
             </div>
 
-            {selectedDefect.photos.length > 0 && (
+            {selectedDefect.photos && selectedDefect.photos.length > 0 && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Photos</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -215,11 +251,11 @@ const DefectReports = () => {
               </div>
             )}
 
-            {selectedDefect.reviewComments && (
+            {selectedDefect.review_comments && (
               <div className="p-4 bg-blue-50 rounded-lg">
                 <label className="text-xs text-blue-600 uppercase tracking-wider">Review Comments</label>
-                <p className="text-gray-800 mt-1">{selectedDefect.reviewComments}</p>
-                <p className="text-xs text-gray-500 mt-2">By: {selectedDefect.reviewedBy}</p>
+                <p className="text-gray-800 mt-1">{selectedDefect.review_comments}</p>
+                <p className="text-xs text-gray-500 mt-2">By: {selectedDefect.reviewed_by_name || 'N/A'}</p>
               </div>
             )}
           </div>
@@ -245,8 +281,8 @@ const DefectReports = () => {
       >
         <div className="space-y-4">
           <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="font-medium text-gray-800">{selectedDefect?.device?.model}</p>
-            <p className="text-sm text-gray-500">{selectedDefect?.defectType} - {selectedDefect?.severity}</p>
+            <p className="font-medium text-gray-800">{selectedDefect?.device_name || selectedDefect?.device_type || 'Unknown'}</p>
+            <p className="text-sm text-gray-500">{selectedDefect?.defect_type} - {selectedDefect?.severity}</p>
           </div>
 
           <div>

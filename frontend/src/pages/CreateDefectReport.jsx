@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useNotifications } from '../context/NotificationContext';
-import { devices } from '../data/mockData';
-import { AlertTriangle, Save, X, Upload, Camera } from 'lucide-react';
+import { devicesAPI, defectsAPI } from '../services/api';
+import { AlertTriangle, Save, X, Upload, Camera, Loader2 } from 'lucide-react';
 
 const CreateDefectReport = () => {
   const navigate = useNavigate();
   const { showToast } = useNotifications();
   const [loading, setLoading] = useState(false);
+  const [myDevices, setMyDevices] = useState([]);
   const [formData, setFormData] = useState({
     deviceId: '',
     defectType: '',
@@ -19,10 +20,17 @@ const CreateDefectReport = () => {
     photos: []
   });
 
-  // Simulating devices assigned to the current operator
-  const myDevices = devices.filter(d => 
-    ['Tom Operator', 'Emma Wilson', 'Anna Smith', 'Sub Distributor Alpha'].includes(d.currentHolder)
-  );
+  useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const response = await devicesAPI.getDevices();
+        setMyDevices(response.data || []);
+      } catch (error) {
+        console.error('Failed to fetch devices:', error);
+      }
+    };
+    fetchDevices();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -49,14 +57,24 @@ const CreateDefectReport = () => {
     e.preventDefault();
     setLoading(true);
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    showToast('Defect report submitted successfully!', 'success');
-    navigate('/defects');
-    setLoading(false);
+    try {
+      await defectsAPI.createDefect({
+        device_id: formData.deviceId,
+        defect_type: formData.defectType,
+        severity: formData.severity,
+        description: formData.description,
+        photos: formData.photos
+      });
+      showToast('Defect report submitted successfully!', 'success');
+      navigate('/defects');
+    } catch (error) {
+      showToast(error.message || 'Failed to submit defect report', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const selectedDevice = myDevices.find(d => d.id === formData.deviceId);
+  const selectedDevice = myDevices.find(d => (d._id || d.id) === formData.deviceId);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -81,8 +99,8 @@ const CreateDefectReport = () => {
             >
               <option value="">Select a device...</option>
               {myDevices.map(device => (
-                <option key={device.id} value={device.id}>
-                  {device.model} - {device.macAddress}
+                <option key={device._id || device.id} value={device._id || device.id}>
+                  {device.model || device.device_type} - {device.mac_address}
                 </option>
               ))}
             </select>
@@ -96,9 +114,9 @@ const CreateDefectReport = () => {
                   <AlertTriangle className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-800">{selectedDevice.model}</p>
-                  <p className="text-sm text-gray-500">MAC: {selectedDevice.macAddress}</p>
-                  <p className="text-sm text-gray-500">SN: {selectedDevice.serialNumber}</p>
+                  <p className="font-medium text-gray-800">{selectedDevice.model || selectedDevice.device_type}</p>
+                  <p className="text-sm text-gray-500">MAC: {selectedDevice.mac_address}</p>
+                  <p className="text-sm text-gray-500">SN: {selectedDevice.serial_number}</p>
                 </div>
                 <div className="ml-auto">
                   <StatusBadge status={selectedDevice.status} />

@@ -1,36 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DataTable from '../components/ui/DataTable';
 import Card from '../components/ui/Card';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
-import { users as mockUsers, subDistributors, operators } from '../data/mockData';
+import { useNotifications } from '../context/NotificationContext';
+import { usersAPI } from '../services/api';
 import { 
   UserPlus, Edit, Trash2, Eye, Shield, Mail, Phone, 
-  Building, MapPin, Calendar, Users as UsersIcon 
+  Building, MapPin, Calendar, Users as UsersIcon, Loader2 
 } from 'lucide-react';
 
 const Users = () => {
   const { user: currentUser, hasRole } = useAuth();
-  const [users] = useState([...mockUsers, ...subDistributors.map(sd => ({
-    id: sd.id,
-    name: sd.name,
-    email: `${sd.id}@dms.com`,
-    role: 'sub-distributor',
-    status: 'active',
-    region: sd.region,
-    deviceCount: sd.deviceCount,
-    createdAt: '2024-01-15'
-  })), ...operators.map(op => ({
-    id: op.id,
-    name: op.name,
-    email: `${op.id}@dms.com`,
-    role: 'operator',
-    status: op.status,
-    assignedBy: op.assignedBy,
-    assignedDate: op.assignedDate
-  }))]);
+  const { showToast } = useNotifications();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   const [selectedUser, setSelectedUser] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -46,6 +32,23 @@ const Users = () => {
     region: '',
     status: 'active'
   });
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await usersAPI.getUsers();
+      setUsers(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+      showToast('Failed to load users', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const getRoleColor = (role) => {
     switch (role) {
@@ -96,9 +99,9 @@ const Users = () => {
       render: (value) => value || '-'
     },
     {
-      key: 'createdAt',
+      key: 'created_at',
       label: 'Joined',
-      render: (value, row) => value || row.assignedDate || '-'
+      render: (value) => value ? new Date(value).toLocaleDateString() : '-'
     },
     {
       key: 'actions',
@@ -149,33 +152,48 @@ const Users = () => {
     }
   ];
 
-  const handleAddUser = (e) => {
+  const handleAddUser = async (e) => {
     e.preventDefault();
-    // In a real app, this would call an API
-    console.log('Adding user:', formData);
-    setShowAddModal(false);
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      role: 'operator',
-      region: '',
-      status: 'active'
-    });
+    try {
+      await usersAPI.createUser(formData);
+      showToast('User created successfully', 'success');
+      setShowAddModal(false);
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        role: 'operator',
+        region: '',
+        status: 'active'
+      });
+      fetchUsers();
+    } catch (error) {
+      showToast(error.message || 'Failed to create user', 'error');
+    }
   };
 
-  const handleEditUser = (e) => {
+  const handleEditUser = async (e) => {
     e.preventDefault();
-    // In a real app, this would call an API
-    console.log('Editing user:', selectedUser.id, formData);
-    setShowEditModal(false);
+    try {
+      await usersAPI.updateUser(selectedUser._id || selectedUser.id, formData);
+      showToast('User updated successfully', 'success');
+      setShowEditModal(false);
+      fetchUsers();
+    } catch (error) {
+      showToast(error.message || 'Failed to update user', 'error');
+    }
   };
 
-  const handleDeleteUser = () => {
-    // In a real app, this would call an API
-    console.log('Deleting user:', selectedUser.id);
-    setShowDeleteModal(false);
-    setSelectedUser(null);
+  const handleDeleteUser = async () => {
+    try {
+      await usersAPI.deleteUser(selectedUser._id || selectedUser.id);
+      showToast('User deleted successfully', 'success');
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      fetchUsers();
+    } catch (error) {
+      showToast(error.message || 'Failed to delete user', 'error');
+    }
   };
 
   const stats = [
@@ -217,12 +235,19 @@ const Users = () => {
 
       {/* Users Table */}
       <Card>
-        <DataTable
-          columns={columns}
-          data={users}
-          searchable
-          searchPlaceholder="Search users..."
-        />
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <span className="ml-3 text-gray-500">Loading users...</span>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={users}
+            searchable
+            searchPlaceholder="Search users..."
+          />
+        )}
       </Card>
 
       {/* View Modal */}
@@ -274,7 +299,7 @@ const Users = () => {
                 <Calendar className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-500">Joined</p>
-                  <p className="font-medium text-gray-800">{selectedUser.createdAt || selectedUser.assignedDate || 'Unknown'}</p>
+                  <p className="font-medium text-gray-800">{selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleDateString() : 'Unknown'}</p>
                 </div>
               </div>
             </div>

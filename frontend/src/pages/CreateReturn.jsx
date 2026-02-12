@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useNotifications } from '../context/NotificationContext';
-import { devices, defectReports } from '../data/mockData';
+import { devicesAPI, defectsAPI, returnsAPI } from '../services/api';
 import { RotateCcw, Save, X, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 
 const CreateReturn = () => {
@@ -19,13 +19,27 @@ const CreateReturn = () => {
     notes: ''
   });
 
-  // Devices that can be returned
-  const returnableDevices = devices.filter(d => 
-    ['Tom Operator', 'Emma Wilson', 'Anna Smith', 'Sub Distributor Alpha'].includes(d.currentHolder)
-  );
+  const [returnableDevices, setReturnableDevices] = useState([]);
+  const [defectReports, setDefectReports] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [devicesRes, defectsRes] = await Promise.all([
+          devicesAPI.getDevices().catch(() => ({ data: [] })),
+          defectsAPI.getDefects().catch(() => ({ data: [] }))
+        ]);
+        setReturnableDevices(devicesRes.data || []);
+        setDefectReports(defectsRes.data || []);
+      } catch (error) {
+        console.error('Failed to load data:', error);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Related defect reports for selected device
-  const relatedDefects = defectReports.filter(d => d.deviceId === formData.deviceId);
+  const relatedDefects = defectReports.filter(d => d.device_id === formData.deviceId);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -36,14 +50,24 @@ const CreateReturn = () => {
     e.preventDefault();
     setLoading(true);
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    showToast('Return request submitted successfully!', 'success');
-    navigate('/returns');
-    setLoading(false);
+    try {
+      await returnsAPI.createReturn({
+        device_id: formData.deviceId,
+        reason: formData.reason,
+        defect_report_id: formData.defectReportId || undefined,
+        requested_action: formData.requestedAction,
+        notes: formData.notes
+      });
+      showToast('Return request submitted successfully!', 'success');
+      navigate('/returns');
+    } catch (error) {
+      showToast(error.message || 'Failed to submit return request', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const selectedDevice = returnableDevices.find(d => d.id === formData.deviceId);
+  const selectedDevice = returnableDevices.find(d => (d._id || d.id) === formData.deviceId);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -68,8 +92,8 @@ const CreateReturn = () => {
             >
               <option value="">Select a device...</option>
               {returnableDevices.map(device => (
-                <option key={device.id} value={device.id}>
-                  {device.model} - {device.macAddress}
+                <option key={device._id || device.id} value={device._id || device.id}>
+                  {device.model || device.device_type} - {device.mac_address}
                 </option>
               ))}
             </select>
@@ -83,9 +107,9 @@ const CreateReturn = () => {
                   <RotateCcw className="w-6 h-6 text-orange-600" />
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-gray-800">{selectedDevice.model}</p>
-                  <p className="text-sm text-gray-500">MAC: {selectedDevice.macAddress}</p>
-                  <p className="text-sm text-gray-500">SN: {selectedDevice.serialNumber}</p>
+                  <p className="font-medium text-gray-800">{selectedDevice.model || selectedDevice.device_type}</p>
+                  <p className="text-sm text-gray-500">MAC: {selectedDevice.mac_address}</p>
+                  <p className="text-sm text-gray-500">SN: {selectedDevice.serial_number}</p>
                 </div>
                 <StatusBadge status={selectedDevice.status} />
               </div>
@@ -127,8 +151,8 @@ const CreateReturn = () => {
               >
                 <option value="">Select defect report (optional)...</option>
                 {relatedDefects.map(defect => (
-                  <option key={defect.id} value={defect.id}>
-                    {defect.defectType} - {defect.severity} ({defect.reportedAt})
+                  <option key={defect._id || defect.id} value={defect._id || defect.id}>
+                    {defect.defect_type} - {defect.severity} ({defect.created_at ? new Date(defect.created_at).toLocaleDateString() : ''})
                   </option>
                 ))}
               </select>

@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { dashboardStats, distributions, defectReports, returnRequests } from '../../data/mockData';
+import { dashboardAPI, distributionsAPI, returnsAPI } from '../../services/api';
 import {
   Box,
   Truck,
@@ -11,11 +12,36 @@ import {
   CheckSquare,
   BarChart3,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
 
 const ManagerDashboard = () => {
-  const stats = dashboardStats.manager;
+  const [stats, setStats] = useState({});
+  const [distributions, setDistributions] = useState([]);
+  const [returnRequests, setReturnRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [statsRes, distRes, retRes] = await Promise.all([
+          dashboardAPI.getStats().catch(() => ({ data: {} })),
+          distributionsAPI.getDistributions().catch(() => ({ data: [] })),
+          returnsAPI.getReturns().catch(() => ({ data: [] }))
+        ]);
+        setStats(statsRes.data || {});
+        setDistributions(distRes.data || []);
+        setReturnRequests(retRes.data || []);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -25,12 +51,12 @@ const ManagerDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard title="Total Devices" value={stats.totalDevices} icon={Box} color="blue" />
-        <StatCard title="Pending Approvals" value={stats.pendingApprovals} icon={CheckSquare} color="yellow" />
-        <StatCard title="Defect Reports" value={stats.defectReports} icon={AlertTriangle} color="red" />
-        <StatCard title="Return Requests" value={stats.returnRequests} icon={RotateCcw} color="indigo" />
-        <StatCard title="This Month" value={stats.distributionThisMonth} icon={Truck} color="green" />
-        <StatCard title="Resolved" value={stats.resolvedDefects} icon={TrendingUp} color="purple" />
+        <StatCard title="Total Devices" value={stats.total_devices || 0} icon={Box} color="blue" />
+        <StatCard title="Pending Approvals" value={stats.pending_approvals || 0} icon={CheckSquare} color="yellow" />
+        <StatCard title="Defect Reports" value={stats.defect_reports || 0} icon={AlertTriangle} color="red" />
+        <StatCard title="Return Requests" value={stats.return_requests || 0} icon={RotateCcw} color="indigo" />
+        <StatCard title="This Month" value={stats.distribution_this_month || distributions.length} icon={Truck} color="green" />
+        <StatCard title="Resolved" value={stats.resolved_defects || 0} icon={TrendingUp} color="purple" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -47,9 +73,9 @@ const ManagerDashboard = () => {
             {distributions.slice(0, 5).map((dist) => (
               <div key={dist.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{dist.batchId}</p>
-                  <p className="text-xs text-gray-500">{dist.fromDistributor} → {dist.toDistributor}</p>
-                  <p className="text-xs text-gray-400 mt-1">{dist.deviceCount} devices</p>
+                  <p className="text-sm font-medium text-gray-800">{dist.batch_id}</p>
+                  <p className="text-xs text-gray-500">{dist.from_name} → {dist.to_name}</p>
+                  <p className="text-xs text-gray-400 mt-1">{dist.device_count || dist.device_ids?.length || 0} devices</p>
                 </div>
                 <StatusBadge status={dist.status} />
               </div>
@@ -70,9 +96,9 @@ const ManagerDashboard = () => {
             {returnRequests.filter(r => r.status !== 'approved').slice(0, 4).map((ret) => (
               <div key={ret.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{ret.device.model}</p>
+                  <p className="text-sm font-medium text-gray-800">{ret.device_name || ret.device_type || 'Unknown'}</p>
                   <p className="text-xs text-gray-500">{ret.reason}</p>
-                  <p className="text-xs text-gray-400 mt-1">By: {ret.initiatedBy}</p>
+                  <p className="text-xs text-gray-400 mt-1">By: {ret.initiated_by_name || 'Unknown'}</p>
                 </div>
                 <StatusBadge status={ret.status} />
               </div>

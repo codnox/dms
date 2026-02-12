@@ -1,39 +1,58 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
-import { distributions, devices } from '../data/mockData';
+import { distributionsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Truck, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, Eye, Truck, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
 
 const Distributions = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
+  const [distributions, setDistributions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedDist, setSelectedDist] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
 
+  const fetchDistributions = async () => {
+    try {
+      setLoading(true);
+      const response = await distributionsAPI.getDistributions();
+      setDistributions(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch distributions:', error);
+      showToast('Failed to load distributions', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDistributions();
+  }, []);
+
   const canCreate = ['admin', 'distributor', 'sub-distributor'].includes(user?.role);
   const canApprove = ['sub-distributor', 'operator'].includes(user?.role);
 
   const columns = [
-    { key: 'batchId', label: 'Batch ID' },
-    { key: 'fromDistributor', label: 'From' },
-    { key: 'toDistributor', label: 'To' },
-    { key: 'deviceCount', label: 'Devices' },
+    { key: 'batch_id', label: 'Batch ID' },
+    { key: 'from_name', label: 'From' },
+    { key: 'to_name', label: 'To' },
+    { key: 'device_count', label: 'Devices', render: (value, row) => value || row.device_ids?.length || 0 },
     {
       key: 'status',
       label: 'Status',
       render: (value) => <StatusBadge status={value} />
     },
-    { key: 'createdAt', label: 'Created' },
+    { key: 'created_at', label: 'Created', render: (value) => value ? new Date(value).toLocaleDateString() : '-' },
     {
-      key: 'approvedBy',
+      key: 'approved_by_name',
       label: 'Approved By',
       render: (value) => value || '-'
     },
@@ -81,15 +100,21 @@ const Distributions = () => {
     }
   ];
 
-  const handleApprove = () => {
-    showToast(`Distribution ${selectedDist.batchId} approved successfully`, 'success');
-    setShowApproveModal(false);
-    setSelectedDist(null);
-    setApprovalComment('');
-  };
-
-  const getDistributionDevices = (deviceIds) => {
-    return devices.filter(d => deviceIds.includes(d.id));
+  const handleApprove = async () => {
+    try {
+      await distributionsAPI.updateDistributionStatus(
+        selectedDist._id || selectedDist.id, 
+        'approved', 
+        approvalComment
+      );
+      showToast('Distribution approved successfully', 'success');
+      setShowApproveModal(false);
+      setSelectedDist(null);
+      setApprovalComment('');
+      fetchDistributions();
+    } catch (error) {
+      showToast('Failed to approve distribution', 'error');
+    }
   };
 
   return (
@@ -160,14 +185,21 @@ const Distributions = () => {
         </Card>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={distributions}
-        onRowClick={(row) => {
-          setSelectedDist(row);
-          setShowModal(true);
-        }}
-      />
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-500">Loading distributions...</span>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={distributions}
+          onRowClick={(row) => {
+            setSelectedDist(row);
+            setShowModal(true);
+          }}
+        />
+      )}
 
       {/* View Distribution Modal */}
       <Modal
@@ -199,8 +231,8 @@ const Distributions = () => {
                 <Truck className="w-8 h-8 text-blue-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-800">{selectedDist.batchId}</h3>
-                <p className="text-gray-500">{selectedDist.fromDistributor} → {selectedDist.toDistributor}</p>
+                <h3 className="text-lg font-semibold text-gray-800">{selectedDist.batch_id}</h3>
+                <p className="text-gray-500">{selectedDist.from_name} → {selectedDist.to_name}</p>
                 <StatusBadge status={selectedDist.status} />
               </div>
             </div>
@@ -208,21 +240,21 @@ const Distributions = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Created At</label>
-                <p className="font-medium text-gray-800">{selectedDist.createdAt}</p>
+                <p className="font-medium text-gray-800">{selectedDist.created_at ? new Date(selectedDist.created_at).toLocaleDateString() : 'N/A'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Device Count</label>
-                <p className="font-medium text-gray-800">{selectedDist.deviceCount}</p>
+                <p className="font-medium text-gray-800">{selectedDist.device_count || selectedDist.device_ids?.length || 0}</p>
               </div>
-              {selectedDist.approvedAt && (
+              {selectedDist.approved_at && (
                 <>
                   <div>
                     <label className="text-xs text-gray-500 uppercase tracking-wider">Approved At</label>
-                    <p className="font-medium text-gray-800">{selectedDist.approvedAt}</p>
+                    <p className="font-medium text-gray-800">{new Date(selectedDist.approved_at).toLocaleDateString()}</p>
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 uppercase tracking-wider">Approved By</label>
-                    <p className="font-medium text-gray-800">{selectedDist.approvedBy}</p>
+                    <p className="font-medium text-gray-800">{selectedDist.approved_by_name || 'N/A'}</p>
                   </div>
                 </>
               )}
@@ -235,20 +267,7 @@ const Distributions = () => {
               </div>
             )}
 
-            <div>
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Devices in this Distribution</label>
-              <div className="space-y-2">
-                {getDistributionDevices(selectedDist.devices).map(device => (
-                  <div key={device.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-800">{device.model}</p>
-                      <p className="text-sm text-gray-500">{device.macAddress}</p>
-                    </div>
-                    <StatusBadge status={device.status} size="sm" />
-                  </div>
-                ))}
-              </div>
-            </div>
+
           </div>
         )}
       </Modal>
@@ -277,7 +296,7 @@ const Distributions = () => {
       >
         <div className="space-y-4">
           <p className="text-gray-600">
-            You are about to approve distribution <span className="font-medium">{selectedDist?.batchId}</span> with {selectedDist?.deviceCount} devices.
+            You are about to approve distribution <span className="font-medium">{selectedDist?.batch_id}</span> with {selectedDist?.device_count || selectedDist?.device_ids?.length || 0} devices.
           </p>
           
           <div>
@@ -295,7 +314,7 @@ const Distributions = () => {
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <p className="text-sm text-yellow-800">
-              By approving, you confirm that you have received all {selectedDist?.deviceCount} devices in good condition.
+              By approving, you confirm that you have received all devices in good condition.
             </p>
           </div>
         </div>
