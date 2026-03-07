@@ -211,7 +211,7 @@ const CreateReturn = () => {
             <div>
               <p className="font-medium text-blue-800">Return Approval Process</p>
               <p className="text-sm text-blue-600 mt-1">
-                Your return request will be reviewed by the sub-distributor and then forwarded to the main distributor for final approval. 
+                Your return request will be reviewed by the management for approval. 
                 You can track the status from the Returns page.
               </p>
             </div>

@@ -234,7 +234,7 @@ const SubDistributorDashboard = () => {
           }
         >
           <div className="space-y-3">
-            {returnRequests.filter(r => r.currentApprover === 'sub-distributor').slice(0, 3).map((ret) => (
+            {returnRequests.filter(r => r.currentApprover === 'sub_distributor').slice(0, 3).map((ret) => (
               <div key={ret.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{ret.device_name || ret.device_type || 'Unknown'}</p>

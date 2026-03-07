@@ -18,8 +18,8 @@ async def get_devices(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all devices with pagination and filters"""
-    # Filter by holder for non-admin/manager users
-    if current_user["role"] not in ["admin", "manager"]:
+    # Filter by holder for non-admin/manager/staff users
+    if current_user["role"] not in ["admin", "manager", "staff"]:
         holder_id = current_user["id"]
     
     result = await device_service.get_devices(
@@ -45,7 +45,7 @@ async def get_available_devices(
 ):
     """Get available devices for distribution"""
     holder_id = None
-    if current_user["role"] not in ["admin", "manager"]:
+    if current_user["role"] not in ["admin", "manager", "staff"]:
         holder_id = current_user["id"]
     
     devices = await device_service.get_available_devices(holder_id)

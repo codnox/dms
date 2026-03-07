@@ -35,9 +35,9 @@ async def get_distributions(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all distributions with pagination and filters"""
-    # Filter by user for non-admin/manager
+    # Filter by user for non-admin/manager/staff
     user_id = None
-    if current_user["role"] not in ["admin", "manager"]:
+    if current_user["role"] not in ["admin", "manager", "staff"]:
         user_id = current_user["id"]
     
     result = await distribution_service.get_distributions(

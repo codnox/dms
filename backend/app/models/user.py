@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -7,8 +7,9 @@ from enum import Enum
 class UserRole(str, Enum):
     ADMIN = "admin"
     MANAGER = "manager"
-    DISTRIBUTOR = "distributor"
+    STAFF = "staff"
     SUB_DISTRIBUTOR = "sub_distributor"
+    CLUSTER = "cluster"
     OPERATOR = "operator"
 
 
@@ -25,7 +26,8 @@ class UserBase(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
-    theme: Optional[str] = "light"  # light, dark, system
+    parent_id: Optional[str] = None
+    theme: Optional[str] = "light"
     compact_mode: Optional[bool] = False
     email_notifications: Optional[bool] = True
     push_notifications: Optional[bool] = True
@@ -33,6 +35,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6)
+    permissions: Optional[Dict[str, bool]] = None
 
 
 class UserUpdate(BaseModel):
@@ -45,32 +48,7 @@ class UserUpdate(BaseModel):
     compact_mode: Optional[bool] = None
     email_notifications: Optional[bool] = None
     push_notifications: Optional[bool] = None
-
-
-class UserInDB(UserBase):
-    id: str = Field(..., alias="_id")
-    password_hash: str
-    status: UserStatus = UserStatus.ACTIVE
-    is_verified: bool = False
-    created_at: datetime
-    updated_at: datetime
-    last_login: Optional[datetime] = None
-    
-    class Config:
-        populate_by_name = True
-
-
-class User(UserBase):
-    id: str = Field(..., alias="_id")
-    status: UserStatus = UserStatus.ACTIVE
-    is_verified: bool = False
-    created_at: datetime
-    updated_at: datetime
-    last_login: Optional[datetime] = None
-    
-    class Config:
-        populate_by_name = True
-        from_attributes = True
+    permissions: Optional[Dict[str, bool]] = None
 
 
 class UserResponse(BaseModel):
@@ -81,13 +59,19 @@ class UserResponse(BaseModel):
     phone: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
+    parent_id: Optional[str] = None
     status: UserStatus
     is_verified: bool
-    created_at: datetime
-    updated_at: datetime
-    last_login: Optional[datetime] = None
+    permissions: Optional[Dict[str, bool]] = None
+    created_at: str
+    updated_at: str
+    last_login: Optional[str] = None
 
 
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(..., min_length=6)
+
+
+class UserPermissionUpdate(BaseModel):
+    permissions: Dict[str, bool]

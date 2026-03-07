@@ -226,7 +226,7 @@ const Approvals = () => {
           >
             <Eye className="w-4 h-4 text-gray-500" />
           </button>
-          {hasRole(['admin', 'manager', 'distributor']) && (
+          {hasRole(['admin', 'manager', 'staff']) && (
             <>
               <button
                 onClick={() => { setSelectedItem(row); setShowApproveModal(true); }}
@@ -402,7 +402,7 @@ const Approvals = () => {
               </div>
             )}
 
-            {hasRole(['admin', 'manager', 'distributor']) && (
+            {hasRole(['admin', 'manager', 'staff']) && (
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button 
                   variant="danger" 

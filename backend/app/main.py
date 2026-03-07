@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import connect_to_mongodb, close_mongodb_connection
+from app.database import init_db
 from app.routes import (
     auth, users, devices, distributions, 
     defects, returns, approvals, operators,
@@ -15,8 +15,8 @@ from app.middleware.error_handler import add_exception_handlers
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
-    # Startup
-    await connect_to_mongodb()
+    # Startup - initialize SQLite database
+    await init_db()
     
     # Seed initial data
     from app.services.seed_service import seed_initial_data
@@ -24,8 +24,7 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
-    await close_mongodb_connection()
+    # Shutdown - nothing to clean up for SQLite
 
 
 # Create FastAPI app

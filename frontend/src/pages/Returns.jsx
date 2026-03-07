@@ -38,8 +38,8 @@ const Returns = () => {
     fetchReturns();
   }, []);
 
-  const canInitiate = ['operator', 'sub-distributor'].includes(user?.role);
-  const canApprove = ['distributor', 'sub-distributor', 'admin', 'manager'].includes(user?.role);
+  const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
+  const canApprove = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
 
   const columns = [
     {
@@ -334,8 +334,8 @@ const Returns = () => {
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
-              {user?.role === 'sub-distributor' 
-                ? 'Approving will forward this request to the main distributor.'
+              {user?.role === 'sub_distributor' 
+                ? 'Approving will forward this request to the management.'
                 : 'Approving will complete this return request.'}
             </p>
           </div>

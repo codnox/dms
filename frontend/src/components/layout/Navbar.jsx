@@ -218,7 +218,7 @@ const Navbar = ({ onMenuClick }) => {
               </div>
               <div className="hidden sm:block text-left">
                 <div className="text-sm font-medium text-gray-800">{user?.name}</div>
-                <div className="text-xs text-gray-500 capitalize">{user?.role?.replace('-', ' ')}</div>
+                <div className="text-xs text-gray-500 capitalize">{user?.role?.replace(/[-_]/g, ' ')}</div>
               </div>
               <ChevronDown className="w-4 h-4 text-gray-400 hidden sm:block" />
             </button>

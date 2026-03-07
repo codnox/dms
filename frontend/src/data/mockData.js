@@ -13,8 +13,9 @@ export const deviceHistory = {};
 export const dashboardStats = {
   admin: {},
   manager: {},
-  distributor: {},
-  'sub-distributor': {},
+  staff: {},
+  sub_distributor: {},
+  cluster: {},
   operator: {},
 };
 export const recentActivities = [];
