@@ -54,8 +54,9 @@ const Users = () => {
     switch (role) {
       case 'admin': return 'bg-red-100 text-red-800';
       case 'manager': return 'bg-purple-100 text-purple-800';
-      case 'distributor': return 'bg-blue-100 text-blue-800';
-      case 'sub-distributor': return 'bg-indigo-100 text-indigo-800';
+      case 'staff': return 'bg-blue-100 text-blue-800';
+      case 'sub_distributor': return 'bg-indigo-100 text-indigo-800';
+      case 'cluster': return 'bg-teal-100 text-teal-800';
       case 'operator': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -84,7 +85,7 @@ const Users = () => {
       label: 'Role',
       render: (value) => (
         <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getRoleColor(value)}`}>
-          {value.replace('-', ' ')}
+          {value.replace(/[-_]/g, ' ')}
         </span>
       )
     },
@@ -199,7 +200,7 @@ const Users = () => {
   const stats = [
     { label: 'Total Users', value: users.length, icon: UsersIcon, color: 'blue' },
     { label: 'Administrators', value: users.filter(u => u.role === 'admin').length, icon: Shield, color: 'red' },
-    { label: 'Distributors', value: users.filter(u => u.role === 'distributor' || u.role === 'sub-distributor').length, icon: Building, color: 'indigo' },
+    { label: 'Distributors', value: users.filter(u => u.role === 'sub_distributor' || u.role === 'cluster').length, icon: Building, color: 'indigo' },
     { label: 'Operators', value: users.filter(u => u.role === 'operator').length, icon: UsersIcon, color: 'green' }
   ];
 
@@ -268,7 +269,7 @@ const Users = () => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">{selectedUser.name}</h3>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getRoleColor(selectedUser.role)}`}>
-                  {selectedUser.role.replace('-', ' ')}
+                  {selectedUser.role.replace(/[-_]/g, ' ')}
                 </span>
               </div>
             </div>
@@ -385,8 +386,9 @@ const Users = () => {
                 >
                   {hasRole(['admin']) && <option value="admin">Admin</option>}
                   {hasRole(['admin']) && <option value="manager">Manager</option>}
-                  <option value="distributor">Distributor</option>
-                  <option value="sub-distributor">Sub-Distributor</option>
+                  <option value="staff">Staff</option>
+                  <option value="sub_distributor">Sub Distributor</option>
+                  <option value="cluster">Cluster</option>
                   <option value="operator">Operator</option>
                 </select>
               </div>

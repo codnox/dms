@@ -20,7 +20,7 @@ async def get_defects(
     """Get all defect reports with pagination and filters"""
     # Filter by reporter for non-admin/manager
     reported_by = None
-    if current_user["role"] not in ["admin", "manager"]:
+    if current_user["role"] not in ["admin", "manager", "staff"]:
         reported_by = current_user["id"]
     
     result = await defect_service.get_defects(

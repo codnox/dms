@@ -1,13 +1,10 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from bson import ObjectId
+import json
 
-from app.database import get_database
-from app.models.device import DeviceCreate, DeviceUpdate, DeviceStatus, HolderType, DeviceHistoryCreate
-from app.utils.helpers import (
-    serialize_doc, serialize_docs, get_pagination, 
-    generate_device_id, to_object_id
-)
+from app.database import get_db, row_to_dict, rows_to_list
+from app.models.device import DeviceCreate, DeviceUpdate, DeviceStatus, HolderType
+from app.utils.helpers import get_pagination, generate_device_id
 
 
 async def get_devices(
@@ -19,188 +16,182 @@ async def get_devices(
     search: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get all devices with pagination and filters"""
-    db = get_database()
-    
-    # Build query
-    query = {}
-    if status:
-        query["status"] = status
-    if device_type:
-        query["device_type"] = device_type
-    if holder_id:
-        query["current_holder_id"] = holder_id
-    if search:
-        query["$or"] = [
-            {"device_id": {"$regex": search, "$options": "i"}},
-            {"serial_number": {"$regex": search, "$options": "i"}},
-            {"mac_address": {"$regex": search, "$options": "i"}},
-            {"model": {"$regex": search, "$options": "i"}}
-        ]
-    
-    # Get total count
-    total = await db.devices.count_documents(query)
-    
-    # Get paginated results
-    skip = (page - 1) * page_size
-    cursor = db.devices.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-    devices = await cursor.to_list(length=page_size)
-    
-    return {
-        "data": serialize_docs(devices),
-        "pagination": get_pagination(page, page_size, total)
-    }
+    async with get_db() as db:
+        conditions = []
+        params = []
+        
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if device_type:
+            conditions.append("device_type = ?")
+            params.append(device_type)
+        if holder_id:
+            conditions.append("current_holder_id = ?")
+            params.append(holder_id)
+        if search:
+            conditions.append("(device_id LIKE ? OR serial_number LIKE ? OR mac_address LIKE ? OR model LIKE ?)")
+            params.extend([f"%{search}%"] * 4)
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        cursor = await db.execute(f"SELECT COUNT(*) FROM devices WHERE {where_clause}", params)
+        total = (await cursor.fetchone())[0]
+        
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM devices WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
+        rows = await cursor.fetchall()
+        
+        return {
+            "data": rows_to_list(rows),
+            "pagination": get_pagination(page, page_size, total)
+        }
 
 
 async def get_device_by_id(device_id: str) -> Optional[Dict[str, Any]]:
     """Get device by ID"""
-    db = get_database()
-    
-    try:
-        device = await db.devices.find_one({"_id": ObjectId(device_id)})
-        return serialize_doc(device) if device else None
-    except:
-        return None
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
+        row = await cursor.fetchone()
+        return row_to_dict(row)
 
 
 async def get_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
     """Get device by serial number"""
-    db = get_database()
-    device = await db.devices.find_one({"serial_number": serial_number})
-    return serialize_doc(device) if device else None
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE serial_number = ?", (serial_number,))
+        row = await cursor.fetchone()
+        return row_to_dict(row)
 
 
 async def create_device(device_data: DeviceCreate, created_by: str, created_by_name: str) -> Dict[str, Any]:
     """Create a new device"""
-    db = get_database()
-    
-    # Check if serial number exists
-    existing = await db.devices.find_one({"serial_number": device_data.serial_number})
-    if existing:
-        raise ValueError("Serial number already exists")
-    
-    # Check if MAC address exists
-    existing_mac = await db.devices.find_one({"mac_address": device_data.mac_address})
-    if existing_mac:
-        raise ValueError("MAC address already exists")
-    
-    now = datetime.utcnow()
-    device_doc = {
-        "device_id": generate_device_id(device_data.device_type.value),
-        "device_type": device_data.device_type.value,
-        "model": device_data.model,
-        "serial_number": device_data.serial_number,
-        "mac_address": device_data.mac_address,
-        "manufacturer": device_data.manufacturer,
-        "status": DeviceStatus.AVAILABLE.value,
-        "current_location": "NOC",
-        "current_holder_id": None,
-        "current_holder_name": None,
-        "current_holder_type": HolderType.NOC.value,
-        "purchase_date": device_data.purchase_date,
-        "warranty_expiry": device_data.warranty_expiry,
-        "created_at": now,
-        "updated_at": now,
-        "metadata": device_data.metadata
-    }
-    
-    result = await db.devices.insert_one(device_doc)
-    device_doc["_id"] = result.inserted_id
-    
-    # Add to history
-    await add_device_history(
-        device_id=str(result.inserted_id),
-        action="registered",
-        status_after=DeviceStatus.AVAILABLE.value,
-        location="NOC",
-        notes="Device registered in system",
-        performed_by=created_by,
-        performed_by_name=created_by_name
-    )
-    
-    return serialize_doc(device_doc)
+    async with get_db() as db:
+        # Check if serial number exists
+        cursor = await db.execute("SELECT id FROM devices WHERE serial_number = ?", (device_data.serial_number,))
+        if await cursor.fetchone():
+            raise ValueError("Serial number already exists")
+        
+        # Check if MAC address exists
+        cursor = await db.execute("SELECT id FROM devices WHERE mac_address = ?", (device_data.mac_address,))
+        if await cursor.fetchone():
+            raise ValueError("MAC address already exists")
+        
+        now = datetime.utcnow().isoformat()
+        dev_id = generate_device_id(device_data.device_type.value)
+        metadata_json = json.dumps(device_data.metadata) if device_data.metadata else None
+        purchase_date = device_data.purchase_date.isoformat() if device_data.purchase_date else None
+        warranty_expiry = device_data.warranty_expiry.isoformat() if device_data.warranty_expiry else None
+        
+        cursor = await db.execute(
+            """INSERT INTO devices (device_id, device_type, model, serial_number, mac_address,
+                manufacturer, status, current_location, current_holder_id, current_holder_name,
+                current_holder_type, purchase_date, warranty_expiry, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                dev_id, device_data.device_type.value, device_data.model,
+                device_data.serial_number, device_data.mac_address,
+                device_data.manufacturer, DeviceStatus.AVAILABLE.value,
+                "NOC", None, None, HolderType.NOC.value,
+                purchase_date, warranty_expiry, metadata_json, now, now
+            )
+        )
+        await db.commit()
+        new_id = str(cursor.lastrowid)
+        
+        # Add to history
+        await _add_device_history(db, new_id, "registered", performed_by=created_by,
+                                  performed_by_name=created_by_name, status_after=DeviceStatus.AVAILABLE.value,
+                                  location="NOC", notes="Device registered in system")
+        await db.commit()
+        
+        return await get_device_by_id(new_id)
 
 
 async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[Dict[str, Any]]:
     """Update device"""
-    db = get_database()
-    
-    update_dict = {k: v for k, v in device_data.model_dump().items() if v is not None}
-    
-    if not update_dict:
+    async with get_db() as db:
+        update_fields = []
+        params = []
+        
+        data = device_data.model_dump(exclude_unset=True)
+        
+        for field in ["model", "manufacturer", "current_location"]:
+            if field in data and data[field] is not None:
+                update_fields.append(f"{field} = ?")
+                params.append(data[field])
+        
+        if "status" in data and data["status"] is not None:
+            update_fields.append("status = ?")
+            params.append(data["status"].value if hasattr(data["status"], "value") else data["status"])
+        if "device_type" in data and data["device_type"] is not None:
+            update_fields.append("device_type = ?")
+            params.append(data["device_type"].value if hasattr(data["device_type"], "value") else data["device_type"])
+        if "warranty_expiry" in data and data["warranty_expiry"] is not None:
+            update_fields.append("warranty_expiry = ?")
+            params.append(data["warranty_expiry"].isoformat() if hasattr(data["warranty_expiry"], "isoformat") else data["warranty_expiry"])
+        if "metadata" in data and data["metadata"] is not None:
+            update_fields.append("metadata = ?")
+            params.append(json.dumps(data["metadata"]))
+        
+        if not update_fields:
+            return await get_device_by_id(device_id)
+        
+        update_fields.append("updated_at = ?")
+        params.append(datetime.utcnow().isoformat())
+        params.append(int(device_id))
+        
+        await db.execute(f"UPDATE devices SET {', '.join(update_fields)} WHERE id = ?", params)
+        await db.commit()
+        
         return await get_device_by_id(device_id)
-    
-    # Convert enums to values
-    if "status" in update_dict:
-        update_dict["status"] = update_dict["status"].value
-    if "device_type" in update_dict:
-        update_dict["device_type"] = update_dict["device_type"].value
-    
-    update_dict["updated_at"] = datetime.utcnow()
-    
-    result = await db.devices.update_one(
-        {"_id": ObjectId(device_id)},
-        {"$set": update_dict}
-    )
-    
-    if result.modified_count > 0 or result.matched_count > 0:
-        return await get_device_by_id(device_id)
-    return None
 
 
 async def delete_device(device_id: str) -> bool:
     """Delete device"""
-    db = get_database()
-    
-    result = await db.devices.delete_one({"_id": ObjectId(device_id)})
-    
-    if result.deleted_count > 0:
-        # Also delete history
-        await db.device_history.delete_many({"device_id": device_id})
-        return True
-    return False
+    async with get_db() as db:
+        cursor = await db.execute("DELETE FROM devices WHERE id = ?", (int(device_id),))
+        if cursor.rowcount > 0:
+            await db.execute("DELETE FROM device_history WHERE device_id = ?", (device_id,))
+            await db.commit()
+            return True
+        return False
 
 
 async def update_device_status(
-    device_id: str, 
-    status: str, 
+    device_id: str,
+    status: str,
     performed_by: str,
     performed_by_name: str,
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update device status"""
-    db = get_database()
-    
-    # Get current device
-    device = await db.devices.find_one({"_id": ObjectId(device_id)})
-    if not device:
-        return None
-    
-    old_status = device.get("status")
-    
-    result = await db.devices.update_one(
-        {"_id": ObjectId(device_id)},
-        {
-            "$set": {
-                "status": status,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
-    
-    if result.modified_count > 0:
-        # Add to history
-        await add_device_history(
-            device_id=device_id,
-            action="status_changed",
-            status_before=old_status,
-            status_after=status,
-            location=device.get("current_location"),
-            notes=notes or f"Status changed from {old_status} to {status}",
-            performed_by=performed_by,
-            performed_by_name=performed_by_name
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        
+        device = row_to_dict(row)
+        old_status = device.get("status")
+        now = datetime.utcnow().isoformat()
+        
+        await db.execute(
+            "UPDATE devices SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, int(device_id))
         )
+        
+        await _add_device_history(db, device_id, "status_changed",
+                                  performed_by=performed_by, performed_by_name=performed_by_name,
+                                  status_before=old_status, status_after=status,
+                                  location=device.get("current_location"),
+                                  notes=notes or f"Status changed from {old_status} to {status}")
+        await db.commit()
+        
         return await get_device_by_id(device_id)
-    return None
 
 
 async def update_device_holder(
@@ -217,147 +208,110 @@ async def update_device_holder(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update device holder (for distributions)"""
-    db = get_database()
-    
-    # Get current device
-    device = await db.devices.find_one({"_id": ObjectId(device_id)})
-    if not device:
-        return None
-    
-    old_status = device.get("status")
-    
-    result = await db.devices.update_one(
-        {"_id": ObjectId(device_id)},
-        {
-            "$set": {
-                "current_holder_id": holder_id,
-                "current_holder_name": holder_name,
-                "current_holder_type": holder_type,
-                "current_location": location,
-                "status": status,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
-    
-    if result.modified_count > 0:
-        # Add to history
-        await add_device_history(
-            device_id=device_id,
-            action="distributed",
-            from_user_id=from_user_id,
-            from_user_name=from_user_name,
-            to_user_id=holder_id,
-            to_user_name=holder_name,
-            status_before=old_status,
-            status_after=status,
-            location=location,
-            notes=notes,
-            performed_by=performed_by,
-            performed_by_name=performed_by_name
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        
+        device = row_to_dict(row)
+        old_status = device.get("status")
+        now = datetime.utcnow().isoformat()
+        
+        await db.execute(
+            """UPDATE devices SET current_holder_id = ?, current_holder_name = ?,
+                current_holder_type = ?, current_location = ?, status = ?, updated_at = ?
+            WHERE id = ?""",
+            (holder_id, holder_name, holder_type, location, status, now, int(device_id))
         )
+        
+        await _add_device_history(db, device_id, "distributed",
+                                  from_user_id=from_user_id, from_user_name=from_user_name,
+                                  to_user_id=holder_id, to_user_name=holder_name,
+                                  performed_by=performed_by, performed_by_name=performed_by_name,
+                                  status_before=old_status, status_after=status,
+                                  location=location, notes=notes)
+        await db.commit()
+        
         return await get_device_by_id(device_id)
-    return None
 
 
 async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get available devices for distribution"""
-    db = get_database()
-    
-    query = {"status": DeviceStatus.AVAILABLE.value}
-    if holder_id:
-        query["current_holder_id"] = holder_id
-    
-    cursor = db.devices.find(query).limit(100)
-    devices = await cursor.to_list(length=100)
-    
-    return serialize_docs(devices)
+    async with get_db() as db:
+        if holder_id:
+            cursor = await db.execute(
+                "SELECT * FROM devices WHERE status = ? AND current_holder_id = ? LIMIT 100",
+                (DeviceStatus.AVAILABLE.value, holder_id)
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM devices WHERE status = ? LIMIT 100",
+                (DeviceStatus.AVAILABLE.value,)
+            )
+        rows = await cursor.fetchall()
+        return rows_to_list(rows)
 
 
 async def get_device_history(device_id: str) -> List[Dict[str, Any]]:
     """Get device history"""
-    db = get_database()
-    
-    cursor = db.device_history.find({"device_id": device_id}).sort("timestamp", -1)
-    history = await cursor.to_list(length=100)
-    
-    return serialize_docs(history)
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM device_history WHERE device_id = ? ORDER BY timestamp DESC",
+            (device_id,)
+        )
+        rows = await cursor.fetchall()
+        return rows_to_list(rows)
 
 
-async def add_device_history(
-    device_id: str,
-    action: str,
-    performed_by: str,
-    performed_by_name: str,
-    from_user_id: Optional[str] = None,
-    from_user_name: Optional[str] = None,
-    to_user_id: Optional[str] = None,
-    to_user_name: Optional[str] = None,
-    status_before: Optional[str] = None,
-    status_after: Optional[str] = None,
-    location: Optional[str] = None,
-    notes: Optional[str] = None
-) -> Dict[str, Any]:
-    """Add device history entry"""
-    db = get_database()
-    
-    history_doc = {
-        "device_id": device_id,
-        "action": action,
-        "from_user_id": from_user_id,
-        "from_user_name": from_user_name,
-        "to_user_id": to_user_id,
-        "to_user_name": to_user_name,
-        "status_before": status_before,
-        "status_after": status_after,
-        "location": location,
-        "notes": notes,
-        "performed_by": performed_by,
-        "performed_by_name": performed_by_name,
-        "timestamp": datetime.utcnow()
-    }
-    
-    result = await db.device_history.insert_one(history_doc)
-    history_doc["_id"] = result.inserted_id
-    
-    return serialize_doc(history_doc)
+async def _add_device_history(
+    db, device_id: str, action: str,
+    performed_by: str = None, performed_by_name: str = None,
+    from_user_id: str = None, from_user_name: str = None,
+    to_user_id: str = None, to_user_name: str = None,
+    status_before: str = None, status_after: str = None,
+    location: str = None, notes: str = None
+):
+    """Add device history entry (uses existing db connection)"""
+    now = datetime.utcnow().isoformat()
+    await db.execute(
+        """INSERT INTO device_history (device_id, action, from_user_id, from_user_name,
+            to_user_id, to_user_name, status_before, status_after, location, notes,
+            performed_by, performed_by_name, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (device_id, action, from_user_id, from_user_name, to_user_id, to_user_name,
+         status_before, status_after, location, notes, performed_by, performed_by_name, now)
+    )
 
 
 async def track_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
     """Track device by serial number with full history"""
-    db = get_database()
-    
-    device = await db.devices.find_one({"serial_number": serial_number})
-    if not device:
-        return None
-    
-    device_data = serialize_doc(device)
-    
-    # Get history
-    cursor = db.device_history.find({"device_id": str(device["_id"])}).sort("timestamp", -1)
-    history = await cursor.to_list(length=50)
-    
-    device_data["history"] = serialize_docs(history)
-    
-    return device_data
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE serial_number = ?", (serial_number,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        
+        device = row_to_dict(row)
+        
+        cursor = await db.execute(
+            "SELECT * FROM device_history WHERE device_id = ? ORDER BY timestamp DESC LIMIT 50",
+            (device["id"],)
+        )
+        history_rows = await cursor.fetchall()
+        device["history"] = rows_to_list(history_rows)
+        
+        return device
 
 
 async def get_device_stats() -> Dict[str, int]:
     """Get device statistics"""
-    db = get_database()
-    
-    total = await db.devices.count_documents({})
-    available = await db.devices.count_documents({"status": "available"})
-    distributed = await db.devices.count_documents({"status": "distributed"})
-    in_use = await db.devices.count_documents({"status": "in_use"})
-    defective = await db.devices.count_documents({"status": "defective"})
-    returned = await db.devices.count_documents({"status": "returned"})
-    
-    return {
-        "total": total,
-        "available": available,
-        "distributed": distributed,
-        "in_use": in_use,
-        "defective": defective,
-        "returned": returned
-    }
+    async with get_db() as db:
+        stats = {}
+        for key in ["total", "available", "distributed", "in_use", "defective", "returned"]:
+            if key == "total":
+                cursor = await db.execute("SELECT COUNT(*) FROM devices")
+            else:
+                cursor = await db.execute("SELECT COUNT(*) FROM devices WHERE status = ?", (key,))
+            stats[key] = (await cursor.fetchone())[0]
+        return stats

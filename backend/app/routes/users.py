@@ -40,7 +40,7 @@ async def get_user(
 ):
     """Get user by ID"""
     # Users can only view themselves unless admin/manager
-    if current_user["role"] not in ["admin", "manager"] and current_user["id"] != user_id:
+    if current_user["role"] not in ["admin", "manager", "staff"] and current_user["id"] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view your own profile"
@@ -90,14 +90,14 @@ async def update_user(
 ):
     """Update user"""
     # Users can only update themselves unless admin/manager
-    if current_user["role"] not in ["admin", "manager"] and current_user["id"] != user_id:
+    if current_user["role"] not in ["admin", "manager", "staff"] and current_user["id"] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only update your own profile"
         )
     
     # Non-admins can't change status
-    if current_user["role"] not in ["admin", "manager"] and user_data.status:
+    if current_user["role"] not in ["admin", "manager", "staff"] and user_data.status:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot change account status"

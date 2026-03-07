@@ -105,15 +105,41 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
       ],
-      distributor: [
+      staff: [
+        ...commonItems,
+        { path: '/users', icon: Users, label: 'Users' },
+        {
+          key: 'devices',
+          icon: Box,
+          label: 'Devices',
+          children: [
+            { path: '/devices', label: 'All Devices' },
+            { path: '/devices/register', label: 'Register Device' },
+          ]
+        },
+        {
+          key: 'distribution',
+          icon: Truck,
+          label: 'Distribution',
+          children: [
+            { path: '/distributions', label: 'All Distributions' },
+            { path: '/distributions/create', label: 'Create Distribution' },
+          ]
+        },
+        { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/returns', icon: RotateCcw, label: 'Returns' },
+        { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
+        { path: '/reports', icon: BarChart3, label: 'Reports' },
+      ],
+      sub_distributor: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
-        { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
       ],
-      'sub-distributor': [
+      cluster: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
@@ -243,7 +269,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-xs text-gray-500 uppercase tracking-wider">Logged in as</div>
               <div className="text-sm font-medium text-gray-800 capitalize mt-1">
-                {user?.role?.replace('-', ' ')}
+                {user?.role?.replace(/[-_]/g, ' ')}
               </div>
             </div>
           </div>

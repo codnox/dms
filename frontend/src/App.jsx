@@ -100,7 +100,7 @@ function AppRoutes() {
         <Route 
           path="devices/register" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'distributor']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
               <RegisterDevice />
             </ProtectedRoute>
           } 
@@ -112,7 +112,7 @@ function AppRoutes() {
         <Route 
           path="distributions/create" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'distributor', 'sub-distributor']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor']}>
               <CreateDistribution />
             </ProtectedRoute>
           } 
@@ -130,7 +130,7 @@ function AppRoutes() {
         <Route 
           path="users" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
               <Users />
             </ProtectedRoute>
           } 
@@ -140,7 +140,7 @@ function AppRoutes() {
         <Route 
           path="approvals" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'distributor', 'sub-distributor']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor']}>
               <Approvals />
             </ProtectedRoute>
           } 
@@ -150,7 +150,7 @@ function AppRoutes() {
         <Route 
           path="reports" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'distributor']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
               <Reports />
             </ProtectedRoute>
           } 

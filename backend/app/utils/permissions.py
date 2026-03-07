@@ -3,70 +3,97 @@ from app.models.user import UserRole
 
 # Define role hierarchy and permissions
 ROLE_HIERARCHY = {
-    UserRole.ADMIN: 5,
-    UserRole.MANAGER: 4,
-    UserRole.DISTRIBUTOR: 3,
-    UserRole.SUB_DISTRIBUTOR: 2,
+    UserRole.ADMIN: 6,
+    UserRole.MANAGER: 5,
+    UserRole.STAFF: 4,
+    UserRole.SUB_DISTRIBUTOR: 3,
+    UserRole.CLUSTER: 2,
     UserRole.OPERATOR: 1
 }
 
-# Permission definitions
+# Default permission definitions
 PERMISSIONS = {
-    # User management - Admin only for creating accounts
+    # User management
     "users:read": [UserRole.ADMIN, UserRole.MANAGER],
-    "users:create": [UserRole.ADMIN],  # Only admin can create users
+    "users:create": [UserRole.ADMIN],
     "users:update": [UserRole.ADMIN, UserRole.MANAGER],
     "users:delete": [UserRole.ADMIN],
+    "users:set_permissions": [UserRole.ADMIN],
     
     # Device management
-    "devices:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
+    "devices:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
     "devices:create": [UserRole.ADMIN, UserRole.MANAGER],
     "devices:update": [UserRole.ADMIN, UserRole.MANAGER],
     "devices:delete": [UserRole.ADMIN],
     
-    # Distribution management - Only admin and manager can create
-    "distributions:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
-    "distributions:create": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
+    # Distribution management
+    "distributions:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
+    "distributions:create": [UserRole.ADMIN, UserRole.MANAGER],
     "distributions:update": [UserRole.ADMIN, UserRole.MANAGER],
     "distributions:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "distributions:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
+    "distributions:approve": [UserRole.ADMIN, UserRole.MANAGER],
+    
+    # Sub-distribution management
+    "sub_distributors:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF],
+    "sub_distributors:create": [UserRole.ADMIN, UserRole.MANAGER],
+    "sub_distributors:update": [UserRole.ADMIN, UserRole.MANAGER],
+    "sub_distributors:delete": [UserRole.ADMIN],
+    
+    # Cluster management
+    "clusters:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR],
+    "clusters:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
+    "clusters:update": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
+    "clusters:delete": [UserRole.ADMIN],
+    
+    # Operator management
+    "operators:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER],
+    "operators:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.CLUSTER],
+    "operators:update": [UserRole.ADMIN, UserRole.MANAGER, UserRole.CLUSTER],
+    "operators:delete": [UserRole.ADMIN],
     
     # Defect management
-    "defects:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
-    "defects:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
+    "defects:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
+    "defects:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
     "defects:update": [UserRole.ADMIN, UserRole.MANAGER],
     "defects:delete": [UserRole.ADMIN],
     "defects:resolve": [UserRole.ADMIN, UserRole.MANAGER],
     
     # Return management
-    "returns:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
-    "returns:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
+    "returns:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
+    "returns:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
     "returns:update": [UserRole.ADMIN, UserRole.MANAGER],
     "returns:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "returns:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
+    "returns:approve": [UserRole.ADMIN, UserRole.MANAGER],
     
-    # Approval management - Only admin and manager
-    "approvals:read": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
-    "approvals:approve": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
-    "approvals:reject": [UserRole.ADMIN, UserRole.MANAGER],  # Changed: Only admin and manager
-    
-    # Operator management
-    "operators:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR],
-    "operators:create": [UserRole.ADMIN],  # Changed: Only admin
-    "operators:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "operators:delete": [UserRole.ADMIN],
+    # Approval management
+    "approvals:read": [UserRole.ADMIN, UserRole.MANAGER],
+    "approvals:approve": [UserRole.ADMIN, UserRole.MANAGER],
+    "approvals:reject": [UserRole.ADMIN, UserRole.MANAGER],
     
     # Reports
     "reports:read": [UserRole.ADMIN, UserRole.MANAGER],
     "reports:export": [UserRole.ADMIN, UserRole.MANAGER],
     
     # Dashboard
-    "dashboard:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.DISTRIBUTOR, UserRole.SUB_DISTRIBUTOR, UserRole.OPERATOR],
+    "dashboard:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
+    
+    # Notifications
+    "notifications:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
 }
 
 
-def check_permission(user_role: str, permission: str) -> bool:
-    """Check if a user role has a specific permission"""
+def check_permission(user_role: str, permission: str, user_permissions: dict = None) -> bool:
+    """Check if a user role has a specific permission.
+    If user has custom permissions set by admin, those override defaults."""
+    # Admin always has all permissions
+    if user_role == "admin":
+        return True
+    
+    # Check custom user-level permissions if set
+    if user_permissions and permission in user_permissions:
+        return user_permissions[permission]
+    
+    # Fall back to role-based defaults
     try:
         role = UserRole(user_role)
         allowed_roles = PERMISSIONS.get(permission, [])

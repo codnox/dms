@@ -17,9 +17,8 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # Database
-    MONGODB_URL: str = os.getenv("MONGODB_URL", "")
-    DATABASE_NAME: str = "distribution_management_system"
+    # Database - SQLite
+    DATABASE_PATH: str = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dms.db")
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dms-secret-key-2024")
@@ -40,6 +39,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

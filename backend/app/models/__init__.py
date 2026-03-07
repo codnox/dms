@@ -1,5 +1,5 @@
 # Models package
-from app.models.user import User, UserCreate, UserUpdate, UserInDB, UserRole
+from app.models.user import UserCreate, UserUpdate, UserRole, UserResponse, UserStatus, PasswordChange, UserPermissionUpdate
 from app.models.device import Device, DeviceCreate, DeviceUpdate, DeviceStatus, DeviceType
 from app.models.distribution import Distribution, DistributionCreate, DistributionUpdate, DistributionStatus
 from app.models.defect import DefectReport, DefectCreate, DefectUpdate, DefectStatus, DefectSeverity, DefectType

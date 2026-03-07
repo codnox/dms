@@ -25,8 +25,9 @@ class DeviceStatus(str, Enum):
 
 class HolderType(str, Enum):
     NOC = "noc"
-    DISTRIBUTOR = "distributor"
+    STAFF = "staff"
     SUB_DISTRIBUTOR = "sub_distributor"
+    CLUSTER = "cluster"
     OPERATOR = "operator"
 
 

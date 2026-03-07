@@ -19,7 +19,7 @@ async def get_returns(
     """Get all return requests with pagination and filters"""
     # Filter by requester for non-admin/manager
     requested_by = None
-    if current_user["role"] not in ["admin", "manager"]:
+    if current_user["role"] not in ["admin", "manager", "staff"]:
         requested_by = current_user["id"]
     
     result = await return_service.get_returns(

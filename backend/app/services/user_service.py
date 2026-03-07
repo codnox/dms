@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from bson import ObjectId
+import json
 
-from app.database import get_database
+from app.database import get_db, row_to_dict, rows_to_list
 from app.models.user import UserCreate, UserUpdate, UserRole, UserStatus
 from app.utils.security import get_password_hash
-from app.utils.helpers import serialize_doc, serialize_docs, get_pagination
+from app.utils.helpers import get_pagination
 
 
 async def get_users(
@@ -16,173 +16,248 @@ async def get_users(
     search: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get all users with pagination and filters"""
-    db = get_database()
-    
-    # Build query
-    query = {}
-    if role:
-        query["role"] = role
-    if status:
-        query["status"] = status
-    if search:
-        query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"email": {"$regex": search, "$options": "i"}}
-        ]
-    
-    # Get total count
-    total = await db.users.count_documents(query)
-    
-    # Get paginated results
-    skip = (page - 1) * page_size
-    cursor = db.users.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-    users = await cursor.to_list(length=page_size)
-    
-    # Remove password hashes and serialize
-    for user in users:
-        user.pop("password_hash", None)
-    
-    return {
-        "data": serialize_docs(users),
-        "pagination": get_pagination(page, page_size, total)
-    }
+    async with get_db() as db:
+        conditions = []
+        params = []
+        
+        if role:
+            conditions.append("role = ?")
+            params.append(role)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if search:
+            conditions.append("(name LIKE ? OR email LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        # Get total count
+        cursor = await db.execute(f"SELECT COUNT(*) as cnt FROM users WHERE {where_clause}", params)
+        row = await cursor.fetchone()
+        total = row[0] if row else 0
+        
+        # Get paginated results
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM users WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
+        rows = await cursor.fetchall()
+        
+        users = rows_to_list(rows)
+        # Remove password hashes and parse permissions
+        for user in users:
+            user.pop("password_hash", None)
+            if user.get("permissions"):
+                try:
+                    user["permissions"] = json.loads(user["permissions"])
+                except (json.JSONDecodeError, TypeError):
+                    user["permissions"] = {}
+        
+        return {
+            "data": users,
+            "pagination": get_pagination(page, page_size, total)
+        }
 
 
 async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """Get user by ID"""
-    db = get_database()
-    
-    try:
-        user = await db.users.find_one({"_id": ObjectId(user_id)})
-        if user:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),))
+        row = await cursor.fetchone()
+        if row:
+            user = row_to_dict(row)
             user.pop("password_hash", None)
-            return serialize_doc(user)
-        return None
-    except:
+            if user.get("permissions"):
+                try:
+                    user["permissions"] = json.loads(user["permissions"])
+                except (json.JSONDecodeError, TypeError):
+                    user["permissions"] = {}
+            return user
         return None
 
 
 async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Get user by email"""
-    db = get_database()
-    user = await db.users.find_one({"email": email.lower()})
-    if user:
-        return serialize_doc(user)
-    return None
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM users WHERE email = ?", (email.lower(),))
+        row = await cursor.fetchone()
+        if row:
+            return row_to_dict(row)
+        return None
 
 
 async def create_user(user_data: UserCreate) -> Dict[str, Any]:
     """Create a new user"""
-    db = get_database()
-    
-    # Check if email exists
-    existing = await db.users.find_one({"email": user_data.email.lower()})
-    if existing:
-        raise ValueError("Email already exists")
-    
-    now = datetime.utcnow()
-    user_doc = {
-        "email": user_data.email.lower(),
-        "password_hash": get_password_hash(user_data.password),
-        "name": user_data.name,
-        "role": user_data.role.value,
-        "phone": user_data.phone,
-        "department": user_data.department,
-        "location": user_data.location,
-        "status": UserStatus.ACTIVE.value,
-        "is_verified": False,
-        "created_at": now,
-        "updated_at": now,
-        "last_login": None
-    }
-    
-    result = await db.users.insert_one(user_doc)
-    user_doc["_id"] = result.inserted_id
-    user_doc.pop("password_hash")
-    
-    return serialize_doc(user_doc)
+    async with get_db() as db:
+        # Check if email exists
+        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (user_data.email.lower(),))
+        existing = await cursor.fetchone()
+        if existing:
+            raise ValueError("Email already exists")
+        
+        now = datetime.utcnow().isoformat()
+        permissions_json = json.dumps(user_data.permissions) if user_data.permissions else "{}"
+        parent_id = int(user_data.parent_id) if user_data.parent_id else None
+        
+        cursor = await db.execute(
+            """INSERT INTO users (email, password_hash, name, role, phone, department, location,
+                status, parent_id, permissions, theme, compact_mode, email_notifications,
+                push_notifications, is_verified, created_at, updated_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_data.email.lower(),
+                get_password_hash(user_data.password),
+                user_data.name,
+                user_data.role.value,
+                user_data.phone,
+                user_data.department,
+                user_data.location,
+                UserStatus.ACTIVE.value,
+                parent_id,
+                permissions_json,
+                user_data.theme or "light",
+                1 if user_data.compact_mode else 0,
+                1 if user_data.email_notifications is not False else 0,
+                1 if user_data.push_notifications is not False else 0,
+                0,
+                now,
+                now,
+                None
+            )
+        )
+        await db.commit()
+        
+        return await get_user_by_id(str(cursor.lastrowid))
 
 
 async def update_user(user_id: str, user_data: UserUpdate) -> Optional[Dict[str, Any]]:
     """Update user"""
-    db = get_database()
-    
-    update_dict = {k: v for k, v in user_data.model_dump().items() if v is not None}
-    
-    if not update_dict:
+    async with get_db() as db:
+        update_fields = []
+        params = []
+        
+        data = user_data.model_dump(exclude_unset=True)
+        
+        field_mapping = {
+            "name": "name",
+            "phone": "phone",
+            "department": "department",
+            "location": "location",
+            "theme": "theme",
+        }
+        
+        for py_field, db_field in field_mapping.items():
+            if py_field in data and data[py_field] is not None:
+                update_fields.append(f"{db_field} = ?")
+                params.append(data[py_field])
+        
+        if "status" in data and data["status"] is not None:
+            update_fields.append("status = ?")
+            params.append(data["status"].value if hasattr(data["status"], "value") else data["status"])
+        
+        for bool_field in ["compact_mode", "email_notifications", "push_notifications"]:
+            if bool_field in data and data[bool_field] is not None:
+                update_fields.append(f"{bool_field} = ?")
+                params.append(1 if data[bool_field] else 0)
+        
+        if "permissions" in data and data["permissions"] is not None:
+            update_fields.append("permissions = ?")
+            params.append(json.dumps(data["permissions"]))
+        
+        if not update_fields:
+            return await get_user_by_id(user_id)
+        
+        update_fields.append("updated_at = ?")
+        params.append(datetime.utcnow().isoformat())
+        params.append(int(user_id))
+        
+        await db.execute(
+            f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
+            params
+        )
+        await db.commit()
+        
         return await get_user_by_id(user_id)
-    
-    # Convert enum to value if present
-    if "status" in update_dict:
-        update_dict["status"] = update_dict["status"].value
-    
-    update_dict["updated_at"] = datetime.utcnow()
-    
-    result = await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": update_dict}
-    )
-    
-    if result.modified_count > 0 or result.matched_count > 0:
-        return await get_user_by_id(user_id)
-    return None
 
 
 async def delete_user(user_id: str) -> bool:
     """Delete user"""
-    db = get_database()
-    
-    result = await db.users.delete_one({"_id": ObjectId(user_id)})
-    return result.deleted_count > 0
+    async with get_db() as db:
+        cursor = await db.execute("DELETE FROM users WHERE id = ?", (int(user_id),))
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def update_user_status(user_id: str, status: str) -> Optional[Dict[str, Any]]:
     """Update user status"""
-    db = get_database()
-    
-    result = await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {
-            "$set": {
-                "status": status,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
-    
-    if result.modified_count > 0:
+    async with get_db() as db:
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            "UPDATE users SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, int(user_id))
+        )
+        await db.commit()
         return await get_user_by_id(user_id)
-    return None
 
 
 async def get_users_by_role(role: str) -> List[Dict[str, Any]]:
     """Get all users by role"""
-    db = get_database()
-    
-    cursor = db.users.find({"role": role, "status": "active"})
-    users = await cursor.to_list(length=100)
-    
-    for user in users:
-        user.pop("password_hash", None)
-    
-    return serialize_docs(users)
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE role = ? AND status = 'active'",
+            (role,)
+        )
+        rows = await cursor.fetchall()
+        users = rows_to_list(rows)
+        for user in users:
+            user.pop("password_hash", None)
+        return users
 
 
 async def get_user_stats() -> Dict[str, int]:
     """Get user statistics"""
-    db = get_database()
-    
-    total = await db.users.count_documents({})
-    active = await db.users.count_documents({"status": "active"})
-    
-    # Count by role
-    by_role = {}
-    for role in UserRole:
-        count = await db.users.count_documents({"role": role.value})
-        by_role[role.value] = count
-    
-    return {
-        "total": total,
-        "active": active,
-        "by_role": by_role
-    }
+    async with get_db() as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        total = (await cursor.fetchone())[0]
+        
+        cursor = await db.execute("SELECT COUNT(*) FROM users WHERE status = 'active'")
+        active = (await cursor.fetchone())[0]
+        
+        by_role = {}
+        for role in UserRole:
+            cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role = ?", (role.value,))
+            by_role[role.value] = (await cursor.fetchone())[0]
+        
+        return {
+            "total": total,
+            "active": active,
+            "by_role": by_role
+        }
+
+
+async def update_user_permissions(user_id: str, permissions: dict) -> Optional[Dict[str, Any]]:
+    """Update user's custom permissions (admin only)"""
+    async with get_db() as db:
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            "UPDATE users SET permissions = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(permissions), now, int(user_id))
+        )
+        await db.commit()
+        return await get_user_by_id(user_id)
+
+
+async def get_children_users(parent_id: str) -> List[Dict[str, Any]]:
+    """Get all users that are children of a given parent"""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE parent_id = ? ORDER BY created_at DESC",
+            (int(parent_id),)
+        )
+        rows = await cursor.fetchall()
+        users = rows_to_list(rows)
+        for user in users:
+            user.pop("password_hash", None)
+        return users

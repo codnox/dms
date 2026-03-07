@@ -16,9 +16,9 @@ async def get_operators(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all operators with pagination and filters"""
-    # Filter by assigned_to for sub-distributors
+    # Filter by assigned_to for sub-distributors/clusters
     assigned_to = None
-    if current_user["role"] == "sub_distributor":
+    if current_user["role"] in ["sub_distributor", "cluster"]:
         assigned_to = current_user["id"]
     
     result = await operator_service.get_operators(
@@ -87,8 +87,8 @@ async def create_operator(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new operator"""
-    # Only sub-distributors and above can create operators
-    if current_user["role"] not in ["admin", "manager", "sub_distributor"]:
+    # Only clusters, sub-distributors and above can create operators
+    if current_user["role"] not in ["admin", "manager", "staff", "sub_distributor", "cluster"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to create operators"
@@ -113,8 +113,8 @@ async def update_operator(
     current_user: dict = Depends(get_current_user)
 ):
     """Update operator"""
-    # Check ownership for sub-distributors
-    if current_user["role"] == "sub_distributor":
+    # Check ownership for sub-distributors/clusters
+    if current_user["role"] in ["sub_distributor", "cluster"]:
         operator = await operator_service.get_operator_by_id(operator_id)
         if operator and operator.get("assigned_to") != current_user["id"]:
             raise HTTPException(
@@ -143,15 +143,15 @@ async def delete_operator(
     current_user: dict = Depends(get_current_user)
 ):
     """Delete operator"""
-    # Check ownership for sub-distributors
-    if current_user["role"] == "sub_distributor":
+    # Check ownership for sub-distributors/clusters
+    if current_user["role"] in ["sub_distributor", "cluster"]:
         operator = await operator_service.get_operator_by_id(operator_id)
         if operator and operator.get("assigned_to") != current_user["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only delete your own operators"
             )
-    elif current_user["role"] not in ["admin", "manager"]:
+    elif current_user["role"] not in ["admin", "manager", "staff"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to delete operators"

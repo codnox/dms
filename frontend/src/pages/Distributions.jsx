@@ -65,8 +65,8 @@ const Distributions = () => {
     }
   }, [showModal, selectedDist]);
 
-  const canCreate = ['admin', 'distributor', 'sub-distributor'].includes(user?.role);
-  const canApprove = ['sub-distributor', 'operator'].includes(user?.role);
+  const canCreate = ['admin', 'manager', 'staff', 'sub_distributor'].includes(user?.role);
+  const canApprove = ['sub_distributor', 'operator'].includes(user?.role);
 
   const columns = [
     { key: 'distribution_id', label: 'Distribution ID' },

@@ -286,11 +286,11 @@ const TrackDevice = () => {
                   
                   <ChevronRight className="w-6 h-6 text-gray-300 rotate-90 sm:rotate-0" />
                   
-                  <div className={`text-center ${searchResult.current_holder_type === 'distributor' ? 'ring-2 ring-blue-500 rounded-lg p-2' : ''}`}>
+                  <div className={`text-center ${['sub_distributor', 'cluster'].includes(searchResult.current_holder_type) ? 'ring-2 ring-blue-500 rounded-lg p-2' : ''}`}>
                     <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto">
                       <Box className="w-8 h-8 text-indigo-600" />
                     </div>
-                    <p className="text-sm font-medium text-gray-800 mt-2">Distributor</p>
+                    <p className="text-sm font-medium text-gray-800 mt-2">Sub Distributor</p>
                     <p className="text-xs text-gray-500">Distribution</p>
                   </div>
                   

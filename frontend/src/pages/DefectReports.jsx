@@ -37,8 +37,8 @@ const DefectReports = () => {
     fetchDefects();
   }, []);
 
-  const canReport = ['operator', 'sub-distributor'].includes(user?.role);
-  const canReview = ['distributor', 'sub-distributor', 'admin', 'manager'].includes(user?.role);
+  const canReport = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
+  const canReview = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
 
   const columns = [
     {

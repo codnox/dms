@@ -36,7 +36,7 @@ const DistributorDashboard = () => {
           dashboardAPI.getStats().catch(() => ({ data: {} })),
           devicesAPI.getDevices().catch(() => ({ data: [] })),
           distributionsAPI.getDistributions().catch(() => ({ data: [] })),
-          usersAPI.getUsers({ role: 'sub-distributor' }).catch(() => ({ data: [] })),
+          usersAPI.getUsers({ role: 'sub_distributor' }).catch(() => ({ data: [] })),
           defectsAPI.getDefects().catch(() => ({ data: [] })),
           returnsAPI.getReturns().catch(() => ({ data: [] }))
         ]);
@@ -211,7 +211,7 @@ const DistributorDashboard = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={ret.status} />
-                  {ret.status === 'pending' && ret.current_approver === 'distributor' && (
+                  {ret.status === 'pending' && ret.current_approver === 'sub_distributor' && (
                     <div className="flex gap-1">
                       <button className="p-1 text-green-600 hover:bg-green-50 rounded">
                         <CheckCircle className="w-4 h-4" />

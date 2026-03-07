@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from bson import ObjectId
+import json
 
-from app.database import get_database
-from app.models.distribution import DistributionCreate, DistributionUpdate, DistributionStatus, UserType
-from app.models.device import DeviceStatus, HolderType
+from app.database import get_db, row_to_dict, rows_to_list
+from app.models.distribution import DistributionCreate, DistributionStatus
+from app.models.device import DeviceStatus
 from app.services import device_service, notification_service
-from app.utils.helpers import serialize_doc, serialize_docs, get_pagination, generate_distribution_id
+from app.utils.helpers import get_pagination, generate_distribution_id
 
 
 async def get_distributions(
@@ -19,354 +19,296 @@ async def get_distributions(
     search: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get all distributions with pagination and filters"""
-    db = get_database()
-    
-    # Build query
-    query = {}
-    if status:
-        query["status"] = status
-    if from_user_id:
-        query["from_user_id"] = from_user_id
-    if to_user_id:
-        query["to_user_id"] = to_user_id
-    if user_id:
-        # User can see distributions where they are sender or recipient
-        query["$or"] = [
-            {"from_user_id": user_id},
-            {"to_user_id": user_id}
-        ]
-    if search:
-        query["$or"] = [
-            {"distribution_id": {"$regex": search, "$options": "i"}},
-            {"from_user_name": {"$regex": search, "$options": "i"}},
-            {"to_user_name": {"$regex": search, "$options": "i"}}
-        ]
-    
-    # Get total count
-    total = await db.distributions.count_documents(query)
-    
-    # Get paginated results
-    skip = (page - 1) * page_size
-    cursor = db.distributions.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-    distributions = await cursor.to_list(length=page_size)
-    
-    return {
-        "data": serialize_docs(distributions),
-        "pagination": get_pagination(page, page_size, total)
-    }
+    async with get_db() as db:
+        conditions = []
+        params = []
+        
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if from_user_id:
+            conditions.append("from_user_id = ?")
+            params.append(from_user_id)
+        if to_user_id:
+            conditions.append("to_user_id = ?")
+            params.append(to_user_id)
+        if user_id:
+            conditions.append("(from_user_id = ? OR to_user_id = ?)")
+            params.extend([user_id, user_id])
+        if search:
+            conditions.append("(distribution_id LIKE ? OR from_user_name LIKE ? OR to_user_name LIKE ?)")
+            params.extend([f"%{search}%"] * 3)
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        cursor = await db.execute(f"SELECT COUNT(*) FROM distributions WHERE {where_clause}", params)
+        total = (await cursor.fetchone())[0]
+        
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM distributions WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
+        rows = await cursor.fetchall()
+        
+        result = []
+        for r in rows_to_list(rows):
+            if r.get("device_ids"):
+                try:
+                    r["device_ids"] = json.loads(r["device_ids"])
+                except (json.JSONDecodeError, TypeError):
+                    r["device_ids"] = []
+            result.append(r)
+        
+        return {
+            "data": result,
+            "pagination": get_pagination(page, page_size, total)
+        }
 
 
 async def get_distribution_by_id(distribution_id: str) -> Optional[Dict[str, Any]]:
     """Get distribution by ID"""
-    db = get_database()
-    
-    try:
-        distribution = await db.distributions.find_one({"_id": ObjectId(distribution_id)})
-        return serialize_doc(distribution) if distribution else None
-    except:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM distributions WHERE id = ?", (int(distribution_id),))
+        row = await cursor.fetchone()
+        if row:
+            d = row_to_dict(row)
+            if d.get("device_ids"):
+                try:
+                    d["device_ids"] = json.loads(d["device_ids"])
+                except (json.JSONDecodeError, TypeError):
+                    d["device_ids"] = []
+            return d
         return None
 
 
-async def create_distribution(
-    dist_data: DistributionCreate,
-    from_user: Dict[str, Any]
-) -> Dict[str, Any]:
+async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new distribution request"""
-    db = get_database()
+    async with get_db() as db:
+        # Get recipient user
+        cursor = await db.execute("SELECT * FROM users WHERE id = ?", (int(dist_data.to_user_id),))
+        to_user = await cursor.fetchone()
+        if not to_user:
+            raise ValueError("Recipient user not found")
+        to_user = row_to_dict(to_user)
+        
+        # Validate devices exist and are available
+        for dev_id in dist_data.device_ids:
+            cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(dev_id),))
+            device = await cursor.fetchone()
+            if not device:
+                raise ValueError(f"Device {dev_id} not found")
+            device = row_to_dict(device)
+            if device["status"] != DeviceStatus.AVAILABLE.value:
+                raise ValueError(f"Device {device['device_id']} is not available")
+        
+        role_to_type = {
+            "admin": "noc", "manager": "noc", "staff": "staff",
+            "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
+        }
+        
+        now = datetime.utcnow().isoformat()
+        from_user_id = str(from_user.get("id", from_user.get("_id", "")))
+        
+        cursor = await db.execute(
+            """INSERT INTO distributions (distribution_id, device_ids, device_count,
+                from_user_id, from_user_name, from_user_type, to_user_id, to_user_name, to_user_type,
+                status, request_date, notes, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                generate_distribution_id(), json.dumps(dist_data.device_ids),
+                len(dist_data.device_ids), from_user_id, from_user["name"],
+                role_to_type.get(from_user["role"], "noc"),
+                str(to_user["id"]), to_user["name"],
+                role_to_type.get(to_user["role"], "staff"),
+                DistributionStatus.PENDING.value, now, dist_data.notes,
+                from_user_id, now, now
+            )
+        )
+        new_id = str(cursor.lastrowid)
+        
+        # Create approval entry
+        await db.execute(
+            """INSERT INTO approvals (approval_type, entity_id, entity_type, requested_by,
+                requested_by_name, status, priority, request_date, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("distribution", new_id, "distribution", from_user_id, from_user["name"],
+             "pending", "medium", now, dist_data.notes, now, now)
+        )
+        await db.commit()
     
-    # Get recipient user
-    to_user = await db.users.find_one({"_id": ObjectId(dist_data.to_user_id)})
-    if not to_user:
-        raise ValueError("Recipient user not found")
-    
-    # Validate devices exist and are available
-    for device_id in dist_data.device_ids:
-        device = await db.devices.find_one({"_id": ObjectId(device_id)})
-        if not device:
-            raise ValueError(f"Device {device_id} not found")
-        if device["status"] != DeviceStatus.AVAILABLE.value:
-            raise ValueError(f"Device {device['device_id']} is not available")
-    
-    # Determine user types based on roles
-    role_to_type = {
-        "admin": "noc",
-        "manager": "noc",
-        "distributor": "distributor",
-        "sub_distributor": "sub_distributor",
-        "operator": "operator"
-    }
-    
-    now = datetime.utcnow()
-    dist_doc = {
-        "distribution_id": generate_distribution_id(),
-        "device_ids": dist_data.device_ids,
-        "device_count": len(dist_data.device_ids),
-        "from_user_id": str(from_user["_id"]),
-        "from_user_name": from_user["name"],
-        "from_user_type": role_to_type.get(from_user["role"], "noc"),
-        "to_user_id": str(to_user["_id"]),
-        "to_user_name": to_user["name"],
-        "to_user_type": role_to_type.get(to_user["role"], "distributor"),
-        "status": DistributionStatus.PENDING.value,
-        "request_date": now,
-        "approval_date": None,
-        "delivery_date": None,
-        "notes": dist_data.notes,
-        "approved_by": None,
-        "approved_by_name": None,
-        "created_by": str(from_user["_id"]),
-        "created_at": now,
-        "updated_at": now
-    }
-    
-    result = await db.distributions.insert_one(dist_doc)
-    dist_doc["_id"] = result.inserted_id
-    
-    # Create approval entry
-    approval_doc = {
-        "approval_type": "distribution",
-        "entity_id": str(result.inserted_id),
-        "entity_type": "distribution",
-        "requested_by": str(from_user["_id"]),
-        "requested_by_name": from_user["name"],
-        "status": "pending",
-        "priority": "medium",
-        "request_date": now,
-        "approved_by": None,
-        "approved_by_name": None,
-        "approval_date": None,
-        "rejection_reason": None,
-        "notes": dist_data.notes,
-        "created_at": now,
-        "updated_at": now
-    }
-    await db.approvals.insert_one(approval_doc)
-    
-    # Send notification to recipient
+    # Send notification
     await notification_service.create_notification(
-        user_id=str(to_user["_id"]),
+        user_id=str(to_user["id"]),
         title="New Distribution Request",
-        message=f"You have a new distribution request from {from_user['name']} for {len(dist_data.device_ids)} device(s)",
-        notification_type="info",
-        category="distribution",
-        link=f"/distributions/{str(result.inserted_id)}"
+        message=f"New distribution request from {from_user['name']} for {len(dist_data.device_ids)} device(s)",
+        notification_type="info", category="distribution",
+        link=f"/distributions/{new_id}"
     )
     
-    return serialize_doc(dist_doc)
+    return await get_distribution_by_id(new_id)
 
 
 async def update_distribution_status(
-    distribution_id: str,
-    status: str,
-    user: Dict[str, Any],
-    notes: Optional[str] = None
+    distribution_id: str, status: str, user: Dict[str, Any], notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update distribution status"""
-    db = get_database()
-    
-    distribution = await db.distributions.find_one({"_id": ObjectId(distribution_id)})
-    if not distribution:
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
         return None
     
-    update_data = {
-        "status": status,
-        "updated_at": datetime.utcnow()
-    }
+    now = datetime.utcnow().isoformat()
+    user_id = str(user.get("id", user.get("_id", "")))
     
-    if status == DistributionStatus.APPROVED.value:
-        update_data["approval_date"] = datetime.utcnow()
-        update_data["approved_by"] = str(user["_id"])
-        update_data["approved_by_name"] = user["name"]
+    async with get_db() as db:
+        update_fields = ["status = ?", "updated_at = ?"]
+        params = [status, now]
         
-        # Update approval record
-        await db.approvals.update_one(
-            {"entity_id": distribution_id, "approval_type": "distribution"},
-            {
-                "$set": {
-                    "status": "approved",
-                    "approved_by": str(user["_id"]),
-                    "approved_by_name": user["name"],
-                    "approval_date": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
+        if status == DistributionStatus.APPROVED.value:
+            update_fields.extend(["approval_date = ?", "approved_by = ?", "approved_by_name = ?"])
+            params.extend([now, user_id, user["name"]])
+            
+            await db.execute(
+                """UPDATE approvals SET status = 'approved', approved_by = ?, approved_by_name = ?,
+                    approval_date = ?, updated_at = ? WHERE entity_id = ? AND approval_type = 'distribution'""",
+                (user_id, user["name"], now, now, distribution_id)
+            )
         
-        # Update device holders when approved
-        for device_id in distribution["device_ids"]:
+        elif status == DistributionStatus.DELIVERED.value:
+            update_fields.append("delivery_date = ?")
+            params.append(now)
+        
+        elif status == DistributionStatus.REJECTED.value:
+            await db.execute(
+                """UPDATE approvals SET status = 'rejected', approved_by = ?, approved_by_name = ?,
+                    approval_date = ?, rejection_reason = ?, updated_at = ?
+                    WHERE entity_id = ? AND approval_type = 'distribution'""",
+                (user_id, user["name"], now, notes, now, distribution_id)
+            )
+        
+        if notes:
+            update_fields.append("notes = ?")
+            params.append(notes)
+        
+        params.append(int(distribution_id))
+        await db.execute(f"UPDATE distributions SET {', '.join(update_fields)} WHERE id = ?", params)
+        await db.commit()
+    
+    # Update device holders on approval/delivery
+    if status in [DistributionStatus.APPROVED.value, DistributionStatus.DELIVERED.value]:
+        device_ids = dist.get("device_ids", [])
+        for dev_id in device_ids:
             await device_service.update_device_holder(
-                device_id=device_id,
-                holder_id=distribution["to_user_id"],
-                holder_name=distribution["to_user_name"],
-                holder_type=distribution["to_user_type"],
-                location=distribution["to_user_name"],
-                status=DeviceStatus.DISTRIBUTED.value,
-                performed_by=str(user["_id"]),
-                performed_by_name=user["name"],
-                from_user_id=distribution["from_user_id"],
-                from_user_name=distribution["from_user_name"],
-                notes=f"Distributed via {distribution['distribution_id']}"
+                device_id=dev_id, holder_id=dist["to_user_id"],
+                holder_name=dist["to_user_name"], holder_type=dist.get("to_user_type", "staff"),
+                location=dist["to_user_name"], status=DeviceStatus.DISTRIBUTED.value,
+                performed_by=user_id, performed_by_name=user["name"],
+                from_user_id=dist["from_user_id"], from_user_name=dist["from_user_name"],
+                notes=f"Distributed via {dist['distribution_id']}"
             )
     
-    elif status == DistributionStatus.DELIVERED.value:
-        update_data["delivery_date"] = datetime.utcnow()
-        
-        # Update device holders
-        for device_id in distribution["device_ids"]:
-            await device_service.update_device_holder(
-                device_id=device_id,
-                holder_id=distribution["to_user_id"],
-                holder_name=distribution["to_user_name"],
-                holder_type=distribution["to_user_type"],
-                location=distribution["to_user_name"],
-                status=DeviceStatus.DISTRIBUTED.value,
-                performed_by=str(user["_id"]),
-                performed_by_name=user["name"],
-                from_user_id=distribution["from_user_id"],
-                from_user_name=distribution["from_user_name"],
-                notes=f"Distributed via {distribution['distribution_id']}"
-            )
-    
-    elif status == DistributionStatus.REJECTED.value:
-        # Update approval record
-        await db.approvals.update_one(
-            {"entity_id": distribution_id, "approval_type": "distribution"},
-            {
-                "$set": {
-                    "status": "rejected",
-                    "approved_by": str(user["_id"]),
-                    "approved_by_name": user["name"],
-                    "approval_date": datetime.utcnow(),
-                    "rejection_reason": notes,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-    
-    if notes:
-        update_data["notes"] = notes
-    
-    result = await db.distributions.update_one(
-        {"_id": ObjectId(distribution_id)},
-        {"$set": update_data}
+    # Notification
+    await notification_service.create_notification(
+        user_id=dist["from_user_id"],
+        title=f"Distribution {status.capitalize()}",
+        message=f"Distribution {dist['distribution_id']} has been {status}",
+        notification_type="success" if status in ["approved", "delivered"] else "warning",
+        category="distribution", link=f"/distributions/{distribution_id}"
     )
     
-    if result.modified_count > 0:
-        # Send notification
-        await notification_service.create_notification(
-            user_id=distribution["from_user_id"],
-            title=f"Distribution {status.capitalize()}",
-            message=f"Your distribution request {distribution['distribution_id']} has been {status}",
-            notification_type="success" if status in ["approved", "delivered"] else "warning",
-            category="distribution",
-            link=f"/distributions/{distribution_id}"
-        )
-        
-        return await get_distribution_by_id(distribution_id)
-    return None
+    return await get_distribution_by_id(distribution_id)
 
 
 async def cancel_distribution(distribution_id: str, user_id: str) -> bool:
-    """Cancel a distribution (only by creator)"""
-    db = get_database()
-    
-    distribution = await db.distributions.find_one({"_id": ObjectId(distribution_id)})
-    if not distribution:
+    """Cancel a distribution"""
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
         return False
-    
-    # Check if user is the creator
-    if distribution["created_by"] != user_id:
+    if dist["created_by"] != user_id:
         raise ValueError("Only the creator can cancel this distribution")
-    
-    # Check if distribution is still pending
-    if distribution["status"] != DistributionStatus.PENDING.value:
+    if dist["status"] != DistributionStatus.PENDING.value:
         raise ValueError("Only pending distributions can be cancelled")
     
-    result = await db.distributions.update_one(
-        {"_id": ObjectId(distribution_id)},
-        {
-            "$set": {
-                "status": DistributionStatus.CANCELLED.value,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
-    
-    if result.modified_count > 0:
-        # Update approval record
-        await db.approvals.delete_one({"entity_id": distribution_id, "approval_type": "distribution"})
-        return True
-    return False
+    async with get_db() as db:
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            "UPDATE distributions SET status = ?, updated_at = ? WHERE id = ?",
+            (DistributionStatus.CANCELLED.value, now, int(distribution_id))
+        )
+        await db.execute(
+            "DELETE FROM approvals WHERE entity_id = ? AND approval_type = 'distribution'",
+            (distribution_id,)
+        )
+        await db.commit()
+    return True
 
 
 async def get_pending_distributions() -> List[Dict[str, Any]]:
     """Get all pending distributions"""
-    db = get_database()
-    
-    cursor = db.distributions.find({"status": DistributionStatus.PENDING.value}).sort("created_at", -1)
-    distributions = await cursor.to_list(length=100)
-    
-    return serialize_docs(distributions)
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM distributions WHERE status = ? ORDER BY created_at DESC",
+            (DistributionStatus.PENDING.value,)
+        )
+        rows = await cursor.fetchall()
+        result = []
+        for r in rows_to_list(rows):
+            if r.get("device_ids"):
+                try:
+                    r["device_ids"] = json.loads(r["device_ids"])
+                except (json.JSONDecodeError, TypeError):
+                    r["device_ids"] = []
+            result.append(r)
+        return result
 
 
 async def get_distribution_stats() -> Dict[str, int]:
     """Get distribution statistics"""
-    db = get_database()
-    
-    total = await db.distributions.count_documents({})
-    pending = await db.distributions.count_documents({"status": "pending"})
-    approved = await db.distributions.count_documents({"status": "approved"})
-    delivered = await db.distributions.count_documents({"status": "delivered"})
-    rejected = await db.distributions.count_documents({"status": "rejected"})
-    
-    return {
-        "total": total,
-        "pending": pending,
-        "approved": approved,
-        "delivered": delivered,
-        "rejected": rejected
-    }
+    async with get_db() as db:
+        stats = {}
+        for key in ["total", "pending", "approved", "delivered", "rejected"]:
+            if key == "total":
+                cursor = await db.execute("SELECT COUNT(*) FROM distributions")
+            else:
+                cursor = await db.execute("SELECT COUNT(*) FROM distributions WHERE status = ?", (key,))
+            stats[key] = (await cursor.fetchone())[0]
+        return stats
 
 
 async def sync_approved_distributions(user: Dict[str, Any]) -> Dict[str, Any]:
-    """Re-process all approved distributions to sync device holders.
-    This fixes devices that weren't updated when distributions were approved
-    before the device-update code was in place."""
-    db = get_database()
+    """Re-process all approved distributions to sync device holders."""
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM distributions WHERE status = ?", (DistributionStatus.APPROVED.value,))
+        rows = await cursor.fetchall()
     
-    # Find all approved distributions
-    cursor = db.distributions.find({"status": DistributionStatus.APPROVED.value})
-    distributions = await cursor.to_list(length=500)
-    
+    distributions = rows_to_list(rows)
     synced_count = 0
     errors = []
+    user_id = str(user.get("id", user.get("_id", "system")))
     
     for dist in distributions:
-        for device_id in dist.get("device_ids", []):
+        device_ids = dist.get("device_ids", "[]")
+        if isinstance(device_ids, str):
             try:
-                # Check if device is still showing wrong holder
-                device = await db.devices.find_one({"_id": ObjectId(device_id)})
-                if device and (device.get("status") != DeviceStatus.DISTRIBUTED.value or 
-                              device.get("current_holder_id") != dist["to_user_id"]):
-                    await device_service.update_device_holder(
-                        device_id=device_id,
-                        holder_id=dist["to_user_id"],
-                        holder_name=dist["to_user_name"],
-                        holder_type=dist.get("to_user_type", "distributor"),
-                        location=dist["to_user_name"],
-                        status=DeviceStatus.DISTRIBUTED.value,
-                        performed_by=str(user.get("id", user.get("_id", "system"))),
-                        performed_by_name=user.get("name", "System"),
-                        from_user_id=dist.get("from_user_id"),
-                        from_user_name=dist.get("from_user_name"),
-                        notes=f"Synced from approved distribution {dist.get('distribution_id', '')}"
-                    )
-                    synced_count += 1
+                device_ids = json.loads(device_ids)
+            except (json.JSONDecodeError, TypeError):
+                device_ids = []
+        
+        for dev_id in device_ids:
+            try:
+                await device_service.update_device_holder(
+                    device_id=dev_id, holder_id=dist["to_user_id"],
+                    holder_name=dist["to_user_name"],
+                    holder_type=dist.get("to_user_type", "staff"),
+                    location=dist["to_user_name"],
+                    status=DeviceStatus.DISTRIBUTED.value,
+                    performed_by=user_id, performed_by_name=user.get("name", "System"),
+                    from_user_id=dist.get("from_user_id"),
+                    from_user_name=dist.get("from_user_name"),
+                    notes=f"Synced from approved distribution {dist.get('distribution_id', '')}"
+                )
+                synced_count += 1
             except Exception as e:
-                errors.append(f"Device {device_id}: {str(e)}")
+                errors.append(f"Device {dev_id}: {str(e)}")
     
-    return {
-        "total_distributions": len(distributions),
-        "devices_synced": synced_count,
-        "errors": errors
-    }
+    return {"total_distributions": len(distributions), "devices_synced": synced_count, "errors": errors}

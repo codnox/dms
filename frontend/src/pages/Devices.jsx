@@ -36,7 +36,7 @@ const Devices = () => {
     }
   };
 
-  const canRegister = ['admin', 'distributor'].includes(user?.role);
+  const canRegister = ['admin', 'manager', 'staff'].includes(user?.role);
 
   const columns = [
     { key: 'mac_address', label: 'MAC Address' },

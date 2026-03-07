@@ -1,12 +1,11 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from bson import ObjectId
 
-from app.database import get_database
+from app.database import get_db, row_to_dict, rows_to_list
 from app.models.return_device import ReturnCreate, ReturnUpdate, ReturnStatus, ReturnReason
 from app.models.device import DeviceStatus
 from app.services import device_service, notification_service
-from app.utils.helpers import serialize_doc, serialize_docs, get_pagination, generate_return_id
+from app.utils.helpers import get_pagination, generate_return_id
 
 
 async def get_returns(
@@ -18,121 +17,115 @@ async def get_returns(
     search: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get all return requests with pagination and filters"""
-    db = get_database()
-    
-    # Build query
-    query = {}
-    if status:
-        query["status"] = status
-    if reason:
-        query["reason"] = reason
-    if requested_by:
-        query["requested_by"] = requested_by
-    if search:
-        query["$or"] = [
-            {"return_id": {"$regex": search, "$options": "i"}},
-            {"device_serial": {"$regex": search, "$options": "i"}}
-        ]
-    
-    # Get total count
-    total = await db.returns.count_documents(query)
-    
-    # Get paginated results
-    skip = (page - 1) * page_size
-    cursor = db.returns.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-    returns = await cursor.to_list(length=page_size)
-    
-    return {
-        "data": serialize_docs(returns),
-        "pagination": get_pagination(page, page_size, total)
-    }
+    async with get_db() as db:
+        conditions = ["1=1"]
+        params = []
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if reason:
+            conditions.append("reason = ?")
+            params.append(reason)
+        if requested_by:
+            conditions.append("requested_by = ?")
+            params.append(requested_by)
+        if search:
+            conditions.append("(return_id LIKE ? OR device_serial LIKE ?)")
+            like = f"%{search}%"
+            params.extend([like, like])
+
+        where = " AND ".join(conditions)
+
+        cursor = await db.execute(f"SELECT COUNT(*) FROM returns WHERE {where}", params)
+        total = (await cursor.fetchone())[0]
+
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM returns WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
+        rows = await cursor.fetchall()
+
+        return {
+            "data": rows_to_list(rows),
+            "pagination": get_pagination(page, page_size, total)
+        }
 
 
 async def get_return_by_id(return_id: str) -> Optional[Dict[str, Any]]:
     """Get return request by ID"""
-    db = get_database()
-    
-    try:
-        return_req = await db.returns.find_one({"_id": ObjectId(return_id)})
-        return serialize_doc(return_req) if return_req else None
-    except:
-        return None
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM returns WHERE id = ?", (int(return_id),))
+        row = await cursor.fetchone()
+        return row_to_dict(row) if row else None
 
 
 async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new return request"""
-    db = get_database()
-    
-    # Get device info
-    device = await db.devices.find_one({"_id": ObjectId(return_data.device_id)})
-    if not device:
-        raise ValueError("Device not found")
-    
-    # Determine who to return to based on current holder type
-    # Returns go up the chain: operator -> sub_distributor -> distributor -> noc
-    return_to_user = None
-    
-    # For simplicity, find a manager or admin to return to
-    return_to_user = await db.users.find_one({"role": {"$in": ["admin", "manager"]}})
-    if not return_to_user:
-        raise ValueError("No admin/manager found to process return")
-    
-    now = datetime.utcnow()
-    return_doc = {
-        "return_id": generate_return_id(),
-        "device_id": return_data.device_id,
-        "device_serial": device["serial_number"],
-        "device_type": device["device_type"],
-        "requested_by": str(requester["_id"]),
-        "requested_by_name": requester["name"],
-        "return_to": str(return_to_user["_id"]),
-        "return_to_name": return_to_user["name"],
-        "reason": return_data.reason.value,
-        "description": return_data.description,
-        "status": ReturnStatus.PENDING.value,
-        "request_date": now,
-        "approval_date": None,
-        "received_date": None,
-        "approved_by": None,
-        "approved_by_name": None,
-        "created_at": now,
-        "updated_at": now
-    }
-    
-    result = await db.returns.insert_one(return_doc)
-    return_doc["_id"] = result.inserted_id
-    
-    # Create approval entry
-    approval_doc = {
-        "approval_type": "return",
-        "entity_id": str(result.inserted_id),
-        "entity_type": "return",
-        "requested_by": str(requester["_id"]),
-        "requested_by_name": requester["name"],
-        "status": "pending",
-        "priority": "medium",
-        "request_date": now,
-        "approved_by": None,
-        "approved_by_name": None,
-        "approval_date": None,
-        "rejection_reason": None,
-        "notes": return_data.description,
-        "created_at": now,
-        "updated_at": now
-    }
-    await db.approvals.insert_one(approval_doc)
-    
-    # Notify return_to user
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(return_data.device_id),))
+        device = await cursor.fetchone()
+        if not device:
+            raise ValueError("Device not found")
+        device = dict(device)
+
+        cursor = await db.execute("SELECT * FROM users WHERE role IN ('admin', 'manager') LIMIT 1")
+        return_to_user = await cursor.fetchone()
+        if not return_to_user:
+            raise ValueError("No admin/manager found to process return")
+        return_to_user = dict(return_to_user)
+
+        now = datetime.utcnow().isoformat()
+
+        cursor = await db.execute(
+            """INSERT INTO returns (return_id, device_id, device_serial, device_type,
+            requested_by, requested_by_name, return_to, return_to_name, reason, description,
+            status, request_date, approval_date, received_date, approved_by, approved_by_name,
+            created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                generate_return_id(),
+                return_data.device_id,
+                device["serial_number"],
+                device["device_type"],
+                str(requester["_id"]),
+                requester["name"],
+                str(return_to_user["id"]),
+                return_to_user["name"],
+                return_data.reason.value,
+                return_data.description,
+                ReturnStatus.PENDING.value,
+                now, None, None, None, None,
+                now, now
+            )
+        )
+        return_row_id = cursor.lastrowid
+
+        # Create approval entry
+        await db.execute(
+            """INSERT INTO approvals (approval_type, entity_id, entity_type, requested_by,
+            requested_by_name, status, priority, request_date, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "return", str(return_row_id), "return",
+                str(requester["_id"]), requester["name"],
+                "pending", "medium", now,
+                return_data.description, now, now
+            )
+        )
+        await db.commit()
+
     await notification_service.create_notification(
-        user_id=str(return_to_user["_id"]),
+        user_id=str(return_to_user["id"]),
         title="New Return Request",
         message=f"A return request has been submitted by {requester['name']} for device {device['device_id']}",
         notification_type="info",
         category="return",
-        link=f"/returns/{str(result.inserted_id)}"
+        link=f"/returns/{return_row_id}"
     )
-    
-    return serialize_doc(return_doc)
+
+    return await get_return_by_id(str(return_row_id))
 
 
 async def update_return_status(
@@ -142,40 +135,52 @@ async def update_return_status(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update return request status"""
-    db = get_database()
-    
-    return_req = await db.returns.find_one({"_id": ObjectId(return_id)})
-    if not return_req:
-        return None
-    
-    update_data = {
-        "status": status,
-        "updated_at": datetime.utcnow()
-    }
-    
-    if status == ReturnStatus.APPROVED.value:
-        update_data["approval_date"] = datetime.utcnow()
-        update_data["approved_by"] = str(user["_id"])
-        update_data["approved_by_name"] = user["name"]
-        
-        # Update approval record
-        await db.approvals.update_one(
-            {"entity_id": return_id, "approval_type": "return"},
-            {
-                "$set": {
-                    "status": "approved",
-                    "approved_by": str(user["_id"]),
-                    "approved_by_name": user["name"],
-                    "approval_date": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-    
-    elif status == ReturnStatus.RECEIVED.value:
-        update_data["received_date"] = datetime.utcnow()
-        
-        # Update device status and holder
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM returns WHERE id = ?", (int(return_id),))
+        return_req = await cursor.fetchone()
+        if not return_req:
+            return None
+        return_req = dict(return_req)
+
+        now = datetime.utcnow().isoformat()
+
+        if status == ReturnStatus.APPROVED.value:
+            await db.execute(
+                "UPDATE returns SET status = ?, approval_date = ?, approved_by = ?, approved_by_name = ?, updated_at = ? WHERE id = ?",
+                (status, now, str(user["_id"]), user["name"], now, int(return_id))
+            )
+            await db.execute(
+                """UPDATE approvals SET status = 'approved', approved_by = ?, approved_by_name = ?,
+                approval_date = ?, updated_at = ? WHERE entity_id = ? AND approval_type = 'return'""",
+                (str(user["_id"]), user["name"], now, now, return_id)
+            )
+
+        elif status == ReturnStatus.RECEIVED.value:
+            await db.execute(
+                "UPDATE returns SET status = ?, received_date = ?, updated_at = ? WHERE id = ?",
+                (status, now, now, int(return_id))
+            )
+
+        elif status == ReturnStatus.REJECTED.value:
+            await db.execute(
+                "UPDATE returns SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, int(return_id))
+            )
+            await db.execute(
+                """UPDATE approvals SET status = 'rejected', approved_by = ?, approved_by_name = ?,
+                approval_date = ?, rejection_reason = ?, updated_at = ?
+                WHERE entity_id = ? AND approval_type = 'return'""",
+                (str(user["_id"]), user["name"], now, notes, now, return_id)
+            )
+        else:
+            await db.execute(
+                "UPDATE returns SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, int(return_id))
+            )
+
+        await db.commit()
+
+    if status == ReturnStatus.RECEIVED.value:
         await device_service.update_device_holder(
             device_id=return_req["device_id"],
             holder_id=None,
@@ -189,102 +194,77 @@ async def update_return_status(
             from_user_name=return_req["requested_by_name"],
             notes=f"Returned via {return_req['return_id']}"
         )
-    
-    elif status == ReturnStatus.REJECTED.value:
-        # Update approval record
-        await db.approvals.update_one(
-            {"entity_id": return_id, "approval_type": "return"},
-            {
-                "$set": {
-                    "status": "rejected",
-                    "approved_by": str(user["_id"]),
-                    "approved_by_name": user["name"],
-                    "approval_date": datetime.utcnow(),
-                    "rejection_reason": notes,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-    
-    result = await db.returns.update_one(
-        {"_id": ObjectId(return_id)},
-        {"$set": update_data}
+
+    await notification_service.create_notification(
+        user_id=return_req["requested_by"],
+        title=f"Return Request {status.capitalize()}",
+        message=f"Your return request {return_req['return_id']} has been {status}",
+        notification_type="success" if status in ["approved", "received"] else "warning",
+        category="return",
+        link=f"/returns/{return_id}"
     )
-    
-    if result.modified_count > 0:
-        # Notify requester
-        await notification_service.create_notification(
-            user_id=return_req["requested_by"],
-            title=f"Return Request {status.capitalize()}",
-            message=f"Your return request {return_req['return_id']} has been {status}",
-            notification_type="success" if status in ["approved", "received"] else "warning",
-            category="return",
-            link=f"/returns/{return_id}"
-        )
-        
-        return await get_return_by_id(return_id)
-    return None
+
+    return await get_return_by_id(return_id)
 
 
 async def cancel_return(return_id: str, user_id: str) -> bool:
     """Cancel a return request (only by creator)"""
-    db = get_database()
-    
-    return_req = await db.returns.find_one({"_id": ObjectId(return_id)})
-    if not return_req:
-        return False
-    
-    # Check if user is the creator
-    if return_req["requested_by"] != user_id:
-        raise ValueError("Only the requester can cancel this return request")
-    
-    # Check if return is still pending
-    if return_req["status"] != ReturnStatus.PENDING.value:
-        raise ValueError("Only pending return requests can be cancelled")
-    
-    result = await db.returns.update_one(
-        {"_id": ObjectId(return_id)},
-        {
-            "$set": {
-                "status": ReturnStatus.CANCELLED.value,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
-    
-    if result.modified_count > 0:
-        # Update approval record
-        await db.approvals.delete_one({"entity_id": return_id, "approval_type": "return"})
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM returns WHERE id = ?", (int(return_id),))
+        return_req = await cursor.fetchone()
+        if not return_req:
+            return False
+        return_req = dict(return_req)
+
+        if return_req["requested_by"] != user_id:
+            raise ValueError("Only the requester can cancel this return request")
+        if return_req["status"] != ReturnStatus.PENDING.value:
+            raise ValueError("Only pending return requests can be cancelled")
+
+        await db.execute(
+            "UPDATE returns SET status = ?, updated_at = ? WHERE id = ?",
+            (ReturnStatus.CANCELLED.value, datetime.utcnow().isoformat(), int(return_id))
+        )
+        await db.execute(
+            "DELETE FROM approvals WHERE entity_id = ? AND approval_type = 'return'",
+            (return_id,)
+        )
+        await db.commit()
         return True
-    return False
 
 
 async def get_return_stats() -> Dict[str, Any]:
     """Get return statistics"""
-    db = get_database()
-    
-    total = await db.returns.count_documents({})
-    pending = await db.returns.count_documents({"status": "pending"})
-    approved = await db.returns.count_documents({"status": "approved"})
-    received = await db.returns.count_documents({"status": "received"})
-    rejected = await db.returns.count_documents({"status": "rejected"})
-    
-    # By reason
-    defective = await db.returns.count_documents({"reason": "defective"})
-    unused = await db.returns.count_documents({"reason": "unused"})
-    end_of_contract = await db.returns.count_documents({"reason": "end_of_contract"})
-    
-    return {
-        "total": total,
-        "by_status": {
-            "pending": pending,
-            "approved": approved,
-            "received": received,
-            "rejected": rejected
-        },
-        "by_reason": {
-            "defective": defective,
-            "unused": unused,
-            "end_of_contract": end_of_contract
+    async with get_db() as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM returns")
+        total = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE status = 'pending'")
+        pending = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE status = 'approved'")
+        approved = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE status = 'received'")
+        received = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE status = 'rejected'")
+        rejected = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE reason = 'defective'")
+        defective = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE reason = 'unused'")
+        unused = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(*) FROM returns WHERE reason = 'end_of_contract'")
+        end_of_contract = (await cursor.fetchone())[0]
+
+        return {
+            "total": total,
+            "by_status": {
+                "pending": pending,
+                "approved": approved,
+                "received": received,
+                "rejected": rejected
+            },
+            "by_reason": {
+                "defective": defective,
+                "unused": unused,
+                "end_of_contract": end_of_contract
+            }
         }
-    }

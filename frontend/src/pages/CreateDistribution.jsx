@@ -24,7 +24,7 @@ const CreateDistribution = () => {
   });
 
   // Only admin and manager can create distributions
-  const canCreateDistribution = hasRole(['admin', 'manager']);
+  const canCreateDistribution = hasRole(['admin', 'manager', 'staff']);
   
   useEffect(() => {
     const fetchData = async () => {
@@ -37,7 +37,7 @@ const CreateDistribution = () => {
         setAvailableDevices(devicesRes.data || []);
         const allUsers = usersRes.data || [];
         setRecipients(allUsers.filter(u => 
-          ['sub-distributor', 'operator', 'distributor'].includes(u.role) && u.status === 'active'
+          ['sub_distributor', 'operator', 'cluster'].includes(u.role) && u.status === 'active'
         ));
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -111,7 +111,7 @@ const CreateDistribution = () => {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Create Distribution</h1>
         <p className="text-gray-500 mt-1 text-sm sm:text-base">
-          Distribute devices to distributors, sub-distributors, or operators
+          Distribute devices to sub-distributors, clusters, or operators
         </p>
       </div>
 
