@@ -53,6 +53,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           label: 'User Management',
           children: [
             { path: '/users', label: 'All Users' },
+            { path: '/change-requests', label: 'Change Requests' },
           ]
         },
         {
@@ -62,6 +63,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           children: [
             { path: '/devices', label: 'All Devices' },
             { path: '/devices/register', label: 'Register Device' },
+            { path: '/devices/bulk-import', label: 'Bulk Import' },
           ]
         },
         {
@@ -77,11 +79,13 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         { path: '/settings', icon: Settings, label: 'Settings' },
       ],
       manager: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'Users' },
+        { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         {
           key: 'devices',
           icon: Box,
@@ -89,6 +93,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           children: [
             { path: '/devices', label: 'All Devices' },
             { path: '/devices/register', label: 'Register Device' },
+            { path: '/devices/bulk-import', label: 'Bulk Import' },
           ]
         },
         {
@@ -104,10 +109,10 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
       ],
       staff: [
         ...commonItems,
-        { path: '/users', icon: Users, label: 'Users' },
         {
           key: 'devices',
           icon: Box,
@@ -115,6 +120,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           children: [
             { path: '/devices', label: 'All Devices' },
             { path: '/devices/register', label: 'Register Device' },
+            { path: '/devices/bulk-import', label: 'Bulk Import' },
           ]
         },
         {
@@ -133,6 +139,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ],
       sub_distributor: [
         ...commonItems,
+        { path: '/users', icon: Users, label: 'My Users' },
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
@@ -141,6 +148,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ],
       cluster: [
         ...commonItems,
+        { path: '/users', icon: Users, label: 'My Users' },
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },

@@ -205,6 +205,24 @@ CREATE TABLE IF NOT EXISTS notifications (
     metadata TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS change_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT UNIQUE NOT NULL,
+    requested_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_by_name TEXT NOT NULL,
+    requested_by_role TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    new_email TEXT,
+    new_password TEXT,
+    reason TEXT,
+    status TEXT DEFAULT 'pending',
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_by_name TEXT,
+    review_note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 

@@ -3,26 +3,26 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { authAPI, usersAPI } from '../services/api';
 import { 
   User, Mail, Phone, Building, MapPin, Lock, 
-  Camera, Save, Eye, EyeOff 
+  Save, Eye, EyeOff 
 } from 'lucide-react';
 
 const Profile = () => {
-  const { user, logout } = useAuth();
-  const { addNotification } = useNotifications();
+  const { user, setUser, logout } = useAuth();
+  const { showToast } = useNotifications();
   
   const [activeTab, setActiveTab] = useState('profile');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
-  
+  const [saving, setSaving] = useState(false);
+
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
-    email: user?.email || '',
-    phone: '+1 (555) 123-4567',
-    company: 'Distribution Management Inc.',
-    region: user?.region || 'North Region',
-    address: '123 Distribution Way, Business Park'
+    phone: user?.phone || '',
+    department: user?.department || '',
+    location: user?.location || '',
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -31,47 +31,51 @@ const Profile = () => {
     confirmPassword: ''
   });
 
-  const handleProfileUpdate = (e) => {
+  const handleProfileUpdate = async (e) => {
     e.preventDefault();
-    addNotification({
-      type: 'success',
-      title: 'Profile Updated',
-      message: 'Your profile has been updated successfully.'
-    });
+    setSaving(true);
+    try {
+      const payload = {};
+      if (profileData.name)       payload.name = profileData.name;
+      if (profileData.phone)      payload.phone = profileData.phone;
+      if (profileData.department) payload.department = profileData.department;
+      if (profileData.location)   payload.location = profileData.location;
+
+      const response = await usersAPI.updateUser(user.id, payload);
+      // Update auth context with new user data
+      const updatedUser = { ...user, ...response.data };
+      setUser(updatedUser);
+      localStorage.setItem('dms_user', JSON.stringify({ ...JSON.parse(localStorage.getItem('dms_user') || '{}'), ...updatedUser }));
+      showToast('Profile updated successfully', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to update profile', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handlePasswordChange = (e) => {
+  const handlePasswordChange = async (e) => {
     e.preventDefault();
-    
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'New passwords do not match.'
-      });
+      showToast('New passwords do not match', 'error');
       return;
     }
-
     if (passwordData.newPassword.length < 6) {
-      addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Password must be at least 6 characters long.'
-      });
+      showToast('Password must be at least 6 characters', 'error');
       return;
     }
 
-    addNotification({
-      type: 'success',
-      title: 'Password Changed',
-      message: 'Your password has been changed successfully.'
-    });
-
-    setPasswordData({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    });
+    setSaving(true);
+    try {
+      await authAPI.changePassword(passwordData.currentPassword, passwordData.newPassword);
+      showToast('Password changed successfully', 'success');
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      showToast(err.message || 'Failed to change password', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const getRoleBadgeColor = (role) => {
@@ -96,21 +100,16 @@ const Profile = () => {
       {/* Profile Header */}
       <Card>
         <div className="flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative">
-            <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center">
-              <span className="text-3xl font-bold text-blue-600">
-                {user?.name?.split(' ').map(n => n[0]).join('') || 'U'}
-              </span>
-            </div>
-            <button className="absolute bottom-0 right-0 p-2 bg-blue-600 rounded-full text-white hover:bg-blue-700 transition-colors">
-              <Camera className="w-4 h-4" />
-            </button>
+          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center">
+            <span className="text-3xl font-bold text-blue-600">
+              {user?.name?.split(' ').map(n => n[0]).join('') || 'U'}
+            </span>
           </div>
           <div className="text-center sm:text-left">
             <h2 className="text-xl font-bold text-gray-800">{user?.name}</h2>
             <p className="text-gray-500">{user?.email}</p>
             <span className={`inline-block mt-2 px-3 py-1 rounded-full text-sm font-medium capitalize ${getRoleBadgeColor(user?.role)}`}>
-              {user?.role?.replace('-', ' ')}
+              {user?.role?.replace(/[-_]/g, ' ')}
             </span>
           </div>
         </div>
@@ -147,8 +146,7 @@ const Profile = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <User className="w-4 h-4 inline mr-2" />
-                  Full Name
+                  <User className="w-4 h-4 inline mr-2" />Full Name
                 </label>
                 <input
                   type="text"
@@ -160,73 +158,60 @@ const Profile = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Mail className="w-4 h-4 inline mr-2" />
-                  Email Address
+                  <Mail className="w-4 h-4 inline mr-2" />Email Address
                 </label>
                 <input
                   type="email"
-                  value={profileData.email}
-                  onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={user?.email || ''}
+                  disabled
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
                 />
+                <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Phone className="w-4 h-4 inline mr-2" />
-                  Phone Number
+                  <Phone className="w-4 h-4 inline mr-2" />Phone Number
                 </label>
                 <input
                   type="tel"
                   value={profileData.phone}
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                  placeholder="Enter phone number"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Building className="w-4 h-4 inline mr-2" />
-                  Company
+                  <Building className="w-4 h-4 inline mr-2" />Department
                 </label>
                 <input
                   type="text"
-                  value={profileData.company}
-                  onChange={(e) => setProfileData({ ...profileData, company: e.target.value })}
+                  value={profileData.department}
+                  onChange={(e) => setProfileData({ ...profileData, department: e.target.value })}
+                  placeholder="Enter department"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <MapPin className="w-4 h-4 inline mr-2" />
-                  Region
+                  <MapPin className="w-4 h-4 inline mr-2" />Location
                 </label>
                 <input
                   type="text"
-                  value={profileData.region}
-                  onChange={(e) => setProfileData({ ...profileData, region: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <MapPin className="w-4 h-4 inline mr-2" />
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={profileData.address}
-                  onChange={(e) => setProfileData({ ...profileData, address: e.target.value })}
+                  value={profileData.location}
+                  onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
+                  placeholder="Enter location"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t">
-              <Button type="submit" icon={Save}>
-                Save Changes
+              <Button type="submit" icon={Save} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </form>
@@ -235,115 +220,63 @@ const Profile = () => {
 
       {/* Security Tab */}
       {activeTab === 'security' && (
-        <div className="space-y-6">
-          <Card title="Change Password">
-            <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Current Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type={showCurrentPassword ? 'text' : 'password'}
-                    value={passwordData.currentPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  New Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    value={passwordData.newPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirm New Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="password"
-                    value={passwordData.confirmPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <Button type="submit" icon={Lock}>
-                Update Password
-              </Button>
-            </form>
-          </Card>
-
-          <Card title="Sessions">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                <div>
-                  <p className="font-medium text-gray-800">Current Session</p>
-                  <p className="text-sm text-gray-500">Chrome on Windows • Active now</p>
-                </div>
-                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                  Current
-                </span>
-              </div>
-              
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-800">Mobile App</p>
-                  <p className="text-sm text-gray-500">iPhone • Last active 2 hours ago</p>
-                </div>
-                <Button variant="outline" size="sm">
-                  Revoke
-                </Button>
+        <Card title="Change Password">
+          <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+                <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
-          </Card>
 
-          <Card title="Danger Zone">
-            <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
-              <div>
-                <p className="font-medium text-red-800">Sign Out Everywhere</p>
-                <p className="text-sm text-red-600">Sign out from all devices including this one</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={passwordData.newPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                  className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  minLength={6}
+                />
+                <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
-              <Button variant="danger" onClick={logout}>
-                Sign Out All
-              </Button>
+              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
             </div>
-          </Card>
-        </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="password"
+                  value={passwordData.confirmPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+            </div>
+
+            <Button type="submit" icon={Lock} disabled={saving}>
+              {saving ? 'Updating...' : 'Update Password'}
+            </Button>
+          </form>
+        </Card>
       )}
     </div>
   );

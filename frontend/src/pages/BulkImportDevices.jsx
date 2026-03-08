@@ -1,0 +1,212 @@
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import { devicesAPI } from '../services/api';
+import { useNotifications } from '../context/NotificationContext';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertCircle, Download, ArrowLeft } from 'lucide-react';
+
+const TEMPLATE_HEADERS = ['device_type', 'model', 'serial_number', 'mac_address', 'manufacturer', 'purchase_date', 'warranty_expiry'];
+const VALID_TYPES = ['ONU', 'ONT', 'Router', 'Switch', 'Modem', 'Access Point', 'Other'];
+
+const BulkImportDevices = () => {
+  const navigate = useNavigate();
+  const { showToast } = useNotifications();
+  const fileInputRef = useRef(null);
+
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleFileChange = (e) => {
+    const selected = e.target.files[0];
+    if (selected) {
+      if (!selected.name.endsWith('.xlsx') && !selected.name.endsWith('.xls')) {
+        showToast('Please select an Excel file (.xlsx or .xls)', 'error');
+        return;
+      }
+      setFile(selected);
+      setResult(null);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) {
+      if (!dropped.name.endsWith('.xlsx') && !dropped.name.endsWith('.xls')) {
+        showToast('Please drop an Excel file (.xlsx or .xls)', 'error');
+        return;
+      }
+      setFile(dropped);
+      setResult(null);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await devicesAPI.bulkUpload(file);
+      setResult(res.data);
+      if (res.data.created_count > 0) {
+        showToast(`${res.data.created_count} devices created successfully`, 'success');
+      }
+    } catch (err) {
+      showToast(err.message || 'Upload failed', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    // Build a minimal CSV template (opens in Excel)
+    const rows = [
+      TEMPLATE_HEADERS.join(','),
+      `ONU,ZTE F660,SN1234567890,AA:BB:CC:DD:EE:01,ZTE,2024-01-01,2026-01-01`,
+      `Router,TP-Link TL-WR840N,SN0987654321,AA:BB:CC:DD:EE:02,TP-Link,,`,
+    ];
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'device_bulk_upload_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <div className="flex items-center gap-3">
+        <button onClick={() => navigate('/devices')} className="p-2 hover:bg-gray-100 rounded-lg">
+          <ArrowLeft className="w-5 h-5 text-gray-600" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Bulk Import Devices</h1>
+          <p className="text-gray-500 mt-1 text-sm">Upload an Excel file to register multiple devices at once</p>
+        </div>
+      </div>
+
+      {/* Template download */}
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <FileSpreadsheet className="w-6 h-6 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-800 mb-1">Download Template</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Use the template to fill in your device data. Required columns:{' '}
+              <span className="font-medium text-gray-700">device_type, model, serial_number, mac_address, manufacturer</span>.
+              Optional: purchase_date, warranty_expiry (YYYY-MM-DD format).
+            </p>
+            <p className="text-xs text-gray-400 mb-3">
+              Valid device types: {VALID_TYPES.join(', ')}
+            </p>
+            <Button variant="outline" icon={Download} onClick={downloadTemplate}>
+              Download Template
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* File upload */}
+      <Card title="Upload File">
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          onClick={() => fileInputRef.current?.click()}
+          className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+        >
+          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+          {file ? (
+            <div>
+              <p className="font-medium text-gray-800">{file.name}</p>
+              <p className="text-sm text-gray-500 mt-1">{(file.size / 1024).toFixed(1)} KB</p>
+            </div>
+          ) : (
+            <div>
+              <p className="font-medium text-gray-700">Drop your Excel file here, or click to browse</p>
+              <p className="text-sm text-gray-400 mt-1">Supports .xlsx and .xls</p>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {file && (
+          <div className="mt-4 flex gap-3 justify-end">
+            <Button variant="outline" onClick={() => { setFile(null); setResult(null); }}>
+              Clear
+            </Button>
+            <Button icon={Upload} onClick={handleUpload} disabled={uploading}>
+              {uploading ? 'Uploading...' : 'Upload & Import'}
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {/* Results */}
+      {result && (
+        <Card title="Import Results">
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <CheckCircle className="w-6 h-6 text-green-600 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-green-700">{result.created_count}</p>
+              <p className="text-sm text-green-600">Created</p>
+            </div>
+            <div className="text-center p-4 bg-yellow-50 rounded-lg">
+              <AlertCircle className="w-6 h-6 text-yellow-600 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-yellow-700">{result.skipped_count}</p>
+              <p className="text-sm text-yellow-600">Skipped (duplicates)</p>
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg">
+              <XCircle className="w-6 h-6 text-red-600 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-red-700">{result.error_count}</p>
+              <p className="text-sm text-red-600">Errors</p>
+            </div>
+          </div>
+
+          {result.skipped.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold text-yellow-700 mb-2">Skipped Rows</h4>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {result.skipped.map((s, i) => (
+                  <div key={i} className="text-xs bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
+                    Row {s.row} — {s.serial}: {s.reason}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.errors.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold text-red-700 mb-2">Errors</h4>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {result.errors.map((e, i) => (
+                  <div key={i} className="text-xs bg-red-50 border border-red-200 rounded px-3 py-2">
+                    Row {e.row} — {e.serial || ''}: {e.error}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.created_count > 0 && (
+            <Button onClick={() => navigate('/devices')}>
+              View Devices
+            </Button>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+};
+
+export default BulkImportDevices;

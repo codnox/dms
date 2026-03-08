@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { devicesAPI, distributionsAPI, defectsAPI, returnsAPI } from '../services/api';
+import { devicesAPI, distributionsAPI, defectsAPI, returnsAPI, changeRequestsAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { 
   BarChart3, PieChart, TrendingUp, Download, Calendar, 
-  Filter, Box, Package, AlertTriangle, RotateCcw, Loader2 
+  Filter, Box, Package, AlertTriangle, RotateCcw, Loader2,
+  UserCog, Send, Clock
 } from 'lucide-react';
 
 const Reports = () => {
+  const { user } = useAuth();
+  const { showToast } = useNotifications();
   const [dateRange, setDateRange] = useState('last30');
   const [reportType, setReportType] = useState('overview');
   const [devices, setDevices] = useState([]);
@@ -15,6 +20,8 @@ const Reports = () => {
   const [defectReports, setDefectReports] = useState([]);
   const [returnRequests, setReturnRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitForm, setSubmitForm] = useState({ request_type: 'password_reset', new_email: '', new_password: '', reason: '' });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -83,8 +90,14 @@ const Reports = () => {
     { id: 'devices', label: 'Device Reports', icon: Box },
     { id: 'distributions', label: 'Distribution Reports', icon: Package },
     { id: 'defects', label: 'Defect Reports', icon: AlertTriangle },
-    { id: 'returns', label: 'Return Reports', icon: RotateCcw }
+    { id: 'returns', label: 'Return Reports', icon: RotateCcw },
+    { id: 'account_changes', label: 'Request Account Changes', icon: UserCog },
   ];
+
+  const visibleReportTypes = reportTypes.filter(t => {
+    if (t.id === 'account_changes') return ['staff', 'manager'].includes(user?.role);
+    return true;
+  });
 
   const handleExport = (format) => {
     // In a real app, this would generate and download the report
@@ -115,7 +128,7 @@ const Reports = () => {
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
             <div className="flex flex-wrap gap-2">
-              {reportTypes.map(type => (
+              {visibleReportTypes.map(type => (
                 <button
                   key={type.id}
                   onClick={() => setReportType(type.id)}
@@ -148,6 +161,80 @@ const Reports = () => {
           </div>
         </div>
       </Card>
+
+      {/* Account Changes Tab */}
+      {reportType === 'account_changes' && (
+        <div className="space-y-6">
+          <Card title="Submit Account Change Request">
+            <div className="space-y-4 max-w-lg">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Request Type</label>
+                <select
+                  value={submitForm.request_type}
+                  onChange={e => setSubmitForm(p => ({ ...p, request_type: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="password_reset">Password Reset</option>
+                  <option value="email_change">Email Change</option>
+                  <option value="both">Both (Email &amp; Password)</option>
+                </select>
+              </div>
+              {(submitForm.request_type === 'email_change' || submitForm.request_type === 'both') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Email</label>
+                  <input
+                    type="email"
+                    value={submitForm.new_email}
+                    onChange={e => setSubmitForm(p => ({ ...p, new_email: e.target.value }))}
+                    placeholder="Enter new email address"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+              {(submitForm.request_type === 'password_reset' || submitForm.request_type === 'both') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    value={submitForm.new_password}
+                    onChange={e => setSubmitForm(p => ({ ...p, new_password: e.target.value }))}
+                    placeholder="Enter new password (min 6 chars)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+                <textarea
+                  value={submitForm.reason}
+                  onChange={e => setSubmitForm(p => ({ ...p, reason: e.target.value }))}
+                  placeholder="Explain why you need this change..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <Button
+                icon={Send}
+                disabled={submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    await changeRequestsAPI.submit(submitForm);
+                    showToast('Change request submitted successfully', 'success');
+                    setSubmitForm({ request_type: 'password_reset', new_email: '', new_password: '', reason: '' });
+                  } catch (err) {
+                    showToast(err.message || 'Failed to submit request', 'error');
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+              >
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
