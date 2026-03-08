@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from typing import Optional
-from app.models.device import DeviceCreate, DeviceUpdate
+from app.models.device import DeviceCreate, DeviceUpdate, DeviceType
 from app.services import device_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
 
@@ -120,6 +120,104 @@ async def get_device_history(
         "message": "Device history retrieved successfully",
         "data": history
     }
+
+
+@router.post("/bulk-upload", status_code=status.HTTP_201_CREATED)
+async def bulk_upload_devices(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Bulk upload devices from an Excel file.
+    
+    Required columns: device_type, model, serial_number, mac_address, manufacturer
+    Optional columns: purchase_date, warranty_expiry
+    """
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Excel files (.xlsx, .xls) are supported"
+        )
+
+    try:
+        import openpyxl
+        import io
+
+        contents = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+        ws = wb.active
+
+        # Read header row (case-insensitive)
+        headers = [str(cell.value).strip().lower() if cell.value else "" for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+        required = {"device_type", "model", "serial_number", "mac_address", "manufacturer"}
+        missing = required - set(headers)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing required columns: {', '.join(missing)}"
+            )
+
+        valid_types = {t.value.lower(): t.value for t in DeviceType}
+        created, skipped, errors = [], [], []
+
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            row_data = {headers[i]: (str(row[i]).strip() if row[i] is not None else "") for i in range(len(headers))}
+
+            # Skip completely empty rows
+            if not any(row_data.values()):
+                continue
+
+            serial = row_data.get("serial_number", "")
+            if not serial:
+                errors.append({"row": row_idx, "error": "Missing serial_number"})
+                continue
+
+            # Normalise device_type
+            raw_type = row_data.get("device_type", "").lower()
+            device_type_val = valid_types.get(raw_type)
+            if not device_type_val:
+                errors.append({"row": row_idx, "serial": serial, "error": f"Invalid device_type '{row_data.get('device_type')}'"})
+                continue
+
+            try:
+                device_data = DeviceCreate(
+                    device_type=device_type_val,
+                    model=row_data.get("model", ""),
+                    serial_number=serial,
+                    mac_address=row_data.get("mac_address", ""),
+                    manufacturer=row_data.get("manufacturer", ""),
+                )
+                device = await device_service.create_device(
+                    device_data=device_data,
+                    created_by=current_user["id"],
+                    created_by_name=current_user["name"]
+                )
+                created.append(device["device_id"])
+            except ValueError as e:
+                skipped.append({"row": row_idx, "serial": serial, "reason": str(e)})
+            except Exception as e:
+                errors.append({"row": row_idx, "serial": serial, "error": str(e)})
+
+        return {
+            "success": True,
+            "message": f"Bulk upload complete: {len(created)} created, {len(skipped)} skipped, {len(errors)} errors",
+            "data": {
+                "created_count": len(created),
+                "skipped_count": len(skipped),
+                "error_count": len(errors),
+                "created": created,
+                "skipped": skipped,
+                "errors": errors,
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process file: {str(e)}"
+        )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

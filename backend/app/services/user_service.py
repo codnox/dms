@@ -13,7 +13,8 @@ async def get_users(
     page_size: int = 20,
     role: Optional[str] = None,
     status: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    parent_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get all users with pagination and filters"""
     async with get_db() as db:
@@ -29,6 +30,9 @@ async def get_users(
         if search:
             conditions.append("(name LIKE ? OR email LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
+        if parent_id:
+            conditions.append("parent_id = ?")
+            params.append(int(parent_id))
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
@@ -88,7 +92,7 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def create_user(user_data: UserCreate) -> Dict[str, Any]:
+async def create_user(user_data: UserCreate, creator_role: str = "admin") -> Dict[str, Any]:
     """Create a new user"""
     async with get_db() as db:
         # Check if email exists
@@ -96,6 +100,16 @@ async def create_user(user_data: UserCreate) -> Dict[str, Any]:
         existing = await cursor.fetchone()
         if existing:
             raise ValueError("Email already exists")
+
+        # Enforce 5000 operator limit per cluster parent
+        if user_data.role.value == "operator" and user_data.parent_id:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE role = 'operator' AND parent_id = ?",
+                (int(user_data.parent_id),)
+            )
+            count_row = await cursor.fetchone()
+            if count_row and count_row[0] >= 5000:
+                raise ValueError("Cluster has reached the maximum limit of 5000 operators")
         
         now = datetime.utcnow().isoformat()
         permissions_json = json.dumps(user_data.permissions) if user_data.permissions else "{}"

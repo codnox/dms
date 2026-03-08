@@ -260,6 +260,21 @@ export const devicesAPI = {
     });
     return response;
   },
+
+  bulkUpload: async (file) => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const url = `${API_BASE_URL}/devices/bulk-upload`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || data.detail || 'Upload failed');
+    return data;
+  },
 };
 
 // Distributions API
@@ -608,6 +623,20 @@ export const dashboardAPI = {
     return response;
   },
 };
+
+// Change Requests API
+export const changeRequestsAPI = {
+  submit: (data) => apiRequest('/change-requests', { method: 'POST', body: JSON.stringify(data) }),
+  getRequests: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiRequest(`/change-requests?${qs}`);
+  },
+  review: (requestId, data) => apiRequest(`/change-requests/${requestId}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
+};
+
+// Admin user credentials update
+export const adminUpdateCredentials = (userId, data) =>
+  apiRequest(`/users/${userId}/credentials`, { method: 'PATCH', body: JSON.stringify(data) });
 
 export default {
   auth: authAPI,

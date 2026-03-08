@@ -12,19 +12,33 @@ async def get_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     role: Optional[str] = None,
-    status: Optional[str] = None,
+    status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = None,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(get_current_user)
 ):
-    """Get all users with pagination and filters"""
+    """Get users - admins/managers see all; sub_distributor/cluster see their children"""
+    creator_role = current_user["role"]
+
+    if creator_role == "staff":
+        raise HTTPException(
+            status_code=403,
+            detail="Staff cannot view the user list"
+        )
+
+    # sub_distributor and cluster only see their own children
+    parent_id_filter = None
+    if creator_role in ["sub_distributor", "cluster"]:
+        parent_id_filter = str(current_user["id"])
+
     result = await user_service.get_users(
         page=page,
         page_size=page_size,
         role=role,
-        status=status,
-        search=search
+        status=status_filter,
+        search=search,
+        parent_id=parent_id_filter
     )
-    
+
     return {
         "success": True,
         "message": "Users retrieved successfully",
@@ -64,12 +78,39 @@ async def get_user(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
-    """Create a new user - Admin only"""
+    """Create a new user - role-based permissions"""
+    creator_role = current_user["role"]
+    target_role = user_data.role.value
+
+    # Who can create whom
+    allowed_by_role = {
+        "admin":            ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"],
+        "manager":          ["staff", "sub_distributor", "cluster", "operator"],
+        "sub_distributor":  ["cluster"],
+        "cluster":          ["operator"],
+    }
+
+    if creator_role not in allowed_by_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to create users"
+        )
+
+    if target_role not in allowed_by_role[creator_role]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You cannot create a user with role '{target_role}'"
+        )
+
+    # Auto-assign parent_id for sub_distributor and cluster creators
+    if creator_role in ["sub_distributor", "cluster"] and not user_data.parent_id:
+        user_data = user_data.model_copy(update={"parent_id": str(current_user["id"])})
+
     try:
-        user = await user_service.create_user(user_data)
-        
+        user = await user_service.create_user(user_data, creator_role=creator_role)
+
         return {
             "success": True,
             "message": "User created successfully",
@@ -173,6 +214,55 @@ async def update_user_status(
         "message": "User status updated successfully",
         "data": user
     }
+
+
+@router.patch("/{user_id}/credentials")
+async def admin_update_credentials(
+    user_id: str,
+    data: dict,
+    current_user: dict = Depends(require_admin)
+):
+    """Admin reset user email/password directly"""
+    from app.utils.security import get_password_hash as _hash
+    from app.database import get_db as _db
+    from datetime import datetime as _dt
+
+    async with _db() as db:
+        update_fields = []
+        params = []
+
+        if "email" in data and data["email"]:
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE email = ? AND id != ?",
+                (data["email"].lower(), int(user_id))
+            )
+            if await cursor.fetchone():
+                raise HTTPException(status_code=400, detail="Email already in use")
+            update_fields.append("email = ?")
+            params.append(data["email"].lower())
+
+        if "password" in data and data["password"]:
+            if len(data["password"]) < 6:
+                raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+            update_fields.append("password_hash = ?")
+            params.append(_hash(data["password"]))
+
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No data to update")
+
+        update_fields.append("updated_at = ?")
+        params.append(_dt.utcnow().isoformat())
+        params.append(int(user_id))
+
+        cursor = await db.execute(
+            f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?", params
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        await db.commit()
+
+    user = await user_service.get_user_by_id(user_id)
+    return {"success": True, "message": "Credentials updated", "data": user}
 
 
 @router.get("/role/{role}")

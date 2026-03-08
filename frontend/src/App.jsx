@@ -21,6 +21,10 @@ import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import Unauthorized from './pages/Unauthorized';
 
+import ChangeRequests from './pages/ChangeRequests';
+
+import BulkImportDevices from './pages/BulkImportDevices';
+
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -106,6 +110,14 @@ function AppRoutes() {
           } 
         />
         <Route path="devices/track" element={<TrackDevice />} />
+        <Route
+          path="devices/bulk-import"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+              <BulkImportDevices />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Distributions */}
         <Route path="distributions" element={<Distributions />} />
@@ -126,11 +138,11 @@ function AppRoutes() {
         <Route path="returns" element={<Returns />} />
         <Route path="returns/create" element={<CreateReturn />} />
 
-        {/* Users (Admin/Manager only) */}
+        {/* Users - not for staff */}
         <Route 
           path="users" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'sub_distributor', 'cluster']}>
               <Users />
             </ProtectedRoute>
           } 
@@ -154,6 +166,16 @@ function AppRoutes() {
               <Reports />
             </ProtectedRoute>
           } 
+        />
+
+        {/* Change Requests */}
+        <Route
+          path="change-requests"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+              <ChangeRequests />
+            </ProtectedRoute>
+          }
         />
 
         {/* Profile & Settings */}
