@@ -21,8 +21,8 @@ const BulkImportDevices = () => {
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
     if (selected) {
-      if (!selected.name.endsWith('.xlsx') && !selected.name.endsWith('.xls')) {
-        showToast('Please select an Excel file (.xlsx or .xls)', 'error');
+      if (!selected.name.endsWith('.xlsx') && !selected.name.endsWith('.xls') && !selected.name.endsWith('.csv')) {
+        showToast('Please select an Excel (.xlsx, .xls) or CSV (.csv) file', 'error');
         return;
       }
       setFile(selected);
@@ -34,8 +34,8 @@ const BulkImportDevices = () => {
     e.preventDefault();
     const dropped = e.dataTransfer.files[0];
     if (dropped) {
-      if (!dropped.name.endsWith('.xlsx') && !dropped.name.endsWith('.xls')) {
-        showToast('Please drop an Excel file (.xlsx or .xls)', 'error');
+      if (!dropped.name.endsWith('.xlsx') && !dropped.name.endsWith('.xls') && !dropped.name.endsWith('.csv')) {
+        showToast('Please drop an Excel (.xlsx, .xls) or CSV (.csv) file', 'error');
         return;
       }
       setFile(dropped);
@@ -70,7 +70,7 @@ const BulkImportDevices = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'device_bulk_upload_template.csv';
+    a.download = 'device_bulk_upload_template.csv'; // Upload this CSV directly or open in Excel and save as .xlsx
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -83,7 +83,7 @@ const BulkImportDevices = () => {
         </button>
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Bulk Import Devices</h1>
-          <p className="text-gray-500 mt-1 text-sm">Upload an Excel file to register multiple devices at once</p>
+          <p className="text-gray-500 mt-1 text-sm">Upload an Excel or CSV file to register multiple devices at once</p>
         </div>
       </div>
 
@@ -127,13 +127,13 @@ const BulkImportDevices = () => {
           ) : (
             <div>
               <p className="font-medium text-gray-700">Drop your Excel file here, or click to browse</p>
-              <p className="text-sm text-gray-400 mt-1">Supports .xlsx and .xls</p>
+              <p className="text-sm text-gray-400 mt-1">Supports .xlsx, .xls, and .csv</p>
             </div>
           )}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx,.xls,.csv"
             className="hidden"
             onChange={handleFileChange}
           />

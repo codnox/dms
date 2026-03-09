@@ -30,21 +30,29 @@ async def get_users(
     if creator_role in ["sub_distributor", "cluster"]:
         parent_id_filter = str(current_user["id"])
 
-    result = await user_service.get_users(
-        page=page,
-        page_size=page_size,
-        role=role,
-        status=status_filter,
-        search=search,
-        parent_id=parent_id_filter
-    )
+    try:
+        result = await user_service.get_users(
+            page=page,
+            page_size=page_size,
+            role=role,
+            status=status_filter,
+            search=search,
+            parent_id=parent_id_filter
+        )
 
-    return {
-        "success": True,
-        "message": "Users retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+        return {
+            "success": True,
+            "message": "Users retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve users: {str(e)}"
+        )
 
 
 @router.get("/{user_id}")
@@ -59,20 +67,28 @@ async def get_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view your own profile"
         )
-    
-    user = await user_service.get_user_by_id(user_id)
-    
-    if not user:
+
+    try:
+        user = await user_service.get_user_by_id(user_id)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "success": True,
+            "message": "User retrieved successfully",
+            "data": user
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve user '{user_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "User retrieved successfully",
-        "data": user
-    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -116,10 +132,17 @@ async def create_user(
             "message": "User created successfully",
             "data": user
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create user: {str(e)}"
         )
 
 
@@ -136,27 +159,40 @@ async def update_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only update your own profile"
         )
-    
+
     # Non-admins can't change status
     if current_user["role"] not in ["admin", "manager", "staff"] and user_data.status:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot change account status"
         )
-    
-    user = await user_service.update_user(user_id, user_data)
-    
-    if not user:
+
+    try:
+        user = await user_service.update_user(user_id, user_data)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "success": True,
+            "message": "User updated successfully",
+            "data": user
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
-    
-    return {
-        "success": True,
-        "message": "User updated successfully",
-        "data": user
-    }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update user '{user_id}': {str(e)}"
+        )
 
 
 @router.delete("/{user_id}")
@@ -171,19 +207,27 @@ async def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account"
         )
-    
-    success = await user_service.delete_user(user_id)
-    
-    if not success:
+
+    try:
+        success = await user_service.delete_user(user_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "success": True,
+            "message": "User deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete user '{user_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "User deleted successfully"
-    }
 
 
 @router.patch("/{user_id}/status")
@@ -200,20 +244,28 @@ async def update_user_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid status value"
         )
-    
-    user = await user_service.update_user_status(user_id, status_value)
-    
-    if not user:
+
+    try:
+        user = await user_service.update_user_status(user_id, status_value)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "success": True,
+            "message": "User status updated successfully",
+            "data": user
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update status for user '{user_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "User status updated successfully",
-        "data": user
-    }
 
 
 @router.patch("/{user_id}/credentials")
@@ -227,42 +279,50 @@ async def admin_update_credentials(
     from app.database import get_db as _db
     from datetime import datetime as _dt
 
-    async with _db() as db:
-        update_fields = []
-        params = []
+    try:
+        async with _db() as db:
+            update_fields = []
+            params = []
 
-        if "email" in data and data["email"]:
+            if "email" in data and data["email"]:
+                cursor = await db.execute(
+                    "SELECT id FROM users WHERE email = ? AND id != ?",
+                    (data["email"].lower(), int(user_id))
+                )
+                if await cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="Email already in use")
+                update_fields.append("email = ?")
+                params.append(data["email"].lower())
+
+            if "password" in data and data["password"]:
+                if len(data["password"]) < 6:
+                    raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+                update_fields.append("password_hash = ?")
+                params.append(_hash(data["password"]))
+
+            if not update_fields:
+                raise HTTPException(status_code=400, detail="No data to update")
+
+            update_fields.append("updated_at = ?")
+            params.append(_dt.utcnow().isoformat())
+            params.append(int(user_id))
+
             cursor = await db.execute(
-                "SELECT id FROM users WHERE email = ? AND id != ?",
-                (data["email"].lower(), int(user_id))
+                f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?", params
             )
-            if await cursor.fetchone():
-                raise HTTPException(status_code=400, detail="Email already in use")
-            update_fields.append("email = ?")
-            params.append(data["email"].lower())
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="User not found")
+            await db.commit()
 
-        if "password" in data and data["password"]:
-            if len(data["password"]) < 6:
-                raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-            update_fields.append("password_hash = ?")
-            params.append(_hash(data["password"]))
-
-        if not update_fields:
-            raise HTTPException(status_code=400, detail="No data to update")
-
-        update_fields.append("updated_at = ?")
-        params.append(_dt.utcnow().isoformat())
-        params.append(int(user_id))
-
-        cursor = await db.execute(
-            f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?", params
+        user = await user_service.get_user_by_id(user_id)
+        return {"success": True, "message": "Credentials updated", "data": user}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update credentials for user '{user_id}': {str(e)}"
         )
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="User not found")
-        await db.commit()
-
-    user = await user_service.get_user_by_id(user_id)
-    return {"success": True, "message": "Credentials updated", "data": user}
 
 
 @router.get("/role/{role}")
@@ -271,10 +331,18 @@ async def get_users_by_role(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Get all users by role"""
-    users = await user_service.get_users_by_role(role)
-    
-    return {
-        "success": True,
-        "message": "Users retrieved successfully",
-        "data": users
-    }
+    try:
+        users = await user_service.get_users_by_role(role)
+
+        return {
+            "success": True,
+            "message": "Users retrieved successfully",
+            "data": users
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve users by role '{role}': {str(e)}"
+        )

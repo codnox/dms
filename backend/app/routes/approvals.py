@@ -17,20 +17,28 @@ async def get_approvals(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Get all pending approvals with pagination"""
-    result = await approval_service.get_approvals(
-        page=page,
-        page_size=page_size,
-        status=status,
-        approval_type=approval_type,
-        search=search
-    )
-    
-    return {
-        "success": True,
-        "message": "Approvals retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+    try:
+        result = await approval_service.get_approvals(
+            page=page,
+            page_size=page_size,
+            status=status,
+            approval_type=approval_type,
+            search=search
+        )
+
+        return {
+            "success": True,
+            "message": "Approvals retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve approvals: {str(e)}"
+        )
 
 
 @router.get("/{approval_id}")
@@ -39,19 +47,27 @@ async def get_approval(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Get approval by ID with entity details"""
-    approval = await approval_service.get_approval_by_id(approval_id)
-    
-    if not approval:
+    try:
+        approval = await approval_service.get_approval_by_id(approval_id)
+
+        if not approval:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Approval not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Approval retrieved successfully",
+            "data": approval
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Approval not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve approval '{approval_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Approval retrieved successfully",
-        "data": approval
-    }
 
 
 @router.post("/{approval_id}/approve")
@@ -63,28 +79,35 @@ async def approve_request(
     """Approve a pending request"""
     try:
         notes = action.notes if action else None
-        
+
         approval = await approval_service.approve_request(
             approval_id=approval_id,
             approver=current_user,
             notes=notes
         )
-        
+
         if not approval:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Approval not found"
             )
-        
+
         return {
             "success": True,
             "message": "Request approved successfully",
             "data": approval
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to approve request '{approval_id}': {str(e)}"
         )
 
 
@@ -102,20 +125,27 @@ async def reject_request(
             rejection_reason=action.rejection_reason,
             notes=action.notes
         )
-        
+
         if not approval:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Approval not found"
             )
-        
+
         return {
             "success": True,
             "message": "Request rejected successfully",
             "data": approval
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reject request '{approval_id}': {str(e)}"
         )

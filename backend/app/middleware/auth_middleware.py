@@ -11,22 +11,29 @@ security = HTTPBearer()
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get current authenticated user from JWT token"""
     token = credentials.credentials
-    
-    user = await get_current_user_from_token(token)
-    
+
+    try:
+        user = await get_current_user_from_token(token)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token validation failed: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    
+
     if user.get("status") != "active":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is not active"
         )
-    
+
     return user
 
 
@@ -36,9 +43,12 @@ async def get_current_user_optional(
     """Get current user if token is provided, else return None"""
     if credentials is None:
         return None
-    
-    token = credentials.credentials
-    return await get_current_user_from_token(token)
+
+    try:
+        token = credentials.credentials
+        return await get_current_user_from_token(token)
+    except Exception:
+        return None
 
 
 class RoleChecker:

@@ -35,25 +35,33 @@ async def get_distributions(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all distributions with pagination and filters"""
-    # Filter by user for non-admin/manager/staff
-    user_id = None
-    if current_user["role"] not in ["admin", "manager", "staff"]:
-        user_id = current_user["id"]
-    
-    result = await distribution_service.get_distributions(
-        page=page,
-        page_size=page_size,
-        status=status,
-        user_id=user_id,
-        search=search
-    )
-    
-    return {
-        "success": True,
-        "message": "Distributions retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+    try:
+        # Filter by user for non-admin/manager/staff
+        user_id = None
+        if current_user["role"] not in ["admin", "manager", "staff"]:
+            user_id = current_user["id"]
+
+        result = await distribution_service.get_distributions(
+            page=page,
+            page_size=page_size,
+            status=status,
+            user_id=user_id,
+            search=search
+        )
+
+        return {
+            "success": True,
+            "message": "Distributions retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve distributions: {str(e)}"
+        )
 
 
 @router.get("/pending")
@@ -61,13 +69,21 @@ async def get_pending_distributions(
     current_user: dict = Depends(require_management)
 ):
     """Get pending distributions for approval"""
-    distributions = await distribution_service.get_pending_distributions()
-    
-    return {
-        "success": True,
-        "message": "Pending distributions retrieved successfully",
-        "data": distributions
-    }
+    try:
+        distributions = await distribution_service.get_pending_distributions()
+
+        return {
+            "success": True,
+            "message": "Pending distributions retrieved successfully",
+            "data": distributions
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending distributions: {str(e)}"
+        )
 
 
 @router.get("/{distribution_id}")
@@ -76,19 +92,27 @@ async def get_distribution(
     current_user: dict = Depends(get_current_user)
 ):
     """Get distribution by ID"""
-    distribution = await distribution_service.get_distribution_by_id(distribution_id)
-    
-    if not distribution:
+    try:
+        distribution = await distribution_service.get_distribution_by_id(distribution_id)
+
+        if not distribution:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Distribution not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Distribution retrieved successfully",
+            "data": distribution
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Distribution not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve distribution '{distribution_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Distribution retrieved successfully",
-        "data": distribution
-    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -103,16 +127,23 @@ async def create_distribution(
             dist_data=dist_data,
             from_user=current_user
         )
-        
+
         return {
             "success": True,
             "message": "Distribution created successfully",
             "data": distribution
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create distribution: {str(e)}"
         )
 
 
@@ -130,22 +161,29 @@ async def update_distribution_status(
             user=current_user,
             notes=status_update.notes
         )
-        
+
         if not distribution:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Distribution not found"
             )
-        
+
         return {
             "success": True,
             "message": "Distribution status updated successfully",
             "data": distribution
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update distribution status '{distribution_id}': {str(e)}"
         )
 
 
@@ -160,19 +198,26 @@ async def cancel_distribution(
             distribution_id=distribution_id,
             user_id=current_user["id"]
         )
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Distribution not found"
             )
-        
+
         return {
             "success": True,
             "message": "Distribution cancelled successfully"
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel distribution '{distribution_id}': {str(e)}"
         )

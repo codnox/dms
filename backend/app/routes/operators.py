@@ -16,25 +16,33 @@ async def get_operators(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all operators with pagination and filters"""
-    # Filter by assigned_to for sub-distributors/clusters
-    assigned_to = None
-    if current_user["role"] in ["sub_distributor", "cluster"]:
-        assigned_to = current_user["id"]
-    
-    result = await operator_service.get_operators(
-        page=page,
-        page_size=page_size,
-        assigned_to=assigned_to,
-        status=status,
-        search=search
-    )
-    
-    return {
-        "success": True,
-        "message": "Operators retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+    try:
+        # Filter by assigned_to for sub-distributors/clusters
+        assigned_to = None
+        if current_user["role"] in ["sub_distributor", "cluster"]:
+            assigned_to = current_user["id"]
+
+        result = await operator_service.get_operators(
+            page=page,
+            page_size=page_size,
+            assigned_to=assigned_to,
+            status=status,
+            search=search
+        )
+
+        return {
+            "success": True,
+            "message": "Operators retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve operators: {str(e)}"
+        )
 
 
 @router.get("/{operator_id}")
@@ -43,19 +51,27 @@ async def get_operator(
     current_user: dict = Depends(get_current_user)
 ):
     """Get operator by ID"""
-    operator = await operator_service.get_operator_by_id(operator_id)
-    
-    if not operator:
+    try:
+        operator = await operator_service.get_operator_by_id(operator_id)
+
+        if not operator:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Operator not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Operator retrieved successfully",
+            "data": operator
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve operator '{operator_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Operator retrieved successfully",
-        "data": operator
-    }
 
 
 @router.get("/{operator_id}/devices")
@@ -64,21 +80,29 @@ async def get_operator_devices(
     current_user: dict = Depends(get_current_user)
 ):
     """Get devices assigned to an operator"""
-    operator = await operator_service.get_operator_by_id(operator_id)
-    
-    if not operator:
+    try:
+        operator = await operator_service.get_operator_by_id(operator_id)
+
+        if not operator:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Operator not found"
+            )
+
+        devices = await operator_service.get_operator_devices(operator_id)
+
+        return {
+            "success": True,
+            "message": "Operator devices retrieved successfully",
+            "data": devices
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve devices for operator '{operator_id}': {str(e)}"
         )
-    
-    devices = await operator_service.get_operator_devices(operator_id)
-    
-    return {
-        "success": True,
-        "message": "Operator devices retrieved successfully",
-        "data": devices
-    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -93,17 +117,30 @@ async def create_operator(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to create operators"
         )
-    
-    operator = await operator_service.create_operator(
-        operator_data=operator_data,
-        created_by=current_user
-    )
-    
-    return {
-        "success": True,
-        "message": "Operator created successfully",
-        "data": operator
-    }
+
+    try:
+        operator = await operator_service.create_operator(
+            operator_data=operator_data,
+            created_by=current_user
+        )
+
+        return {
+            "success": True,
+            "message": "Operator created successfully",
+            "data": operator
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create operator: {str(e)}"
+        )
 
 
 @router.put("/{operator_id}")
@@ -121,20 +158,33 @@ async def update_operator(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only update your own operators"
             )
-    
-    operator = await operator_service.update_operator(operator_id, operator_data)
-    
-    if not operator:
+
+    try:
+        operator = await operator_service.update_operator(operator_id, operator_data)
+
+        if not operator:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Operator not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Operator updated successfully",
+            "data": operator
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
-    
-    return {
-        "success": True,
-        "message": "Operator updated successfully",
-        "data": operator
-    }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update operator '{operator_id}': {str(e)}"
+        )
 
 
 @router.delete("/{operator_id}")
@@ -156,16 +206,24 @@ async def delete_operator(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to delete operators"
         )
-    
-    success = await operator_service.delete_operator(operator_id)
-    
-    if not success:
+
+    try:
+        success = await operator_service.delete_operator(operator_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Operator not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Operator deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete operator '{operator_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Operator deleted successfully"
-    }
