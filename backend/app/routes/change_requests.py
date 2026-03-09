@@ -47,30 +47,38 @@ async def submit_change_request(
     if data.new_password and len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    now = datetime.utcnow().isoformat()
-    request_id = f"CR-{uuid.uuid4().hex[:8].upper()}"
+    try:
+        now = datetime.utcnow().isoformat()
+        request_id = f"CR-{uuid.uuid4().hex[:8].upper()}"
 
-    async with get_db() as db:
-        await db.execute(
-            """INSERT INTO change_requests
-               (request_id, requested_by, requested_by_name, requested_by_role,
-                request_type, new_email, new_password, reason, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
-            (
-                request_id,
-                int(current_user["id"]),
-                current_user["name"],
-                current_user["role"],
-                data.request_type,
-                data.new_email,
-                data.new_password,  # stored as plain text, hashed on approval
-                data.reason,
-                now, now
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO change_requests
+                   (request_id, requested_by, requested_by_name, requested_by_role,
+                    request_type, new_email, new_password, reason, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                (
+                    request_id,
+                    int(current_user["id"]),
+                    current_user["name"],
+                    current_user["role"],
+                    data.request_type,
+                    data.new_email,
+                    data.new_password,  # stored as plain text, hashed on approval
+                    data.reason,
+                    now, now
+                )
             )
-        )
-        await db.commit()
+            await db.commit()
 
-    return {"success": True, "message": "Change request submitted successfully", "data": {"request_id": request_id}}
+        return {"success": True, "message": "Change request submitted successfully", "data": {"request_id": request_id}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit change request: {str(e)}"
+        )
 
 
 @router.get("")
@@ -85,36 +93,44 @@ async def get_change_requests(
     if role not in ["admin", "manager"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    async with get_db() as db:
-        conditions = []
-        params = []
+    try:
+        async with get_db() as db:
+            conditions = []
+            params = []
 
-        if role == "manager":
-            # Manager only sees staff requests
-            conditions.append("requested_by_role = 'staff'")
+            if role == "manager":
+                # Manager only sees staff requests
+                conditions.append("requested_by_role = 'staff'")
 
-        if status_filter:
-            conditions.append("status = ?")
-            params.append(status_filter)
+            if status_filter:
+                conditions.append("status = ?")
+                params.append(status_filter)
 
-        where = " AND ".join(conditions) if conditions else "1=1"
+            where = " AND ".join(conditions) if conditions else "1=1"
 
-        cursor = await db.execute(f"SELECT COUNT(*) FROM change_requests WHERE {where}", params)
-        total = (await cursor.fetchone())[0]
+            cursor = await db.execute(f"SELECT COUNT(*) FROM change_requests WHERE {where}", params)
+            total = (await cursor.fetchone())[0]
 
-        offset = (page - 1) * page_size
-        cursor = await db.execute(
-            f"SELECT * FROM change_requests WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            params + [page_size, offset]
+            offset = (page - 1) * page_size
+            cursor = await db.execute(
+                f"SELECT * FROM change_requests WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [page_size, offset]
+            )
+            rows = await cursor.fetchall()
+            items = rows_to_list(rows)
+
+        return {
+            "success": True,
+            "data": items,
+            "pagination": get_pagination(page, page_size, total)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve change requests: {str(e)}"
         )
-        rows = await cursor.fetchall()
-        items = rows_to_list(rows)
-
-    return {
-        "success": True,
-        "data": items,
-        "pagination": get_pagination(page, page_size, total)
-    }
 
 
 @router.patch("/{request_id}/review")
@@ -131,66 +147,74 @@ async def review_change_request(
     if review.action not in ["approve", "reject"]:
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
 
-    async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT * FROM change_requests WHERE request_id = ?", (request_id,)
+    try:
+        async with get_db() as db:
+            cursor = await db.execute(
+                "SELECT * FROM change_requests WHERE request_id = ?", (request_id,)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Request not found")
+
+            req = row_to_dict(row)
+
+            # Managers can only review staff requests
+            if role == "manager" and req["requested_by_role"] != "staff":
+                raise HTTPException(status_code=403, detail="Managers can only review staff requests")
+
+            if req["status"] != "pending":
+                raise HTTPException(status_code=400, detail="Request already reviewed")
+
+            now = datetime.utcnow().isoformat()
+
+            if review.action == "approve":
+                # Use override values if provided, else use original request values
+                email_to_set = review.new_email or req.get("new_email")
+                password_to_set = review.new_password or req.get("new_password")
+
+                update_fields = []
+                update_params = []
+
+                if req["request_type"] in ["email_change", "both"] and email_to_set:
+                    # Check email uniqueness
+                    cursor = await db.execute(
+                        "SELECT id FROM users WHERE email = ? AND id != ?",
+                        (email_to_set.lower(), req["requested_by"])
+                    )
+                    if await cursor.fetchone():
+                        raise HTTPException(status_code=400, detail="Email already in use by another user")
+                    update_fields.append("email = ?")
+                    update_params.append(email_to_set.lower())
+
+                if req["request_type"] in ["password_reset", "both"] and password_to_set:
+                    if len(password_to_set) < 6:
+                        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+                    update_fields.append("password_hash = ?")
+                    update_params.append(get_password_hash(password_to_set))
+
+                if update_fields:
+                    update_fields.append("updated_at = ?")
+                    update_params.append(now)
+                    update_params.append(req["requested_by"])
+                    await db.execute(
+                        f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
+                        update_params
+                    )
+
+            # Update the request status
+            await db.execute(
+                """UPDATE change_requests SET status = ?, reviewed_by = ?, reviewed_by_name = ?,
+                   review_note = ?, updated_at = ? WHERE request_id = ?""",
+                (review.action + "d", int(current_user["id"]), current_user["name"],
+                 review.review_note, now, request_id)
+            )
+            await db.commit()
+
+        return {"success": True, "message": f"Request {review.action}d successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to review change request '{request_id}': {str(e)}"
         )
-        row = await cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Request not found")
-
-        req = row_to_dict(row)
-
-        # Managers can only review staff requests
-        if role == "manager" and req["requested_by_role"] != "staff":
-            raise HTTPException(status_code=403, detail="Managers can only review staff requests")
-
-        if req["status"] != "pending":
-            raise HTTPException(status_code=400, detail="Request already reviewed")
-
-        now = datetime.utcnow().isoformat()
-
-        if review.action == "approve":
-            # Use override values if provided, else use original request values
-            email_to_set = review.new_email or req.get("new_email")
-            password_to_set = review.new_password or req.get("new_password")
-
-            update_fields = []
-            update_params = []
-
-            if req["request_type"] in ["email_change", "both"] and email_to_set:
-                # Check email uniqueness
-                cursor = await db.execute(
-                    "SELECT id FROM users WHERE email = ? AND id != ?",
-                    (email_to_set.lower(), req["requested_by"])
-                )
-                if await cursor.fetchone():
-                    raise HTTPException(status_code=400, detail="Email already in use by another user")
-                update_fields.append("email = ?")
-                update_params.append(email_to_set.lower())
-
-            if req["request_type"] in ["password_reset", "both"] and password_to_set:
-                if len(password_to_set) < 6:
-                    raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-                update_fields.append("password_hash = ?")
-                update_params.append(get_password_hash(password_to_set))
-
-            if update_fields:
-                update_fields.append("updated_at = ?")
-                update_params.append(now)
-                update_params.append(req["requested_by"])
-                await db.execute(
-                    f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
-                    update_params
-                )
-
-        # Update the request status
-        await db.execute(
-            """UPDATE change_requests SET status = ?, reviewed_by = ?, reviewed_by_name = ?,
-               review_note = ?, updated_at = ? WHERE request_id = ?""",
-            (review.action + "d", int(current_user["id"]), current_user["name"],
-             review.review_note, now, request_id)
-        )
-        await db.commit()
-
-    return {"success": True, "message": f"Request {review.action}d successfully"}

@@ -17,26 +17,34 @@ async def get_returns(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all return requests with pagination and filters"""
-    # Filter by requester for non-admin/manager
-    requested_by = None
-    if current_user["role"] not in ["admin", "manager", "staff"]:
-        requested_by = current_user["id"]
-    
-    result = await return_service.get_returns(
-        page=page,
-        page_size=page_size,
-        status=status,
-        reason=reason,
-        requested_by=requested_by,
-        search=search
-    )
-    
-    return {
-        "success": True,
-        "message": "Return requests retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+    try:
+        # Filter by requester for non-admin/manager
+        requested_by = None
+        if current_user["role"] not in ["admin", "manager", "staff"]:
+            requested_by = current_user["id"]
+
+        result = await return_service.get_returns(
+            page=page,
+            page_size=page_size,
+            status=status,
+            reason=reason,
+            requested_by=requested_by,
+            search=search
+        )
+
+        return {
+            "success": True,
+            "message": "Return requests retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve return requests: {str(e)}"
+        )
 
 
 @router.get("/{return_id}")
@@ -45,19 +53,27 @@ async def get_return(
     current_user: dict = Depends(get_current_user)
 ):
     """Get return request by ID"""
-    return_req = await return_service.get_return_by_id(return_id)
-    
-    if not return_req:
+    try:
+        return_req = await return_service.get_return_by_id(return_id)
+
+        if not return_req:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Return request not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Return request retrieved successfully",
+            "data": return_req
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Return request not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve return request '{return_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Return request retrieved successfully",
-        "data": return_req
-    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -71,16 +87,23 @@ async def create_return(
             return_data=return_data,
             requester=current_user
         )
-        
+
         return {
             "success": True,
             "message": "Return request created successfully",
             "data": return_req
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create return request: {str(e)}"
         )
 
 
@@ -98,22 +121,29 @@ async def update_return_status(
             user=current_user,
             notes=status_update.notes
         )
-        
+
         if not return_req:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Return request not found"
             )
-        
+
         return {
             "success": True,
             "message": "Return status updated successfully",
             "data": return_req
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update return status '{return_id}': {str(e)}"
         )
 
 
@@ -128,19 +158,26 @@ async def cancel_return(
             return_id=return_id,
             user_id=current_user["id"]
         )
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Return request not found"
             )
-        
+
         return {
             "success": True,
             "message": "Return request cancelled successfully"
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel return request '{return_id}': {str(e)}"
         )

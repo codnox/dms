@@ -15,18 +15,26 @@ async def get_batches(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all batches with pagination"""
-    result = await batch_service.get_batches(
-        page=page,
-        page_size=page_size,
-        search=search
-    )
-    
-    return {
-        "success": True,
-        "message": "Batches retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+    try:
+        result = await batch_service.get_batches(
+            page=page,
+            page_size=page_size,
+            search=search
+        )
+
+        return {
+            "success": True,
+            "message": "Batches retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve batches: {str(e)}"
+        )
 
 
 @router.get("/{batch_id}")
@@ -35,19 +43,27 @@ async def get_batch(
     current_user: dict = Depends(get_current_user)
 ):
     """Get batch by ID"""
-    batch = await batch_service.get_batch_by_id(batch_id)
-    
-    if not batch:
+    try:
+        batch = await batch_service.get_batch_by_id(batch_id)
+
+        if not batch:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Batch not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Batch retrieved successfully",
+            "data": batch
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Batch not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve batch '{batch_id}': {str(e)}"
         )
-    
-    return {
-        "success": True,
-        "message": "Batch retrieved successfully",
-        "data": batch
-    }
 
 
 @router.get("/{batch_id}/devices")
@@ -58,24 +74,32 @@ async def get_batch_devices(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all devices in a batch"""
-    result = await batch_service.get_batch_devices(
-        batch_id=batch_id,
-        page=page,
-        page_size=page_size
-    )
-    
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Batch not found"
+    try:
+        result = await batch_service.get_batch_devices(
+            batch_id=batch_id,
+            page=page,
+            page_size=page_size
         )
-    
-    return {
-        "success": True,
-        "message": "Batch devices retrieved successfully",
-        "data": result["data"],
-        "pagination": result["pagination"]
-    }
+
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Batch not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Batch devices retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve devices for batch '{batch_id}': {str(e)}"
+        )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -84,17 +108,30 @@ async def create_batch(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Create a new batch"""
-    batch = await batch_service.create_batch(
-        batch_data=batch_data,
-        created_by=current_user["id"],
-        created_by_name=current_user["name"]
-    )
-    
-    return {
-        "success": True,
-        "message": "Batch created successfully",
-        "data": batch
-    }
+    try:
+        batch = await batch_service.create_batch(
+            batch_data=batch_data,
+            created_by=current_user["id"],
+            created_by_name=current_user["name"]
+        )
+
+        return {
+            "success": True,
+            "message": "Batch created successfully",
+            "data": batch
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create batch: {str(e)}"
+        )
 
 
 @router.put("/{batch_id}")
@@ -104,19 +141,32 @@ async def update_batch(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Update batch"""
-    batch = await batch_service.update_batch(batch_id, batch_data)
-    
-    if not batch:
+    try:
+        batch = await batch_service.update_batch(batch_id, batch_data)
+
+        if not batch:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Batch not found"
+            )
+
+        return {
+            "success": True,
+            "message": "Batch updated successfully",
+            "data": batch
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Batch not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
-    
-    return {
-        "success": True,
-        "message": "Batch updated successfully",
-        "data": batch
-    }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update batch '{batch_id}': {str(e)}"
+        )
 
 
 @router.delete("/{batch_id}")
@@ -127,19 +177,26 @@ async def delete_batch(
     """Delete batch (only if it has no devices)"""
     try:
         success = await batch_service.delete_batch(batch_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Batch not found"
             )
-        
+
         return {
             "success": True,
             "message": "Batch deleted successfully"
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete batch '{batch_id}': {str(e)}"
         )
