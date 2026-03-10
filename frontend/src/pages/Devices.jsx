@@ -53,7 +53,11 @@ const Devices = () => {
       label: 'Status',
       render: (value) => <StatusBadge status={value} />
     },
-    { key: 'current_holder_name', label: 'Current Holder', render: (value) => value || 'NOC' },
+    { key: 'current_holder_name', label: 'Current Holder', render: (value, row) => {
+      if (value && value !== 'NOC') return value;
+      if (!row.current_holder_type || row.current_holder_type === 'noc') return 'PDIC (Distribution)';
+      return value || 'PDIC (Distribution)';
+    } },
     {
       key: 'actions',
       label: 'Actions',
@@ -222,11 +226,24 @@ const Devices = () => {
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Current Location</label>
-                <p className="font-medium text-gray-800 capitalize">{selectedDevice.current_location ? selectedDevice.current_location.replace('-', ' ') : 'N/A'}</p>
+                <p className="font-medium text-gray-800">
+                  {(() => {
+                    const loc = selectedDevice.current_location;
+                    if (!loc || loc === 'NOC' || loc === 'PDIC') return 'PDIC (Distribution)';
+                    return loc;
+                  })()}
+                </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Current Holder</label>
-                <p className="font-medium text-gray-800">{selectedDevice.current_holder_name || 'N/A'}</p>
+                <p className="font-medium text-gray-800">
+                  {(() => {
+                    const name = selectedDevice.current_holder_name;
+                    const type = selectedDevice.current_holder_type;
+                    if (!name || name === 'NOC' || (!name && type === 'noc')) return 'PDIC (Distribution)';
+                    return name;
+                  })()}
+                </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Created At</label>

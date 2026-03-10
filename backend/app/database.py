@@ -24,6 +24,32 @@ async def init_db():
     """Initialize database tables"""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(CREATE_TABLES_SQL)
+        # Migrations: add new columns if they don't exist yet
+        for stmt in [
+            "ALTER TABLE change_requests ADD COLUMN device_id TEXT",
+            "ALTER TABLE change_requests ADD COLUMN requested_status TEXT",
+            "ALTER TABLE devices ADD COLUMN registered_by_name TEXT",
+        ]:
+            try:
+                await db.execute(stmt)
+            except Exception:
+                pass  # Column already exists
+        # Data migration: fix existing devices that still have old NOC values
+        await db.execute(
+            "UPDATE devices SET current_location = 'PDIC' WHERE current_location = 'NOC' OR current_location IS NULL"
+        )
+        await db.execute(
+            "UPDATE devices SET current_holder_name = 'PDIC (Distribution)' WHERE current_holder_type = 'noc' AND (current_holder_name IS NULL OR current_holder_name = 'NOC')"
+        )
+        # Backfill registered_by_name from device_history where possible
+        await db.execute(
+            """UPDATE devices SET registered_by_name = (
+                SELECT performed_by_name FROM device_history
+                WHERE device_history.device_id = CAST(devices.id AS TEXT)
+                  AND device_history.action = 'registered'
+                ORDER BY device_history.timestamp ASC LIMIT 1
+            ) WHERE registered_by_name IS NULL"""
+        )
         await db.commit()
     print(f"✅ SQLite database initialized at: {DB_PATH}")
 
@@ -64,6 +90,7 @@ CREATE TABLE IF NOT EXISTS devices (
     current_location TEXT,
     current_holder_id TEXT,
     current_holder_name TEXT,
+    registered_by_name TEXT,
     current_holder_type TEXT,
     purchase_date TEXT,
     warranty_expiry TEXT,
@@ -215,6 +242,8 @@ CREATE TABLE IF NOT EXISTS change_requests (
     request_type TEXT NOT NULL,
     new_email TEXT,
     new_password TEXT,
+    device_id TEXT,
+    requested_status TEXT,
     reason TEXT,
     status TEXT DEFAULT 'pending',
     reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,

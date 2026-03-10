@@ -5,6 +5,7 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.middleware.auth_middleware import get_current_user, require_admin, require_admin_or_manager
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
+from app.services import device_service
 from datetime import datetime
 import uuid
 
@@ -12,9 +13,11 @@ router = APIRouter()
 
 
 class ChangeRequestCreate(BaseModel):
-    request_type: str  # 'email_change', 'password_reset', 'both'
+    request_type: str  # 'email_change', 'password_reset', 'both', 'device_status_change'
     new_email: Optional[str] = None
     new_password: Optional[str] = None
+    device_id: Optional[str] = None
+    requested_status: Optional[str] = None
     reason: Optional[str] = None
 
 
@@ -31,21 +34,29 @@ async def submit_change_request(
     data: ChangeRequestCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Staff or manager submit a change request"""
-    if current_user["role"] not in ["staff", "manager"]:
-        raise HTTPException(status_code=403, detail="Only staff and managers can submit change requests")
-
-    if data.request_type not in ["email_change", "password_reset", "both"]:
+    """Submit a change request"""
+    VALID_TYPES = ["email_change", "password_reset", "both", "device_status_change"]
+    if data.request_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail="Invalid request_type")
 
-    if data.request_type in ["email_change", "both"] and not data.new_email:
-        raise HTTPException(status_code=400, detail="new_email required for email_change")
-
-    if data.request_type in ["password_reset", "both"] and not data.new_password:
-        raise HTTPException(status_code=400, detail="new_password required for password_reset")
-
-    if data.new_password and len(data.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if data.request_type == "device_status_change":
+        if current_user["role"] not in ["staff", "manager"]:
+            raise HTTPException(status_code=403, detail="Only staff and managers can submit device status change requests")
+        if not data.device_id:
+            raise HTTPException(status_code=400, detail="device_id required for device_status_change")
+        if not data.requested_status:
+            raise HTTPException(status_code=400, detail="requested_status required for device_status_change")
+        if not data.reason:
+            raise HTTPException(status_code=400, detail="reason required for device_status_change")
+    else:
+        if current_user["role"] not in ["staff", "manager"]:
+            raise HTTPException(status_code=403, detail="Only staff and managers can submit change requests")
+        if data.request_type in ["email_change", "both"] and not data.new_email:
+            raise HTTPException(status_code=400, detail="new_email required for email_change")
+        if data.request_type in ["password_reset", "both"] and not data.new_password:
+            raise HTTPException(status_code=400, detail="new_password required for password_reset")
+        if data.new_password and len(data.new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
     try:
         now = datetime.utcnow().isoformat()
@@ -55,8 +66,9 @@ async def submit_change_request(
             await db.execute(
                 """INSERT INTO change_requests
                    (request_id, requested_by, requested_by_name, requested_by_role,
-                    request_type, new_email, new_password, reason, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                    request_type, new_email, new_password, device_id, requested_status,
+                    reason, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
                 (
                     request_id,
                     int(current_user["id"]),
@@ -64,7 +76,9 @@ async def submit_change_request(
                     current_user["role"],
                     data.request_type,
                     data.new_email,
-                    data.new_password,  # stored as plain text, hashed on approval
+                    data.new_password,
+                    data.device_id,
+                    data.requested_status,
                     data.reason,
                     now, now
                 )
@@ -168,38 +182,51 @@ async def review_change_request(
             now = datetime.utcnow().isoformat()
 
             if review.action == "approve":
-                # Use override values if provided, else use original request values
-                email_to_set = review.new_email or req.get("new_email")
-                password_to_set = review.new_password or req.get("new_password")
+                if req["request_type"] == "device_status_change":
+                    # Apply device status change
+                    dev_id = req.get("device_id")
+                    new_dev_status = req.get("requested_status")
+                    if dev_id and new_dev_status:
+                        await device_service.update_device_status(
+                            device_id=dev_id,
+                            status=new_dev_status,
+                            performed_by=current_user["id"],
+                            performed_by_name=current_user["name"],
+                            notes=f"Approved via change request {request_id}"
+                        )
+                else:
+                    # Use override values if provided, else use original request values
+                    email_to_set = review.new_email or req.get("new_email")
+                    password_to_set = review.new_password or req.get("new_password")
 
-                update_fields = []
-                update_params = []
+                    update_fields = []
+                    update_params = []
 
-                if req["request_type"] in ["email_change", "both"] and email_to_set:
-                    # Check email uniqueness
-                    cursor = await db.execute(
-                        "SELECT id FROM users WHERE email = ? AND id != ?",
-                        (email_to_set.lower(), req["requested_by"])
-                    )
-                    if await cursor.fetchone():
-                        raise HTTPException(status_code=400, detail="Email already in use by another user")
-                    update_fields.append("email = ?")
-                    update_params.append(email_to_set.lower())
+                    if req["request_type"] in ["email_change", "both"] and email_to_set:
+                        # Check email uniqueness
+                        cursor = await db.execute(
+                            "SELECT id FROM users WHERE email = ? AND id != ?",
+                            (email_to_set.lower(), req["requested_by"])
+                        )
+                        if await cursor.fetchone():
+                            raise HTTPException(status_code=400, detail="Email already in use by another user")
+                        update_fields.append("email = ?")
+                        update_params.append(email_to_set.lower())
 
-                if req["request_type"] in ["password_reset", "both"] and password_to_set:
-                    if len(password_to_set) < 6:
-                        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-                    update_fields.append("password_hash = ?")
-                    update_params.append(get_password_hash(password_to_set))
+                    if req["request_type"] in ["password_reset", "both"] and password_to_set:
+                        if len(password_to_set) < 6:
+                            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+                        update_fields.append("password_hash = ?")
+                        update_params.append(get_password_hash(password_to_set))
 
-                if update_fields:
-                    update_fields.append("updated_at = ?")
-                    update_params.append(now)
-                    update_params.append(req["requested_by"])
-                    await db.execute(
-                        f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
-                        update_params
-                    )
+                    if update_fields:
+                        update_fields.append("updated_at = ?")
+                        update_params.append(now)
+                        update_params.append(req["requested_by"])
+                        await db.execute(
+                            f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
+                            update_params
+                        )
 
             # Update the request status
             await db.execute(

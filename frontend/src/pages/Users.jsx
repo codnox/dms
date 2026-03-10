@@ -157,32 +157,13 @@ const Users = () => {
             <button
               onClick={() => { setDetailUser(row); setDetailForm({ ...row }); setNewPassword(''); }}
               className="p-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200"
-              title="View/Edit Details"
+              title="Edit Details"
             >
-              <Lock className="w-4 h-4" />
+              <Edit className="w-4 h-4" />
             </button>
           )}
           {hasRole(['admin', 'manager']) && (
             <>
-              <button
-                onClick={() => {
-                  setSelectedUser(row);
-                  setFormData({
-                    name: row.name,
-                    email: row.email,
-                    password: '',
-                    role: row.role,
-                    phone: row.phone || '',
-                    department: row.department || '',
-                    location: row.location || '',
-                  });
-                  setShowEditModal(true);
-                }}
-                className="p-1 hover:bg-gray-100 rounded"
-                title="Edit"
-              >
-                <Edit className="w-4 h-4 text-blue-500" />
-              </button>
               {row.id !== currentUser.id && (
                 <button
                   onClick={() => { setSelectedUser(row); setShowDeleteModal(true); }}
