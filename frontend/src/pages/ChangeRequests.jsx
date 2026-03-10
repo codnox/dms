@@ -16,6 +16,7 @@ const TYPE_LABELS = {
   email_change: 'Email Change',
   password_reset: 'Password Reset',
   both: 'Email & Password',
+  device_status_change: 'Device Status Change',
 };
 
 const ChangeRequests = () => {
@@ -128,8 +129,17 @@ const ChangeRequests = () => {
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-700">{TYPE_LABELS[req.request_type] || req.request_type}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {req.new_email && <div>Email: {req.new_email}</div>}
-                      {req.new_password && <div>Password: <span className="text-gray-400">••••••••</span></div>}
+                      {req.request_type === 'device_status_change' ? (
+                        <div>
+                          <div>Device ID: {req.device_id || '—'}</div>
+                          <div>New Status: <span className="font-medium capitalize">{req.requested_status || '—'}</span></div>
+                        </div>
+                      ) : (
+                        <>
+                          {req.new_email && <div>Email: {req.new_email}</div>}
+                          {req.new_password && <div>Password: <span className="text-gray-400">••••••••</span></div>}
+                        </>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-500 max-w-xs truncate">{req.reason || '—'}</td>
                     <td className="py-3 px-4 text-sm text-gray-500">
@@ -184,7 +194,15 @@ const ChangeRequests = () => {
               </p>
             </div>
             <div className="p-6 space-y-4">
-              {reviewing.action === 'approve' && (
+              {reviewing.action === 'approve' && reviewing.req.request_type === 'device_status_change' && (
+                <div className="p-3 bg-blue-50 rounded-lg text-sm">
+                  <p className="font-medium text-blue-800 mb-1">Device Status Change Request</p>
+                  <p className="text-blue-700">Device ID: {reviewing.req.device_id}</p>
+                  <p className="text-blue-700">Requested Status: <span className="font-medium capitalize">{reviewing.req.requested_status}</span></p>
+                  <p className="text-blue-600 mt-1">Approving will update the device status immediately.</p>
+                </div>
+              )}
+              {reviewing.action === 'approve' && reviewing.req.request_type !== 'device_status_change' && (
                 <>
                   <p className="text-sm text-gray-600">You can override the requested values before approving:</p>
                   {reviewing.req.request_type !== 'password_reset' && (

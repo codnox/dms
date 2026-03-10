@@ -89,13 +89,14 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
         cursor = await db.execute(
             """INSERT INTO devices (device_id, device_type, model, serial_number, mac_address,
                 manufacturer, status, current_location, current_holder_id, current_holder_name,
-                current_holder_type, purchase_date, warranty_expiry, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                current_holder_type, registered_by_name, purchase_date, warranty_expiry, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 dev_id, device_data.device_type.value, device_data.model,
                 device_data.serial_number, device_data.mac_address,
                 device_data.manufacturer, DeviceStatus.AVAILABLE.value,
-                "NOC", None, None, HolderType.NOC.value,
+                "PDIC", None, "PDIC (Distribution)", HolderType.NOC.value,
+                created_by_name,
                 purchase_date, warranty_expiry, metadata_json, now, now
             )
         )
@@ -105,7 +106,7 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
         # Add to history
         await _add_device_history(db, new_id, "registered", performed_by=created_by,
                                   performed_by_name=created_by_name, status_after=DeviceStatus.AVAILABLE.value,
-                                  location="NOC", notes="Device registered in system")
+                                  location="PDIC", notes="Device registered in system")
         await db.commit()
         
         return await get_device_by_id(new_id)
