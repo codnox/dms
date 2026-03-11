@@ -14,9 +14,14 @@ async def get_users(
     role: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
-    parent_id: Optional[str] = None
+    parent_id: Optional[str] = None,
+    parent_ids_in: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """Get all users with pagination and filters"""
+    # Short-circuit: if empty IN list, no results possible
+    if parent_ids_in is not None and len(parent_ids_in) == 0:
+        return {"data": [], "pagination": get_pagination(page, 20, 0)}
+
     async with get_db() as db:
         conditions = []
         params = []
@@ -30,7 +35,11 @@ async def get_users(
         if search:
             conditions.append("(name LIKE ? OR email LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
-        if parent_id:
+        if parent_ids_in is not None:
+            placeholders = ','.join('?' * len(parent_ids_in))
+            conditions.append(f"parent_id IN ({placeholders})")
+            params.extend(parent_ids_in)
+        elif parent_id:
             conditions.append("parent_id = ?")
             params.append(int(parent_id))
         

@@ -19,7 +19,8 @@ import {
   UserCog,
   BarChart3,
   Bell,
-  X
+  X,
+  Network
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -53,6 +54,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           label: 'User Management',
           children: [
             { path: '/users', label: 'All Users' },
+            { path: '/users/hierarchy', label: 'User Hierarchy' },
             { path: '/change-requests', label: 'Change Requests' },
           ]
         },
@@ -85,6 +87,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       manager: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'Users' },
+        { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         {
           key: 'devices',
@@ -140,6 +143,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       sub_distributor: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'My Users' },
+        { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
@@ -149,6 +153,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       cluster: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'My Users' },
+        { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },

@@ -107,8 +107,15 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         
+        # operator receives device for active use; everyone else is in transit/distributed
+        role_to_device_status = {
+            "operator": DeviceStatus.IN_USE.value,
+        }
+        device_status_for_recipient = role_to_device_status.get(to_user["role"], DeviceStatus.DISTRIBUTED.value)
+        
         now = datetime.utcnow().isoformat()
         from_user_id = str(from_user.get("id", from_user.get("_id", "")))
+        dist_id = generate_distribution_id()
         
         cursor = await db.execute(
             """INSERT INTO distributions (distribution_id, device_ids, device_count,
@@ -116,7 +123,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
                 status, request_date, notes, created_by, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                generate_distribution_id(), json.dumps(dist_data.device_ids),
+                dist_id, json.dumps(dist_data.device_ids),
                 len(dist_data.device_ids), from_user_id, from_user["name"],
                 role_to_type.get(from_user["role"], "noc"),
                 str(to_user["id"]), to_user["name"],
@@ -136,6 +143,22 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
              "pending", "medium", now, dist_data.notes, now, now)
         )
         await db.commit()
+    
+    # Immediately update device holder/status so Track Device reflects this right away
+    for dev_id in dist_data.device_ids:
+        await device_service.update_device_holder(
+            device_id=str(dev_id),
+            holder_id=str(to_user["id"]),
+            holder_name=to_user["name"],
+            holder_type=role_to_type.get(to_user["role"], "staff"),
+            location=to_user["name"],
+            status=device_status_for_recipient,
+            performed_by=from_user_id,
+            performed_by_name=from_user["name"],
+            from_user_id=from_user_id,
+            from_user_name=from_user["name"],
+            notes=f"Dispatched via distribution {dist_id}"
+        )
     
     # Send notification
     await notification_service.create_notification(
@@ -185,6 +208,28 @@ async def update_distribution_status(
                     WHERE entity_id = ? AND approval_type = 'distribution'""",
                 (user_id, user["name"], now, notes, now, distribution_id)
             )
+            # Reset devices back to sender
+            sender_noc = dist.get("from_user_type") in ["noc", "staff"]
+            reset_status   = DeviceStatus.AVAILABLE.value if sender_noc else DeviceStatus.DISTRIBUTED.value
+            reset_holder_id   = None if sender_noc else dist["from_user_id"]
+            reset_holder_name = "PDIC (Distribution)" if sender_noc else dist["from_user_name"]
+            reset_holder_type = "noc" if sender_noc else dist["from_user_type"]
+            reset_location    = "PDIC" if sender_noc else dist["from_user_name"]
+            device_ids_on_reject = dist.get("device_ids", [])
+            for dev_id in device_ids_on_reject:
+                await device_service.update_device_holder(
+                    device_id=str(dev_id),
+                    holder_id=reset_holder_id,
+                    holder_name=reset_holder_name,
+                    holder_type=reset_holder_type,
+                    location=reset_location,
+                    status=reset_status,
+                    performed_by=user_id,
+                    performed_by_name=user["name"],
+                    from_user_id=dist["to_user_id"],
+                    from_user_name=dist["to_user_name"],
+                    notes=f"Returned — distribution {dist['distribution_id']} rejected"
+                )
         
         if notes:
             update_fields.append("notes = ?")
@@ -219,11 +264,12 @@ async def update_distribution_status(
     return await get_distribution_by_id(distribution_id)
 
 
-async def cancel_distribution(distribution_id: str, user_id: str) -> bool:
+async def cancel_distribution(distribution_id: str, user: dict) -> bool:
     """Cancel a distribution"""
     dist = await get_distribution_by_id(distribution_id)
     if not dist:
         return False
+    user_id = str(user.get("id", user.get("_id", "")))
     if dist["created_by"] != user_id:
         raise ValueError("Only the creator can cancel this distribution")
     if dist["status"] != DistributionStatus.PENDING.value:
@@ -240,6 +286,31 @@ async def cancel_distribution(distribution_id: str, user_id: str) -> bool:
             (distribution_id,)
         )
         await db.commit()
+    
+    # Reset device holders back to sender
+    sender_noc = dist.get("from_user_type") in ["noc", "staff"]
+    reset_status      = DeviceStatus.AVAILABLE.value if sender_noc else DeviceStatus.DISTRIBUTED.value
+    reset_holder_id   = None if sender_noc else dist["from_user_id"]
+    reset_holder_name = "PDIC (Distribution)" if sender_noc else dist["from_user_name"]
+    reset_holder_type = "noc" if sender_noc else dist["from_user_type"]
+    reset_location    = "PDIC" if sender_noc else dist["from_user_name"]
+    for dev_id in (dist.get("device_ids") or []):
+        try:
+            await device_service.update_device_holder(
+                device_id=str(dev_id),
+                holder_id=reset_holder_id,
+                holder_name=reset_holder_name,
+                holder_type=reset_holder_type,
+                location=reset_location,
+                status=reset_status,
+                performed_by=user_id,
+                performed_by_name=user.get("name", "Unknown"),
+                from_user_id=dist["to_user_id"],
+                from_user_name=dist["to_user_name"],
+                notes=f"Returned — distribution {dist['distribution_id']} cancelled"
+            )
+        except Exception:
+            pass
     return True
 
 

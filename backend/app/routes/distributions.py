@@ -196,7 +196,7 @@ async def cancel_distribution(
     try:
         success = await distribution_service.cancel_distribution(
             distribution_id=distribution_id,
-            user_id=current_user["id"]
+            user=current_user
         )
 
         if not success:

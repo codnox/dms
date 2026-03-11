@@ -14,6 +14,7 @@ import CreateDefectReport from './pages/CreateDefectReport';
 import Returns from './pages/Returns';
 import CreateReturn from './pages/CreateReturn';
 import Users from './pages/Users';
+import UserHierarchy from './pages/UserHierarchy';
 import Approvals from './pages/Approvals';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
@@ -146,6 +147,14 @@ function AppRoutes() {
               <Users />
             </ProtectedRoute>
           } 
+        />
+        <Route
+          path="users/hierarchy"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'sub_distributor', 'cluster']}>
+              <UserHierarchy />
+            </ProtectedRoute>
+          }
         />
 
         {/* Approvals */}
