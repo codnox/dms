@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import DataTable from '../components/ui/DataTable';
 import Card from '../components/ui/Card';
 import Modal from '../components/ui/Modal';
@@ -9,14 +9,15 @@ import { useNotifications } from '../context/NotificationContext';
 import { usersAPI, adminUpdateCredentials } from '../services/api';
 import { 
   UserPlus, Edit, Trash2, Eye, Shield, Mail, Phone, 
-  Building, MapPin, Calendar, Users as UsersIcon, Loader2, Lock
+  Building, MapPin, Calendar, Users as UsersIcon, Loader2, Lock,
+  Network, ChevronDown, ChevronRight, Filter, X
 } from 'lucide-react';
 
 // Roles each creator can assign
 const ALLOWED_ROLES_BY_CREATOR = {
   admin:           ['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator'],
   manager:         ['staff', 'sub_distributor', 'cluster', 'operator'],
-  sub_distributor: ['cluster'],
+  sub_distributor: ['cluster', 'operator'],
   cluster:         ['operator'],
 };
 
@@ -49,6 +50,7 @@ const emptyForm = {
   phone: '',
   department: '',
   location: '',
+  parentId: '',
 };
 
 const Users = () => {
@@ -71,9 +73,26 @@ const Users = () => {
 
   const [formData, setFormData] = useState(emptyForm);
 
+  // For admin/manager: parent options when creating cluster or operator
+  const [parentOptions, setParentOptions] = useState([]);
+  const [loadingParents, setLoadingParents] = useState(false);
+
+  // For admin detail modal: child users (clusters under sub_distributor, operators under cluster)
+  const [detailChildren, setDetailChildren] = useState([]);
+  const [loadingChildren, setLoadingChildren] = useState(false);
+
+  // For sub_distributor hierarchical view: operators fetched separately
+  const [subDistOperators, setSubDistOperators] = useState([]);
+  const [loadingOps, setLoadingOps] = useState(false);
+  // Which cluster cards are collapsed (by cluster id)
+  const [collapsedClusters, setCollapsedClusters] = useState({});
+
   // Which roles the current user can create
   const creatableRoles = ALLOWED_ROLES_BY_CREATOR[currentUser?.role] || [];
   const canCreateUsers = creatableRoles.length > 0;
+
+  // Cascading filter state (admin/manager table view only)
+  const [filters, setFilters] = useState({ role: '', subDistId: '', clusterId: '' });
 
   const fetchUsers = async () => {
     try {
@@ -88,29 +107,114 @@ const Users = () => {
     }
   };
 
+  const fetchSubDistOperators = async () => {
+    if (currentUser?.role !== 'sub_distributor') return;
+    try {
+      setLoadingOps(true);
+      const response = await usersAPI.getUsers({ role: 'operator' });
+      setSubDistOperators(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch operators:', error);
+    } finally {
+      setLoadingOps(false);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchSubDistOperators();
   }, []);
 
   // When add modal opens, default role to first available
   const openAddModal = () => {
-    setFormData({ ...emptyForm, role: creatableRoles[0] || 'operator' });
+    const defaultRole = creatableRoles[0] || 'operator';
+    setFormData({ ...emptyForm, role: defaultRole, parentId: '' });
+    setParentOptions([]);
+    // For sub_distributor creating cluster, no parent selector needed.
+    // For admin/manager, kick off load if default role requires it.
+    if (['admin', 'manager'].includes(currentUser?.role)) {
+      if (defaultRole === 'cluster' || defaultRole === 'operator') {
+        loadParentOptions(defaultRole);
+      }
+    }
     setShowAddModal(true);
   };
+
+  // Load parent options for admin/manager when creating cluster or operator
+  const loadParentOptions = async (role) => {
+    setLoadingParents(true);
+    setParentOptions([]);
+    try {
+      if (role === 'cluster') {
+        const res = await usersAPI.getUsers({ role: 'sub_distributor' });
+        setParentOptions(res.data || []);
+      } else if (role === 'operator') {
+        const [subRes, clusterRes] = await Promise.all([
+          usersAPI.getUsers({ role: 'sub_distributor' }),
+          usersAPI.getUsers({ role: 'cluster' }),
+        ]);
+        const subDists = (subRes.data || []).map(u => ({ ...u, groupLabel: 'Sub Distributor' }));
+        const clusters = (clusterRes.data || []).map(u => ({ ...u, groupLabel: 'Cluster' }));
+        setParentOptions([...subDists, ...clusters]);
+      }
+    } catch (err) {
+      console.error('Failed to load parent options:', err);
+    } finally {
+      setLoadingParents(false);
+    }
+  };
+
+  // Handle role change in add form - fetch parent options for admin/manager;
+  // for sub_distributor creating operator, populate from local clusters state.
+  const handleRoleChange = (newRole) => {
+    setFormData(prev => ({ ...prev, role: newRole, parentId: '' }));
+    if (['admin', 'manager'].includes(currentUser?.role)) {
+      if (newRole === 'cluster' || newRole === 'operator') {
+        loadParentOptions(newRole);
+      } else {
+        setParentOptions([]);
+      }
+    } else if (currentUser?.role === 'sub_distributor') {
+      if (newRole === 'operator') {
+        // Clusters are already in `users` state
+        setParentOptions(users.map(c => ({ ...c, groupLabel: 'Cluster' })));
+      } else {
+        setParentOptions([]);
+      }
+    }
+  };
+
+  // Fetch children (clusters/operators) when admin opens detail modal for a sub_distributor or cluster
+  useEffect(() => {
+    if (!detailUser) {
+      setDetailChildren([]);
+      return;
+    }
+    if (['sub_distributor', 'cluster'].includes(detailUser.role)) {
+      const childRole = detailUser.role === 'sub_distributor' ? 'cluster' : 'operator';
+      setLoadingChildren(true);
+      usersAPI.getUsers({ role: childRole, parent_id: detailUser.id })
+        .then(res => setDetailChildren(res.data || []))
+        .catch(err => console.error('Failed to fetch children:', err))
+        .finally(() => setLoadingChildren(false));
+    } else {
+      setDetailChildren([]);
+    }
+  }, [detailUser]);
 
   const columns = [
     {
       key: 'name',
-      label: 'User',
+      label: currentUser?.role === 'sub_distributor' ? 'Cluster' : currentUser?.role === 'cluster' ? 'Operator' : 'User',
       render: (value, row) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
             <span className="font-medium text-gray-600">
-              {value.split(' ').map(n => n[0]).join('')}
+              {(value || '').split(' ').filter(Boolean).map(n => n[0]).join('') || '?'}
             </span>
           </div>
           <div>
-            <p className="font-medium text-gray-800">{value}</p>
+            <p className="font-medium text-gray-800">{value || '—'}</p>
             <p className="text-sm text-gray-500">{row.email}</p>
           </div>
         </div>
@@ -193,12 +297,15 @@ const Users = () => {
       if (formData.phone)      payload.phone = formData.phone;
       if (formData.department) payload.department = formData.department;
       if (formData.location)   payload.location = formData.location;
+      if (formData.parentId)   payload.parent_id = formData.parentId;
 
       await usersAPI.createUser(payload);
       showToast('User created successfully', 'success');
       setShowAddModal(false);
       setFormData(emptyForm);
+      setParentOptions([]);
       fetchUsers();
+      fetchSubDistOperators();
     } catch (error) {
       showToast(error.message || 'Failed to create user', 'error');
     } finally {
@@ -234,34 +341,114 @@ const Users = () => {
       setShowDeleteModal(false);
       setSelectedUser(null);
       fetchUsers();
+      fetchSubDistOperators();
     } catch (error) {
       showToast(error.message || 'Failed to delete user', 'error');
     }
   };
 
-  const stats = [
-    { label: 'Total Users',     value: users.length,                                                        icon: UsersIcon, color: 'blue' },
-    { label: 'Administrators',  value: users.filter(u => u.role === 'admin').length,                        icon: Shield,    color: 'red' },
-    { label: 'Distributors',    value: users.filter(u => ['sub_distributor','cluster'].includes(u.role)).length, icon: Building, color: 'indigo' },
-    { label: 'Operators',       value: users.filter(u => u.role === 'operator').length,                     icon: UsersIcon, color: 'green' }
-  ];
+  // Role flags — declared here so filteredUsers memo and stats can both use them
+  const isSubDist  = currentUser?.role === 'sub_distributor';
+  const isCluster  = currentUser?.role === 'cluster';
+  const isAdmin    = currentUser?.role === 'admin';
+  const isManager  = currentUser?.role === 'manager';
+
+  // Cascading filtered users for admin/manager table
+  const filteredUsers = useMemo(() => {
+    if (!isAdmin && !isManager) return users;
+    let result = users;
+    if (filters.role) {
+      result = result.filter(u => u.role === filters.role);
+    }
+    if (filters.clusterId) {
+      result = result.filter(u =>
+        String(u.id) === filters.clusterId ||
+        String(u.parent_id) === filters.clusterId
+      );
+    } else if (filters.subDistId) {
+      const clusterIds = users
+        .filter(u => u.role === 'cluster' && String(u.parent_id) === filters.subDistId)
+        .map(u => String(u.id));
+      result = result.filter(u =>
+        String(u.id) === filters.subDistId ||
+        String(u.parent_id) === filters.subDistId ||
+        clusterIds.includes(String(u.parent_id))
+      );
+    }
+    return result;
+  }, [users, filters, isAdmin, isManager]);
+
+  // Compute clusterOperators map for sub_distributor hierarchical view
+  const clusterOperatorsMap = useMemo(() => {
+    const map = {};
+    for (const op of subDistOperators) {
+      const key = String(op.parent_id);
+      if (!map[key]) map[key] = [];
+      map[key].push(op);
+    }
+    return map;
+  }, [subDistOperators]);
+
+  const stats = isSubDist
+    ? [
+        { label: 'Total Clusters',    value: users.length,                                                            icon: Network,    color: 'teal'   },
+        { label: 'Active Clusters',   value: users.filter(u => u.status === 'active').length,                        icon: UsersIcon,  color: 'green'  },
+        { label: 'Total Operators',   value: subDistOperators.length,                                                  icon: UsersIcon,  color: 'blue'   },
+        { label: 'Active Operators',  value: subDistOperators.filter(u => u.status === 'active').length,              icon: UsersIcon,  color: 'indigo' },
+      ]
+    : isCluster
+    ? [
+        { label: 'Total Operators',   value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Active Operators',  value: users.filter(u => u.status === 'active').length,                         icon: UsersIcon,  color: 'green'  },
+      ]
+    : isAdmin
+    ? [
+        { label: 'Total Users',       value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Admins',            value: users.filter(u => u.role === 'admin').length,                            icon: Shield,     color: 'red'    },
+        { label: 'Managers',          value: users.filter(u => u.role === 'manager').length,                          icon: Shield,     color: 'purple' },
+        { label: 'Staff',             value: users.filter(u => u.role === 'staff').length,                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Sub Distributors',  value: users.filter(u => u.role === 'sub_distributor').length,                  icon: Building,   color: 'indigo' },
+        { label: 'Clusters',          value: users.filter(u => u.role === 'cluster').length,                          icon: Network,    color: 'teal'   },
+        { label: 'Operators',         value: users.filter(u => u.role === 'operator').length,                         icon: UsersIcon,  color: 'green'  },
+      ]
+    : isManager
+    ? [
+        { label: 'Total Users',       value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Staff',             value: users.filter(u => u.role === 'staff').length,                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Sub Distributors',  value: users.filter(u => u.role === 'sub_distributor').length,                  icon: Building,   color: 'indigo' },
+        { label: 'Clusters',          value: users.filter(u => u.role === 'cluster').length,                          icon: Network,    color: 'teal'   },
+        { label: 'Operators',         value: users.filter(u => u.role === 'operator').length,                         icon: UsersIcon,  color: 'green'  },
+      ]
+    : [
+        { label: 'Total Users',       value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
+        { label: 'Operators',         value: users.filter(u => u.role === 'operator').length,                         icon: UsersIcon,  color: 'green'  },
+      ];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
-          <p className="text-gray-500 mt-1">Manage system users and their permissions</p>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {isSubDist ? 'My Users' : isCluster ? 'Operator Management' : 'User Management'}
+          </h1>
+          <p className="text-gray-500 mt-1">
+            {isSubDist ? 'Clusters and operators under your sub-distribution' : isCluster ? 'Manage operators in your cluster' : 'Manage system users and their permissions'}
+          </p>
         </div>
         {canCreateUsers && (
           <Button icon={UserPlus} onClick={openAddModal}>
-            Add User
+            {isSubDist ? 'Add User' : isCluster ? 'Add Operator' : 'Add User'}
           </Button>
         )}
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className={`grid ${
+        isAdmin ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-7' :
+        isManager ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5' :
+        isSubDist ? 'grid-cols-2 sm:grid-cols-4' :
+        'grid-cols-2'
+      } gap-4`}>
         {stats.map((stat, index) => (
           <Card key={index} className="text-center">
             <div className={`inline-flex p-3 rounded-lg bg-${stat.color}-100 mb-2`}>
@@ -273,22 +460,241 @@ const Users = () => {
         ))}
       </div>
 
-      {/* Users Table */}
-      <Card>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-            <span className="ml-3 text-gray-500">Loading users...</span>
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={users}
-            searchable
-            searchPlaceholder="Search users..."
-          />
-        )}
-      </Card>
+      {/* Main content: hierarchical view for sub_distributor, table for everyone else */}
+      {isSubDist ? (
+        <div className="space-y-4">
+          {(loading || loadingOps) ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              <span className="ml-3 text-gray-500">Loading...</span>
+            </div>
+          ) : users.length === 0 ? (
+            <Card>
+              <div className="text-center py-10">
+                <Network className="w-14 h-14 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No clusters yet. Create your first cluster to get started.</p>
+                <Button className="mt-4" icon={UserPlus} onClick={openAddModal}>Add Cluster</Button>
+              </div>
+            </Card>
+          ) : (
+            users.map(cluster => {
+              const clusterOps = clusterOperatorsMap[String(cluster.id)] || [];
+              const isCollapsed = !!collapsedClusters[cluster.id];
+              return (
+                <Card key={cluster.id} className="overflow-hidden">
+                  {/* Cluster header row */}
+                  <div
+                    className="flex items-center justify-between cursor-pointer select-none"
+                    onClick={() => setCollapsedClusters(prev => ({ ...prev, [cluster.id]: !prev[cluster.id] }))}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                        <Network className="w-5 h-5 text-teal-600" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-800">{cluster.name}</p>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700">Cluster</span>
+                          <StatusBadge status={cluster.status} size="sm" />
+                        </div>
+                        <p className="text-xs text-gray-500">{cluster.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-500">{clusterOps.length} operator{clusterOps.length !== 1 ? 's' : ''}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={e => { e.stopPropagation(); setSelectedUser(cluster); setShowViewModal(true); }}
+                          className="p-1.5 hover:bg-gray-100 rounded"
+                          title="View cluster"
+                        >
+                          <Eye className="w-4 h-4 text-gray-500" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); setSelectedUser(cluster); setShowDeleteModal(true); }}
+                          className="p-1.5 hover:bg-red-50 rounded"
+                          title="Delete cluster"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </button>
+                        {isCollapsed
+                          ? <ChevronRight className="w-4 h-4 text-gray-400" />
+                          : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Operators under this cluster */}
+                  {!isCollapsed && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                      {clusterOps.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic ml-12">No operators in this cluster yet.</p>
+                      ) : (
+                        clusterOps.map(op => (
+                          <div key={op.id} className="flex items-center justify-between ml-10 pl-3 border-l-2 border-gray-100 py-1">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 bg-green-100 rounded-full flex items-center justify-center">
+                                <span className="text-xs font-medium text-green-600">
+                                  {(op.name || '').split(' ').filter(Boolean).map(n => n[0]).join('') || '?'}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">{op.name}</p>
+                                <p className="text-xs text-gray-500">{op.email}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <StatusBadge status={op.status} size="sm" />
+                              <button
+                                onClick={() => { setSelectedUser(op); setShowViewModal(true); }}
+                                className="p-1 hover:bg-gray-100 rounded"
+                                title="View operator"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-gray-500" />
+                              </button>
+                              <button
+                                onClick={() => { setSelectedUser(op); setShowDeleteModal(true); }}
+                                className="p-1 hover:bg-red-50 rounded"
+                                title="Delete operator"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        /* Standard table view for all other roles */
+        <>
+          {/* ── Cascading filter bar (admin / manager only) ── */}
+          {(isAdmin || isManager) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-gray-500" /> Filter Users
+                </p>
+                {(filters.role || filters.subDistId || filters.clusterId) && (
+                  <button
+                    onClick={() => setFilters({ role: '', subDistId: '', clusterId: '' })}
+                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3 items-end">
+                {/* Role */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-500 font-medium">Role</label>
+                  <select
+                    value={filters.role}
+                    onChange={e => setFilters({ role: e.target.value, subDistId: '', clusterId: '' })}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[150px]"
+                  >
+                    <option value="">All Roles</option>
+                    {Object.entries(ROLE_LABELS).map(([r, l]) => (
+                      <option key={r} value={r}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sub-Distributor — visible when role is '' / 'cluster' / 'operator' */}
+                {(!filters.role || filters.role === 'cluster' || filters.role === 'operator') && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-500 font-medium">Sub-Distributor</label>
+                    <select
+                      value={filters.subDistId}
+                      onChange={e => setFilters(p => ({ ...p, subDistId: e.target.value, clusterId: '' }))}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[180px]"
+                    >
+                      <option value="">All Sub-Distributors</option>
+                      {users.filter(u => u.role === 'sub_distributor').map(sd => (
+                        <option key={sd.id} value={String(sd.id)}>{sd.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Cluster — visible when role is '' / 'operator'; narrows further if subDistId set */}
+                {(!filters.role || filters.role === 'operator') && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-500 font-medium">Cluster</label>
+                    <select
+                      value={filters.clusterId}
+                      onChange={e => setFilters(p => ({ ...p, clusterId: e.target.value }))}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[170px]"
+                    >
+                      <option value="">All Clusters</option>
+                      {users
+                        .filter(u => u.role === 'cluster' && (!filters.subDistId || String(u.parent_id) === filters.subDistId))
+                        .map(c => (
+                          <option key={c.id} value={String(c.id)}>{c.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Active filter chips + result count */}
+                {(filters.role || filters.subDistId || filters.clusterId) && (
+                  <div className="flex items-center gap-2 flex-wrap pb-0.5">
+                    {filters.role && (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${getRoleColor(filters.role)}`}>
+                        {ROLE_LABELS[filters.role]}
+                        <button onClick={() => setFilters(p => ({ ...p, role: '' }))}>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {filters.subDistId && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 flex items-center gap-1.5">
+                        {users.find(u => String(u.id) === filters.subDistId)?.name || 'Sub-Dist'}
+                        <button onClick={() => setFilters(p => ({ ...p, subDistId: '', clusterId: '' }))}>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    {filters.clusterId && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 flex items-center gap-1.5">
+                        {users.find(u => String(u.id) === filters.clusterId)?.name || 'Cluster'}
+                        <button onClick={() => setFilters(p => ({ ...p, clusterId: '' }))}>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400">
+                      {filteredUsers.length} result{filteredUsers.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <Card>
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                <span className="ml-3 text-gray-500">Loading users...</span>
+              </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                data={filteredUsers}
+                searchable
+                searchPlaceholder="Search users..."
+              />
+            )}
+          </Card>
+        </>
+      )}
 
       {/* View Modal */}
       <Modal
@@ -302,7 +708,7 @@ const Users = () => {
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
                 <span className="text-xl font-medium text-gray-600">
-                  {selectedUser.name.split(' ').map(n => n[0]).join('')}
+                  {(selectedUser.name || '').split(' ').filter(Boolean).map(n => n[0]).join('') || '?'}
                 </span>
               </div>
               <div>
@@ -356,6 +762,42 @@ const Users = () => {
                   <StatusBadge status={selectedUser.status} />
                 </div>
               </div>
+
+              {/* ── Hierarchy breadcrumb ── */}
+              {selectedUser.parent_id && (() => {
+                const allAvailable = [...users, ...subDistOperators];
+                const parent = allAvailable.find(u => String(u.id) === String(selectedUser.parent_id))
+                  || (String(currentUser?.id) === String(selectedUser.parent_id) ? currentUser : null);
+                const grandParent = parent?.parent_id
+                  ? allAvailable.find(u => String(u.id) === String(parent.parent_id))
+                    || (String(currentUser?.id) === String(parent.parent_id) ? currentUser : null)
+                  : null;
+                if (!parent) return null;
+                return (
+                  <div className="col-span-2 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-1">
+                      <Network className="w-3.5 h-3.5" /> Hierarchy
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {grandParent && (
+                        <>
+                          <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleColor(grandParent.role)}`}>
+                            {ROLE_LABELS[grandParent.role] || grandParent.role}: <strong>{grandParent.name}</strong>
+                          </span>
+                          <span className="text-gray-400">→</span>
+                        </>
+                      )}
+                      <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleColor(parent.role)}`}>
+                        {ROLE_LABELS[parent.role] || parent.role}: <strong>{parent.name}</strong>
+                      </span>
+                      <span className="text-gray-400">→</span>
+                      <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleColor(selectedUser.role)}`}>
+                        {ROLE_LABELS[selectedUser.role] || selectedUser.role}: <strong>{selectedUser.name}</strong>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -364,8 +806,12 @@ const Users = () => {
       {/* Add User Modal */}
       <Modal
         isOpen={showAddModal}
-        onClose={() => { setShowAddModal(false); setFormData(emptyForm); }}
-        title="Add New User"
+        onClose={() => { setShowAddModal(false); setFormData(emptyForm); setParentOptions([]); }}
+        title={
+          isSubDist ? (formData.role === 'operator' ? 'Add New Operator' : 'Add New Cluster')
+          : isCluster ? 'Add New Operator'
+          : 'Add New User'
+        }
         size="md"
       >
         <form onSubmit={handleAddUser} className="space-y-4">
@@ -420,7 +866,7 @@ const Users = () => {
               </label>
               <select
                 value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                onChange={(e) => handleRoleChange(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
@@ -429,6 +875,43 @@ const Users = () => {
                 ))}
               </select>
             </div>
+
+            {/* Parent selector — shown when admin/manager creates cluster/operator,
+                OR when sub_distributor creates an operator (must select a cluster) */}
+            {(['admin', 'manager'].includes(currentUser?.role) && (formData.role === 'cluster' || formData.role === 'operator')) ||
+             (currentUser?.role === 'sub_distributor' && formData.role === 'operator') ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {formData.role === 'cluster' ? 'Assign to Sub-Distributor' :
+                   currentUser?.role === 'sub_distributor' ? 'Assign to Cluster' :
+                   'Assign to Parent (Sub-Distributor or Cluster)'}
+                  <span className="text-red-500"> *</span>
+                </label>
+                {loadingParents ? (
+                  <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                    <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                    <span className="text-sm text-gray-500">Loading options...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.parentId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, parentId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">
+                      Select {formData.role === 'cluster' ? 'Sub-Distributor' :
+                              currentUser?.role === 'sub_distributor' ? 'Cluster' : 'Parent'}...
+                    </option>
+                    {(currentUser?.role === 'sub_distributor' ? users : parentOptions).map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.groupLabel ? `[${p.groupLabel}] ${p.name}` : p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Optional fields */}
@@ -683,6 +1166,38 @@ const Users = () => {
                   Reset Password
                 </Button>
               </div>
+
+              {/* Assigned children: clusters under sub_distributor, operators under cluster */}
+              {['sub_distributor', 'cluster'].includes(detailUser.role) && (
+                <div className="border-t pt-4 mt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="font-medium text-gray-800 flex items-center gap-2">
+                      <UsersIcon className="w-4 h-4" />
+                      {detailUser.role === 'sub_distributor' ? 'Assigned Clusters' : 'Assigned Operators'}
+                    </p>
+                    {loadingChildren && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+                  </div>
+                  {!loadingChildren && detailChildren.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">
+                      No {detailUser.role === 'sub_distributor' ? 'clusters' : 'operators'} assigned yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {detailChildren.map(child => (
+                        <div key={child.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{child.name}</p>
+                            <p className="text-xs text-gray-500">{child.email}</p>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRoleColor(child.role)}`}>
+                            {ROLE_LABELS[child.role] || child.role}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

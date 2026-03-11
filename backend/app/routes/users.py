@@ -10,10 +10,11 @@ router = APIRouter()
 @router.get("")
 async def get_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=10000),
     role: Optional[str] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = None,
+    parent_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get users - admins/managers see all; sub_distributor/cluster see their children"""
@@ -26,9 +27,24 @@ async def get_users(
         )
 
     # sub_distributor and cluster only see their own children
+    # admin/manager may optionally pass parent_id to filter by a specific parent
     parent_id_filter = None
-    if creator_role in ["sub_distributor", "cluster"]:
+    parent_ids_in_filter = None
+
+    if creator_role == "sub_distributor":
+        if role == "operator":
+            # Operators live under clusters, not directly under the sub_distributor.
+            # Get all cluster IDs that belong to this sub_distributor first.
+            clusters_result = await user_service.get_users(
+                role="cluster", parent_id=str(current_user["id"]), page_size=1000
+            )
+            parent_ids_in_filter = [int(c["id"]) for c in clusters_result["data"]]
+        else:
+            parent_id_filter = str(current_user["id"])
+    elif creator_role == "cluster":
         parent_id_filter = str(current_user["id"])
+    elif creator_role in ["admin", "manager"] and parent_id:
+        parent_id_filter = parent_id
 
     try:
         result = await user_service.get_users(
@@ -37,7 +53,8 @@ async def get_users(
             role=role,
             status=status_filter,
             search=search,
-            parent_id=parent_id_filter
+            parent_id=parent_id_filter,
+            parent_ids_in=parent_ids_in_filter,
         )
 
         return {
@@ -104,7 +121,7 @@ async def create_user(
     allowed_by_role = {
         "admin":            ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"],
         "manager":          ["staff", "sub_distributor", "cluster", "operator"],
-        "sub_distributor":  ["cluster"],
+        "sub_distributor":  ["cluster", "operator"],
         "cluster":          ["operator"],
     }
 
@@ -121,7 +138,30 @@ async def create_user(
         )
 
     # Auto-assign parent_id for sub_distributor and cluster creators
-    if creator_role in ["sub_distributor", "cluster"] and not user_data.parent_id:
+    if creator_role == "sub_distributor":
+        if target_role == "cluster" and not user_data.parent_id:
+            # Cluster goes directly under this sub_distributor
+            user_data = user_data.model_copy(update={"parent_id": str(current_user["id"])})
+        elif target_role == "operator":
+            # Operator must be assigned to one of this sub_distributor's clusters
+            if not user_data.parent_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Must select a cluster to assign the operator to"
+                )
+            # Validate the cluster belongs to this sub_distributor
+            cluster = await user_service.get_user_by_id(user_data.parent_id)
+            if not cluster or cluster.get("role") != "cluster":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid cluster selected"
+                )
+            if str(cluster.get("parent_id")) != str(current_user["id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="The selected cluster does not belong to your sub-distribution"
+                )
+    elif creator_role == "cluster" and not user_data.parent_id:
         user_data = user_data.model_copy(update={"parent_id": str(current_user["id"])})
 
     try:
