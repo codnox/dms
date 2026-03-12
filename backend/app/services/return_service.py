@@ -116,14 +116,23 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
         )
         await db.commit()
 
-    await notification_service.create_notification(
-        user_id=str(return_to_user["id"]),
-        title="New Return Request",
-        message=f"A return request has been submitted by {requester['name']} for device {device['device_id']}",
-        notification_type="info",
-        category="return",
-        link=f"/returns/{return_row_id}"
-    )
+    # Notify ALL admin/manager/staff so anyone can confirm receipt
+    async with get_db() as db:
+        cursor = await db.execute("SELECT id, name FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        staff_rows = await cursor.fetchall()
+    for staff in staff_rows:
+        staff = dict(staff)
+        await notification_service.create_notification(
+            user_id=str(staff["id"]),
+            title="New Return Request — Awaiting Approval",
+            message=(
+                f"{requester['name']} has submitted a return request for device "
+                f"{device['device_id']} ({return_data.reason.value}). Please review and approve."
+            ),
+            notification_type="info",
+            category="return",
+            link=f"/returns/{return_row_id}"
+        )
 
     return await get_return_by_id(str(return_row_id))
 
@@ -184,25 +193,58 @@ async def update_return_status(
         await device_service.update_device_holder(
             device_id=return_req["device_id"],
             holder_id=None,
-            holder_name=None,
+            holder_name="PDIC (Distribution)",
             holder_type="noc",
-            location="NOC",
+            location="PDIC",
             status=DeviceStatus.RETURNED.value,
             performed_by=str(user["_id"]),
             performed_by_name=user["name"],
             from_user_id=return_req["requested_by"],
             from_user_name=return_req["requested_by_name"],
-            notes=f"Returned via {return_req['return_id']}"
+            notes=f"Returned and received at PDIC via {return_req['return_id']}"
         )
 
+    # Notify the operator (requester)
     await notification_service.create_notification(
         user_id=return_req["requested_by"],
-        title=f"Return Request {status.capitalize()}",
-        message=f"Your return request {return_req['return_id']} has been {status}",
+        title=(
+            "Device Received at PDIC" if status == ReturnStatus.RECEIVED.value
+            else f"Return Request {status.capitalize()}"
+        ),
+        message=(
+            f"Your return request {return_req['return_id']} has been confirmed received at PDIC. "
+            f"Device ownership has been transferred back to distribution."
+        ) if status == ReturnStatus.RECEIVED.value else (
+            f"Your return request {return_req['return_id']} has been {status}. "
+            + ("Please bring the device to PDIC as soon as possible." if status == ReturnStatus.APPROVED.value else "")
+        ),
         notification_type="success" if status in ["approved", "received"] else "warning",
         category="return",
         link=f"/returns/{return_id}"
     )
+
+    # When approved, remind all other staff to watch for the incoming device
+    if status == ReturnStatus.APPROVED.value:
+        async with get_db() as db:
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff') AND CAST(id AS TEXT) != ?",
+                (str(user.get("_id") or user.get("id")),)
+            )
+            staff_rows = await cursor.fetchall()
+        for row in staff_rows:
+            row = dict(row)
+            await notification_service.create_notification(
+                user_id=str(row["id"]),
+                title="Return Approved — Confirm Device Receipt",
+                message=(
+                    f"Return request {return_req['return_id']} approved. "
+                    f"Device {return_req['device_serial']} ({return_req['device_type']}) is on its way to PDIC. "
+                    f"Please confirm receipt when it arrives."
+                ),
+                notification_type="info",
+                category="return",
+                link=f"/returns/{return_id}"
+            )
 
     return await get_return_by_id(return_id)
 
@@ -268,3 +310,108 @@ async def get_return_stats() -> Dict[str, Any]:
                 "end_of_contract": end_of_contract
             }
         }
+
+
+async def auto_create_defect_return(
+    device_id: str,
+    defect_id: str,
+    defect_report_id: str,
+    requester_id: str,
+    requester_name: str
+) -> Optional[Dict[str, Any]]:
+    """Auto-create a return request when a defect report is approved by manager/staff."""
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
+        device = await cursor.fetchone()
+        if not device:
+            raise ValueError("Device not found")
+        device = dict(device)
+
+        # Avoid duplicate pending returns for the same device
+        cursor = await db.execute(
+            "SELECT id FROM returns WHERE device_id = ? AND status = 'pending'",
+            (device_id,)
+        )
+        existing = await cursor.fetchone()
+        if existing:
+            return await get_return_by_id(str(dict(existing)["id"]))
+
+        cursor = await db.execute("SELECT * FROM users WHERE role IN ('admin', 'manager') LIMIT 1")
+        return_to_user = await cursor.fetchone()
+        if not return_to_user:
+            raise ValueError("No admin/manager found to process return")
+        return_to_user = dict(return_to_user)
+
+        now = datetime.utcnow().isoformat()
+
+        cursor = await db.execute(
+            """INSERT INTO returns (return_id, device_id, device_serial, device_type,
+            requested_by, requested_by_name, return_to, return_to_name, reason, description,
+            status, request_date, approval_date, received_date, approved_by, approved_by_name,
+            defect_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                generate_return_id(),
+                device_id,
+                device["serial_number"],
+                device["device_type"],
+                requester_id,
+                requester_name,
+                str(return_to_user["id"]),
+                return_to_user["name"],
+                ReturnReason.DEFECTIVE.value,
+                f"Auto-generated return for approved defect report {defect_report_id}",
+                ReturnStatus.PENDING.value,
+                now, None, None, None, None,
+                defect_id,
+                now, now
+            )
+        )
+        return_row_id = cursor.lastrowid
+
+        await db.execute(
+            """INSERT INTO approvals (approval_type, entity_id, entity_type, requested_by,
+            requested_by_name, status, priority, request_date, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "return", str(return_row_id), "return",
+                requester_id, requester_name,
+                "pending", "high", now,
+                f"Auto-generated from defect {defect_report_id}", now, now
+            )
+        )
+        await db.commit()
+
+    # Notify the manager/admin to approve the return
+    await notification_service.create_notification(
+        user_id=str(return_to_user["id"]),
+        title="Return Request Created — Defective Device",
+        message=(
+            f"A return request has been auto-created for defective device "
+            f"{device['device_id']} (Defect: {defect_report_id}). Please approve receipt."
+        ),
+        notification_type="warning",
+        category="return",
+        link=f"/returns/{return_row_id}"
+    )
+
+    # Alert the operator (requester) to physically return the device
+    async with get_db() as db:
+        cursor = await db.execute("SELECT return_id FROM returns WHERE id = ?", (return_row_id,))
+        row = await cursor.fetchone()
+        created_return_id = dict(row)["return_id"] if row else str(return_row_id)
+
+    await notification_service.create_notification(
+        user_id=requester_id,
+        title="Action Required: Return Defective Device",
+        message=(
+            f"Your defect report {defect_report_id} has been approved. "
+            f"Please return device {device['device_id']} to PDIC immediately. "
+            f"Return request {created_return_id} has been created — awaiting PDIC receipt confirmation."
+        ),
+        notification_type="warning",
+        category="return",
+        link=f"/returns/{return_row_id}"
+    )
+
+    return await get_return_by_id(str(return_row_id))

@@ -384,6 +384,14 @@ export const defectsAPI = {
     return response;
   },
 
+  replaceDevice: async (defectId, replaceData) => {
+    const response = await apiRequest(`/defects/${defectId}/replace`, {
+      method: 'POST',
+      body: JSON.stringify(replaceData),
+    });
+    return response;
+  },
+
   deleteDefect: async (defectId) => {
     const response = await apiRequest(`/defects/${defectId}`, {
       method: 'DELETE',

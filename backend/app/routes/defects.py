@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import Optional
-from app.models.defect import DefectCreate, DefectUpdate, DefectResolve, DefectStatusUpdate
+from app.models.defect import DefectCreate, DefectUpdate, DefectResolve, DefectStatusUpdate, ReplaceDeviceRequest
 from app.services import defect_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
 
@@ -248,4 +248,43 @@ async def resolve_defect(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to resolve defect '{defect_id}': {str(e)}"
+        )
+
+
+@router.post("/{defect_id}/replace")
+async def replace_defect_device(
+    defect_id: str,
+    replace_data: ReplaceDeviceRequest,
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Replace a defective device with a new one mapped to the same operator via MAC or serial number"""
+    if not replace_data.mac_address and not replace_data.serial_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide mac_address or serial_number for the replacement device"
+        )
+    try:
+        defect = await defect_service.replace_defect_device(
+            defect_id=defect_id,
+            mac_address=replace_data.mac_address,
+            serial_number=replace_data.serial_number,
+            notes=replace_data.notes,
+            resolver=current_user
+        )
+        return {
+            "success": True,
+            "message": "Device replaced successfully and assigned to the original operator",
+            "data": defect
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to replace device for defect '{defect_id}': {str(e)}"
         )

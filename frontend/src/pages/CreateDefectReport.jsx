@@ -17,7 +17,7 @@ const CreateDefectReport = () => {
     defectType: '',
     severity: '',
     description: '',
-    photos: []
+    images: []
   });
 
   useEffect(() => {
@@ -41,7 +41,7 @@ const CreateDefectReport = () => {
     // Simulate photo upload
     setFormData(prev => ({
       ...prev,
-      photos: [...prev.photos, `photo_${prev.photos.length + 1}.jpg`]
+      images: [...prev.images, `photo_${prev.images.length + 1}.jpg`]
     }));
     showToast('Photo added', 'info');
   };
@@ -49,7 +49,7 @@ const CreateDefectReport = () => {
   const handleRemovePhoto = (index) => {
     setFormData(prev => ({
       ...prev,
-      photos: prev.photos.filter((_, i) => i !== index)
+      images: prev.images.filter((_, i) => i !== index)
     }));
   };
 
@@ -63,7 +63,7 @@ const CreateDefectReport = () => {
         defect_type: formData.defectType,
         severity: formData.severity,
         description: formData.description,
-        photos: formData.photos
+        images: formData.images
       });
       showToast('Defect report submitted successfully!', 'success');
       navigate('/defects');
@@ -138,10 +138,12 @@ const CreateDefectReport = () => {
                 required
               >
                 <option value="">Select type...</option>
-                <option value="Hardware">Hardware</option>
-                <option value="Software">Software</option>
-                <option value="Cosmetic">Cosmetic</option>
-                <option value="Other">Other</option>
+                <option value="hardware">Hardware</option>
+                <option value="software">Software</option>
+                <option value="physical_damage">Physical Damage</option>
+                <option value="performance">Performance</option>
+                <option value="connectivity">Connectivity</option>
+                <option value="other">Other</option>
               </select>
             </div>
 
@@ -186,7 +188,7 @@ const CreateDefectReport = () => {
               Photos (Optional)
             </label>
             <div className="grid grid-cols-4 gap-3">
-              {formData.photos.map((photo, index) => (
+              {formData.images.map((photo, index) => (
                 <div key={index} className="relative aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
                   <span className="text-xs text-gray-500">{photo}</span>
                   <button
@@ -198,7 +200,7 @@ const CreateDefectReport = () => {
                   </button>
                 </div>
               ))}
-              {formData.photos.length < 4 && (
+              {formData.images.length < 4 && (
                 <button
                   type="button"
                   onClick={handlePhotoUpload}
