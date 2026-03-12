@@ -294,18 +294,9 @@ async def update_distribution_status(
         await db.execute(f"UPDATE distributions SET {', '.join(update_fields)} WHERE id = ?", params)
         await db.commit()
     
-    # Update device holders on approval/delivery
-    if status in [DistributionStatus.APPROVED.value, DistributionStatus.DELIVERED.value]:
-        device_ids = dist.get("device_ids", [])
-        for dev_id in device_ids:
-            await device_service.update_device_holder(
-                device_id=dev_id, holder_id=dist["to_user_id"],
-                holder_name=dist["to_user_name"], holder_type=dist.get("to_user_type", "staff"),
-                location=dist["to_user_name"], status=DeviceStatus.DISTRIBUTED.value,
-                performed_by=user_id, performed_by_name=user["name"],
-                from_user_id=dist["from_user_id"], from_user_name=dist["from_user_name"],
-                notes=f"Distributed via {dist['distribution_id']}"
-            )
+    # NOTE: Device holders are moved immediately when a distribution is CREATED.
+    # Re-updating holders here on APPROVED would corrupt the chain if devices
+    # have already been redistributed onward. Only REJECTED reverts holders.
     
     # Notification
     await notification_service.create_notification(
@@ -470,7 +461,7 @@ async def get_distribution_stats() -> Dict[str, int]:
     """Get distribution statistics"""
     async with get_db() as db:
         stats = {}
-        for key in ["total", "pending", "approved", "delivered", "rejected"]:
+        for key in ["total", "pending", "pending_receipt", "approved", "delivered", "rejected", "disputed"]:
             if key == "total":
                 cursor = await db.execute("SELECT COUNT(*) FROM distributions")
             else:

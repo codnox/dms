@@ -20,7 +20,8 @@ import {
   BarChart3,
   Bell,
   X,
-  Network
+  Network,
+  PackageCheck
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -145,6 +146,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
@@ -156,6 +158,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
@@ -164,6 +167,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       operator: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Transfer Device' },
         { path: '/defects/create', icon: AlertTriangle, label: 'Report Defect' },

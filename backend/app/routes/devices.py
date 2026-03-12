@@ -124,6 +124,34 @@ async def get_my_device_overview(
         )
 
 
+@router.post("/{device_id}/repair-holder")
+async def repair_device_holder(
+    device_id: str,
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Admin/Manager: repair a device's current_holder by replaying the most recent
+    distributed history entry. Use when a double-approval has overwritten the holder."""
+    try:
+        device = await device_service.repair_device_holder_from_history(device_id)
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found or no distribution history available"
+            )
+        return {
+            "success": True,
+            "message": "Device holder repaired successfully",
+            "data": device
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to repair device holder: {str(e)}"
+        )
+
+
 @router.get("/track/{serial_number}")
 async def track_device_by_serial(
     serial_number: str,

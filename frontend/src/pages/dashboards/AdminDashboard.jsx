@@ -79,8 +79,8 @@ const AdminDashboard = () => {
           color="purple"
         />
         <StatCard
-          title="Pending Approvals"
-          value={stats.pending_approvals || 0}
+          title="Awaiting Receipt"
+          value={stats.pending_receipts || 0}
           icon={CheckSquare}
           color="yellow"
         />

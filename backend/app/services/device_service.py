@@ -375,6 +375,56 @@ async def _add_device_history(
     )
 
 
+async def repair_device_holder_from_history(device_id: str) -> Optional[Dict[str, Any]]:
+    """Repair device holder by applying the most recent 'distributed' history entry.
+    Use when a device's current_holder has been corrupted by a double-approval."""
+    async with get_db() as db:
+        # Find the most recent distributed action
+        cursor = await db.execute(
+            """SELECT * FROM device_history
+               WHERE device_id = ? AND action = 'distributed'
+               ORDER BY timestamp DESC LIMIT 1""",
+            (device_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        entry = row_to_dict(row)
+
+        to_user_id   = entry.get("to_user_id")
+        to_user_name = entry.get("to_user_name")
+        if not to_user_id:
+            return None
+
+        # Look up the user to determine role-based holder_type and device status
+        cursor = await db.execute("SELECT * FROM users WHERE id = ?", (int(to_user_id),))
+        user_row = await cursor.fetchone()
+        if not user_row:
+            return None
+        recipient = row_to_dict(user_row)
+
+        role_to_type = {
+            "admin": "noc", "manager": "noc", "staff": "staff",
+            "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
+        }
+        holder_type   = role_to_type.get(recipient["role"], "noc")
+        device_status = DeviceStatus.IN_USE.value if recipient["role"] == "operator" else DeviceStatus.DISTRIBUTED.value
+        now = datetime.utcnow().isoformat()
+
+        await db.execute(
+            """UPDATE devices
+               SET current_holder_id = ?, current_holder_name = ?,
+                   current_holder_type = ?, current_location = ?,
+                   status = ?, updated_at = ?
+               WHERE id = ?""",
+            (str(to_user_id), to_user_name, holder_type, to_user_name,
+             device_status, now, int(device_id))
+        )
+        await db.commit()
+
+    return await get_device_by_id(device_id)
+
+
 async def track_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
     """Track device by serial number with full history"""
     async with get_db() as db:
