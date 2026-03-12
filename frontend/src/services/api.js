@@ -206,6 +206,11 @@ export const devicesAPI = {
     return response;
   },
 
+  getMyOverview: async () => {
+    const response = await apiRequest('/devices/my-overview');
+    return response;
+  },
+
   trackDeviceBySerial: async (serialNumber) => {
     console.log('[devicesAPI] Tracking device by serial:', serialNumber);
     try {
@@ -314,6 +319,14 @@ export const distributionsAPI = {
   cancelDistribution: async (distributionId) => {
     const response = await apiRequest(`/distributions/${distributionId}`, {
       method: 'DELETE',
+    });
+    return response;
+  },
+
+  confirmReceipt: async (distributionId, received, notes = '') => {
+    const response = await apiRequest(`/distributions/${distributionId}/receipt`, {
+      method: 'POST',
+      body: JSON.stringify({ received, notes }),
     });
     return response;
   },

@@ -6,7 +6,9 @@ from enum import Enum
 
 class DistributionStatus(str, Enum):
     PENDING = "pending"
-    APPROVED = "approved"
+    PENDING_RECEIPT = "pending_receipt"   # Awaiting receiver confirmation
+    APPROVED = "approved"                 # Receiver confirmed receipt
+    DISPUTED = "disputed"                 # Receiver disputed — not received
     IN_TRANSIT = "in_transit"
     DELIVERED = "delivered"
     REJECTED = "rejected"

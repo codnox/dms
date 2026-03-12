@@ -43,6 +43,12 @@ async def get_users(
             parent_id_filter = str(current_user["id"])
     elif creator_role == "cluster":
         parent_id_filter = str(current_user["id"])
+    elif creator_role == "operator":
+        if role == "operator":
+            # Operators can see sibling operators in the same cluster
+            parent_id_filter = str(current_user.get("parent_id", ""))
+        else:
+            raise HTTPException(status_code=403, detail="Operators can only list operators")
     elif creator_role in ["admin", "manager"] and parent_id:
         parent_id_filter = parent_id
 

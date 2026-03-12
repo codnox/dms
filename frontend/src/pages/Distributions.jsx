@@ -8,7 +8,7 @@ import Card from '../components/ui/Card';
 import { distributionsAPI, devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Truck, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import { Plus, Eye, Truck, CheckCircle, Clock, Loader2, AlertTriangle, PackageCheck, XCircle } from 'lucide-react';
 
 const Distributions = () => {
   const { user } = useAuth();
@@ -17,10 +17,11 @@ const Distributions = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDist, setSelectedDist] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [showApproveModal, setShowApproveModal] = useState(false);
-  const [approvalComment, setApprovalComment] = useState('');
   const [distributionDevices, setDistributionDevices] = useState([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptNotes, setReceiptNotes] = useState('');
+  const [receiptSubmitting, setReceiptSubmitting] = useState(false);
 
   const fetchDistributions = async () => {
     try {
@@ -65,8 +66,34 @@ const Distributions = () => {
     }
   }, [showModal, selectedDist]);
 
-  const canCreate = ['admin', 'manager', 'staff', 'sub_distributor'].includes(user?.role);
-  const canApprove = ['sub_distributor', 'operator'].includes(user?.role);
+  const pendingReceiptForMe = distributions.filter(
+    d => d.status === 'pending_receipt' && String(d.to_user_id) === String(user?.id)
+  );
+
+  const handleReceiptConfirm = async (received) => {
+    if (!selectedDist) return;
+    setReceiptSubmitting(true);
+    try {
+      await distributionsAPI.confirmReceipt(
+        selectedDist._id || selectedDist.id,
+        received,
+        receiptNotes
+      );
+      const action = received ? 'Receipt confirmed — you can now redistribute the device(s)' : 'Dispute reported. Admin and manager have been notified.';
+      showToast(action, received ? 'success' : 'warning');
+      setShowReceiptModal(false);
+      setShowModal(false);
+      setReceiptNotes('');
+      setSelectedDist(null);
+      fetchDistributions();
+    } catch (error) {
+      showToast(error.message || 'Failed to submit confirmation', 'error');
+    } finally {
+      setReceiptSubmitting(false);
+    }
+  };
+
+  const canCreate = ['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
 
   const columns = [
     { key: 'distribution_id', label: 'Distribution ID' },
@@ -97,53 +124,28 @@ const Distributions = () => {
               setShowModal(true);
             }}
             className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+            title="View Details"
           >
             <Eye className="w-4 h-4" />
           </button>
-          {canApprove && row.status === 'pending' && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedDist(row);
-                  setShowApproveModal(true);
-                }}
-                className="p-1 text-green-600 hover:bg-green-50 rounded"
-              >
-                <CheckCircle className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showToast('Distribution rejected', 'warning');
-                }}
-                className="p-1 text-red-600 hover:bg-red-50 rounded"
-              >
-                <XCircle className="w-4 h-4" />
-              </button>
-            </>
+          {row.status === 'pending_receipt' && String(row.to_user_id) === String(user?.id) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedDist(row);
+                setReceiptNotes('');
+                setShowReceiptModal(true);
+              }}
+              className="p-1 text-orange-600 hover:bg-orange-50 rounded"
+              title="Confirm or dispute receipt"
+            >
+              <PackageCheck className="w-4 h-4" />
+            </button>
           )}
         </div>
       )
     }
   ];
-
-  const handleApprove = async () => {
-    try {
-      await distributionsAPI.updateDistributionStatus(
-        selectedDist._id || selectedDist.id, 
-        'approved', 
-        approvalComment
-      );
-      showToast('Distribution approved successfully', 'success');
-      setShowApproveModal(false);
-      setSelectedDist(null);
-      setApprovalComment('');
-      fetchDistributions();
-    } catch (error) {
-      showToast('Failed to approve distribution', 'error');
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -159,7 +161,21 @@ const Distributions = () => {
         )}
       </div>
 
-      {/* Stats Cards */}
+      {/* Pending Receipt Alert Banner */}
+      {pendingReceiptForMe.length > 0 && (
+        <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-300 rounded-lg">
+          <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-orange-800">
+              You have {pendingReceiptForMe.length} distribution{pendingReceiptForMe.length > 1 ? 's' : ''} awaiting your receipt confirmation
+            </p>
+            <p className="text-sm text-orange-700 mt-1">
+              You cannot redistribute these devices until you confirm receipt. Click the orange{' '}
+              <PackageCheck className="inline w-4 h-4" /> icon on each row to confirm or dispute.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="!p-4">
           <div className="flex items-center gap-3">
@@ -174,13 +190,13 @@ const Distributions = () => {
         </Card>
         <Card className="!p-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <Clock className="w-5 h-5 text-yellow-600" />
+            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <PackageCheck className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Pending</p>
-              <p className="text-xl font-bold text-yellow-600">
-                {distributions.filter(d => d.status === 'pending').length}
+              <p className="text-sm text-gray-500">Awaiting Receipt</p>
+              <p className="text-xl font-bold text-orange-600">
+                {distributions.filter(d => d.status === 'pending_receipt').length}
               </p>
             </div>
           </div>
@@ -191,7 +207,7 @@ const Distributions = () => {
               <CheckCircle className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Approved</p>
+              <p className="text-sm text-gray-500">Confirmed</p>
               <p className="text-xl font-bold text-green-600">
                 {distributions.filter(d => d.status === 'approved').length}
               </p>
@@ -200,13 +216,13 @@ const Distributions = () => {
         </Card>
         <Card className="!p-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <Truck className="w-5 h-5 text-indigo-600" />
+            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">In Transit</p>
-              <p className="text-xl font-bold text-indigo-600">
-                {distributions.filter(d => d.status === 'in-transit').length}
+              <p className="text-sm text-gray-500">Disputed</p>
+              <p className="text-xl font-bold text-red-600">
+                {distributions.filter(d => d.status === 'disputed').length}
               </p>
             </div>
           </div>
@@ -240,17 +256,18 @@ const Distributions = () => {
         title="Distribution Details"
         size="lg"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            {canApprove && selectedDist?.status === 'pending' && (
-              <Button onClick={() => {
-                setShowModal(false);
-                setShowApproveModal(true);
-              }}>
-                Approve Distribution
+          <div className="flex gap-3">
+            {selectedDist?.status === 'pending_receipt' && String(selectedDist?.to_user_id) === String(user?.id) && (
+              <Button
+                icon={PackageCheck}
+                onClick={() => { setShowReceiptModal(true); }}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                Confirm Receipt
               </Button>
             )}
-          </>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
+          </div>
         }
       >
         {selectedDist && (
@@ -275,17 +292,15 @@ const Distributions = () => {
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Device Count</label>
                 <p className="font-medium text-gray-800">{selectedDist.device_count || selectedDist.device_ids?.length || 0}</p>
               </div>
-              {selectedDist.approved_at && (
-                <>
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase tracking-wider">Approved At</label>
-                    <p className="font-medium text-gray-800">{new Date(selectedDist.approved_at).toLocaleDateString()}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase tracking-wider">Approved By</label>
-                    <p className="font-medium text-gray-800">{selectedDist.approved_by_name || 'N/A'}</p>
-                  </div>
-                </>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Transferred By</label>
+                <p className="font-medium text-gray-800">{selectedDist.approved_by_name || selectedDist.from_user_name || 'N/A'}</p>
+              </div>
+              {selectedDist.approval_date && (
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider">Transfer Date</label>
+                  <p className="font-medium text-gray-800">{new Date(selectedDist.approval_date).toLocaleDateString()}</p>
+                </div>
               )}
             </div>
 
@@ -327,53 +342,68 @@ const Distributions = () => {
         )}
       </Modal>
 
-      {/* Approval Modal */}
+      {/* Receipt Confirmation Modal */}
       <Modal
-        isOpen={showApproveModal}
-        onClose={() => {
-          setShowApproveModal(false);
-          setApprovalComment('');
-        }}
-        title="Approve Distribution"
+        isOpen={showReceiptModal}
+        onClose={() => { setShowReceiptModal(false); setReceiptNotes(''); }}
+        title="Confirm Device Receipt"
         size="md"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowApproveModal(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => {
-              showToast('Distribution rejected', 'warning');
-              setShowApproveModal(false);
-            }}>
-              Reject
-            </Button>
-            <Button onClick={handleApprove}>Approve</Button>
-          </>
-        }
+        footer={null}
       >
         <div className="space-y-4">
-          <p className="text-gray-600">
-            You are about to approve distribution <span className="font-medium">{selectedDist?.distribution_id}</span> with {selectedDist?.device_count || selectedDist?.device_ids?.length || 0} devices.
-          </p>
-          
+          <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+            <p className="font-medium text-orange-900">
+              Distribution: <span className="font-mono">{selectedDist?.distribution_id}</span>
+            </p>
+            <p className="text-sm text-orange-800 mt-1">
+              Sent by <strong>{selectedDist?.from_user_name}</strong> — {selectedDist?.device_count || 0} device(s)
+            </p>
+          </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Comments (Optional)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
             <textarea
-              value={approvalComment}
-              onChange={(e) => setApprovalComment(e.target.value)}
+              value={receiptNotes}
+              onChange={e => setReceiptNotes(e.target.value)}
               rows={3}
-              placeholder="Add any comments or notes..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Add any notes about receipt condition..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <p className="text-sm text-yellow-800">
-              By approving, you confirm that you have received all devices in good condition.
-            </p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+            <strong>Note:</strong> You cannot redistribute these devices until you confirm receipt.
+            If you select "Not Received", admin and manager will be alerted immediately.
+          </div>
+
+          <div className="flex gap-3 justify-end pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => { setShowReceiptModal(false); setReceiptNotes(''); }}
+              disabled={receiptSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              icon={XCircle}
+              onClick={() => handleReceiptConfirm(false)}
+              disabled={receiptSubmitting}
+            >
+              {receiptSubmitting ? 'Submitting...' : 'Not Received'}
+            </Button>
+            <Button
+              icon={CheckCircle}
+              onClick={() => handleReceiptConfirm(true)}
+              disabled={receiptSubmitting}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {receiptSubmitting ? 'Confirming...' : 'Received'}
+            </Button>
           </div>
         </div>
       </Modal>
+
     </div>
   );
 };

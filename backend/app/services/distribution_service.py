@@ -91,16 +91,78 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         if not to_user:
             raise ValueError("Recipient user not found")
         to_user = row_to_dict(to_user)
-        
-        # Validate devices exist and are available
+
+        from_role = from_user["role"]
+        to_role = to_user["role"]
+        from_user_id = str(from_user.get("id", from_user.get("_id", "")))
+
+        # ── Hierarchy validation for sub-level roles ──────────────────────────
+        if from_role == "sub_distributor":
+            if to_role == "cluster":
+                if str(to_user.get("parent_id", "")) != from_user_id:
+                    raise ValueError("You can only distribute to clusters directly under your account")
+            elif to_role == "operator":
+                # Operator lives under a cluster that belongs to this sub_distributor
+                cursor = await db.execute(
+                    "SELECT * FROM users WHERE id = ?", (int(to_user.get("parent_id") or 0),)
+                )
+                parent_cluster = await cursor.fetchone()
+                if not parent_cluster:
+                    raise ValueError("Operator's cluster not found")
+                parent_cluster = row_to_dict(parent_cluster)
+                if str(parent_cluster.get("parent_id", "")) != from_user_id:
+                    raise ValueError("You can only distribute to operators within your sub-distribution")
+            else:
+                raise ValueError("Sub-distributors can only distribute to clusters or operators")
+
+        elif from_role == "cluster":
+            if to_role == "operator":
+                if str(to_user.get("parent_id", "")) != from_user_id:
+                    raise ValueError("You can only distribute to operators directly under your cluster")
+            else:
+                raise ValueError("Clusters can only distribute to operators")
+
+        elif from_role == "operator":
+            if to_role == "operator":
+                if str(dist_data.to_user_id) == from_user_id:
+                    raise ValueError("You cannot distribute to yourself")
+                if str(to_user.get("parent_id", "")) != str(from_user.get("parent_id", "")):
+                    raise ValueError("You can only distribute to operators in the same cluster")
+            else:
+                raise ValueError("Operators can only distribute to other operators in the same cluster")
+        # ─── End hierarchy validation ─────────────────────────────────────────
+
+        # Validate devices
         for dev_id in dist_data.device_ids:
             cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(dev_id),))
             device = await cursor.fetchone()
             if not device:
                 raise ValueError(f"Device {dev_id} not found")
             device = row_to_dict(device)
-            if device["status"] != DeviceStatus.AVAILABLE.value:
-                raise ValueError(f"Device {device['device_id']} is not available")
+            if from_role in ["admin", "manager", "staff"]:
+                # Management distributes from PDIC stock — must be available
+                if device["status"] != DeviceStatus.AVAILABLE.value:
+                    raise ValueError(f"Device {device['device_id']} is not available")
+            else:
+                # Sub-level roles redistribute from their own stock
+                if str(device.get("current_holder_id", "")) != from_user_id:
+                    raise ValueError(f"Device {device['device_id']} is not in your possession")
+                # Block redistribution if a pending_receipt distribution exists for this device to this user
+                cursor2 = await db.execute(
+                    "SELECT device_ids FROM distributions WHERE to_user_id = ? AND status = ?",
+                    (from_user_id, DistributionStatus.PENDING_RECEIPT.value)
+                )
+                pending_rows = await cursor2.fetchall()
+                for prow in pending_rows:
+                    try:
+                        pending_ids = [str(x) for x in json.loads(prow[0] or '[]')]
+                    except (json.JSONDecodeError, TypeError):
+                        pending_ids = []
+                    if str(dev_id) in pending_ids:
+                        raise ValueError(
+                            f"Device {device['device_id']} is awaiting your receipt confirmation. "
+                            f"Please confirm receipt of the incoming transfer before redistributing."
+                        )
         
         role_to_type = {
             "admin": "noc", "manager": "noc", "staff": "staff",
@@ -114,37 +176,29 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         device_status_for_recipient = role_to_device_status.get(to_user["role"], DeviceStatus.DISTRIBUTED.value)
         
         now = datetime.utcnow().isoformat()
-        from_user_id = str(from_user.get("id", from_user.get("_id", "")))
         dist_id = generate_distribution_id()
         
         cursor = await db.execute(
             """INSERT INTO distributions (distribution_id, device_ids, device_count,
                 from_user_id, from_user_name, from_user_type, to_user_id, to_user_name, to_user_type,
-                status, request_date, notes, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                status, request_date, approval_date, approved_by, approved_by_name,
+                notes, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 dist_id, json.dumps(dist_data.device_ids),
                 len(dist_data.device_ids), from_user_id, from_user["name"],
                 role_to_type.get(from_user["role"], "noc"),
                 str(to_user["id"]), to_user["name"],
                 role_to_type.get(to_user["role"], "staff"),
-                DistributionStatus.PENDING.value, now, dist_data.notes,
-                from_user_id, now, now
+                DistributionStatus.PENDING_RECEIPT.value, now, now,
+                from_user_id, from_user["name"],
+                dist_data.notes, from_user_id, now, now
             )
         )
         new_id = str(cursor.lastrowid)
-        
-        # Create approval entry
-        await db.execute(
-            """INSERT INTO approvals (approval_type, entity_id, entity_type, requested_by,
-                requested_by_name, status, priority, request_date, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("distribution", new_id, "distribution", from_user_id, from_user["name"],
-             "pending", "medium", now, dist_data.notes, now, now)
-        )
         await db.commit()
     
-    # Immediately update device holder/status so Track Device reflects this right away
+    # Update device holder/status immediately — no approval step required
     for dev_id in dist_data.device_ids:
         await device_service.update_device_holder(
             device_id=str(dev_id),
@@ -157,15 +211,16 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             performed_by_name=from_user["name"],
             from_user_id=from_user_id,
             from_user_name=from_user["name"],
-            notes=f"Dispatched via distribution {dist_id}"
+            notes=f"Transferred via distribution {dist_id}"
         )
     
-    # Send notification
+    # Notify recipient — ask them to confirm receipt
     await notification_service.create_notification(
         user_id=str(to_user["id"]),
-        title="New Distribution Request",
-        message=f"New distribution request from {from_user['name']} for {len(dist_data.device_ids)} device(s)",
-        notification_type="info", category="distribution",
+        title="Action Required: Confirm Device Receipt",
+        message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {from_user['name']}. "
+                f"Please confirm receipt in your Distributions page (Distribution ID: {dist_id}).",
+        notification_type="warning", category="distribution",
         link=f"/distributions/{new_id}"
     )
     
@@ -264,26 +319,104 @@ async def update_distribution_status(
     return await get_distribution_by_id(distribution_id)
 
 
+async def confirm_receipt(
+    distribution_id: str, received: bool, user: Dict[str, Any], notes: Optional[str] = None
+) -> Dict[str, Any]:
+    """Receiver confirms or disputes receipt of a distribution.
+    - received=True  → status APPROVED, sender notified
+    - received=False → status DISPUTED, all admins/managers + sender notified
+    Without confirming, receiver cannot redistribute the devices.
+    """
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
+        raise ValueError("Distribution not found")
+
+    user_id = str(user.get("id", user.get("_id", "")))
+
+    if str(dist["to_user_id"]) != user_id:
+        raise ValueError("Only the recipient can confirm receipt of this distribution")
+
+    if dist["status"] != DistributionStatus.PENDING_RECEIPT.value:
+        raise ValueError("This distribution is not awaiting receipt confirmation")
+
+    now = datetime.utcnow().isoformat()
+
+    async with get_db() as db:
+        if received:
+            await db.execute(
+                """UPDATE distributions
+                   SET status = ?, approval_date = ?, approved_by = ?, approved_by_name = ?,
+                       notes = COALESCE(?, notes), updated_at = ?
+                   WHERE id = ?""",
+                (
+                    DistributionStatus.APPROVED.value, now, user_id, user["name"],
+                    notes, now, int(distribution_id)
+                )
+            )
+            await db.commit()
+            # Notify sender: receipt confirmed
+            await notification_service.create_notification(
+                user_id=dist["from_user_id"],
+                title="Receipt Confirmed",
+                message=f"{user['name']} confirmed receipt of {dist['device_count']} device(s) "
+                        f"(Distribution: {dist['distribution_id']}).",
+                notification_type="success", category="distribution",
+                link=f"/distributions/{distribution_id}"
+            )
+        else:
+            await db.execute(
+                """UPDATE distributions
+                   SET status = 'disputed', notes = COALESCE(?, notes), updated_at = ?
+                   WHERE id = ?""",
+                (notes, now, int(distribution_id))
+            )
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE role IN ('admin', 'manager') AND status = 'active'"
+            )
+            admin_rows = await cursor.fetchall()
+            await db.commit()
+
+            dispute_msg = (
+                f"DISPUTE: {user['name']} reported NOT receiving {dist['device_count']} device(s) "
+                f"sent by {dist['from_user_name']}. Distribution: {dist['distribution_id']}."
+            )
+            for row in admin_rows:
+                await notification_service.create_notification(
+                    user_id=str(row[0]),
+                    title="Device Not Received — Dispute",
+                    message=dispute_msg,
+                    notification_type="error", category="distribution",
+                    link=f"/distributions/{distribution_id}"
+                )
+            # Also notify sender
+            await notification_service.create_notification(
+                user_id=dist["from_user_id"],
+                title="Receipt Disputed",
+                message=f"{user['name']} reported NOT receiving your device(s) in distribution "
+                        f"{dist['distribution_id']}. Admin and manager have been notified.",
+                notification_type="error", category="distribution",
+                link=f"/distributions/{distribution_id}"
+            )
+
+    return await get_distribution_by_id(distribution_id)
+
+
 async def cancel_distribution(distribution_id: str, user: dict) -> bool:
     """Cancel a distribution"""
     dist = await get_distribution_by_id(distribution_id)
     if not dist:
         return False
     user_id = str(user.get("id", user.get("_id", "")))
-    if dist["created_by"] != user_id:
+    if dist["created_by"] != user_id and user.get("role") not in ["admin", "manager"]:
         raise ValueError("Only the creator can cancel this distribution")
-    if dist["status"] != DistributionStatus.PENDING.value:
-        raise ValueError("Only pending distributions can be cancelled")
+    if dist["status"] == DistributionStatus.CANCELLED.value:
+        raise ValueError("Distribution is already cancelled")
     
     async with get_db() as db:
         now = datetime.utcnow().isoformat()
         await db.execute(
             "UPDATE distributions SET status = ?, updated_at = ? WHERE id = ?",
             (DistributionStatus.CANCELLED.value, now, int(distribution_id))
-        )
-        await db.execute(
-            "DELETE FROM approvals WHERE entity_id = ? AND approval_type = 'distribution'",
-            (distribution_id,)
         )
         await db.commit()
     
