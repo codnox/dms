@@ -8,7 +8,7 @@ import Modal from '../components/ui/Modal';
 import { devicesAPI, changeRequestsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Search, Box, MapPin, Clock, User, ChevronRight, Loader2, Edit, Send } from 'lucide-react';
+import { Search, Box, MapPin, Clock, User, ChevronRight, Loader2, Edit, Send, RefreshCw } from 'lucide-react';
 
 const DEVICE_STATUSES = [
   { value: 'available', label: 'Available' },
@@ -100,13 +100,31 @@ const TrackDevice = () => {
 
   const getFormattedHistory = () => {
     if (!deviceHistory || deviceHistory.length === 0) return [];
-    return deviceHistory.map((item, index) => ({
-      title: (item.action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-      description: item.notes || '',
-      timestamp: item.timestamp ? new Date(item.timestamp).toLocaleString() : '',
-      user: item.performed_by_name || '',
-      status: index === 0 ? 'current' : 'completed'
-    }));
+    return deviceHistory.map((item, index) => {
+      const action = (item.action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      let title = action;
+
+      // Build a descriptive title with from/to user names
+      if (item.action === 'distributed' && item.from_user_name && item.to_user_name) {
+        title = `${action}: ${item.from_user_name} → ${item.to_user_name}`;
+      } else if (item.action === 'registered' && item.performed_by_name) {
+        title = `${action} by ${item.performed_by_name}`;
+      } else if (item.action === 'status_changed') {
+        const before = item.status_before ? item.status_before.replace(/_/g, ' ') : '';
+        const after = item.status_after ? item.status_after.replace(/_/g, ' ') : '';
+        title = `Status Changed: ${before} → ${after}`;
+      }
+
+      return {
+        title,
+        description: item.notes || '',
+        timestamp: item.timestamp ? new Date(item.timestamp).toLocaleString() : '',
+        user: item.performed_by_name || '',
+        fromUser: item.from_user_name || null,
+        toUser: item.to_user_name || null,
+        status: index === 0 ? 'current' : 'completed'
+      };
+    });
   };
 
   const getLocationColor = (holderType) => {
@@ -141,6 +159,17 @@ const TrackDevice = () => {
 
   const canChangeStatusDirectly = currentUser && ['admin', 'manager'].includes(currentUser.role);
   const canRequestStatusChange = currentUser && currentUser.role === 'staff';
+
+  const handleRepairHolder = async () => {
+    if (!searchResult) return;
+    try {
+      await devicesAPI.repairDeviceHolder(searchResult.id);
+      showToast('Device holder repaired successfully', 'success');
+      await handleSearchBySerial(searchResult.serial_number);
+    } catch (err) {
+      showToast(err.message || 'Failed to repair device holder', 'error');
+    }
+  };
 
   const handleDirectStatusChange = async () => {
     if (!selectedStatus || !searchResult) return;
@@ -348,7 +377,7 @@ const TrackDevice = () => {
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Availability Status</p>
                     <StatusBadge status={searchResult.status} />
-                    <div className="mt-3">
+                    <div className="mt-3 flex flex-col gap-2">
                       {canChangeStatusDirectly && (
                         <Button
                           size="sm"
@@ -357,6 +386,17 @@ const TrackDevice = () => {
                           onClick={() => { setSelectedStatus(searchResult.status); setShowStatusModal(true); }}
                         >
                           Change Status
+                        </Button>
+                      )}
+                      {canChangeStatusDirectly && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          icon={RefreshCw}
+                          onClick={handleRepairHolder}
+                          title="Re-apply the most recent distribution to fix a corrupted holder"
+                        >
+                          Fix Holder
                         </Button>
                       )}
                       {canRequestStatusChange && (

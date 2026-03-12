@@ -43,6 +43,11 @@ const Timeline = ({ items }) => {
             {item.description && (
               <p className="text-sm text-gray-500 mt-1">{item.description}</p>
             )}
+            {item.fromUser && item.toUser && (
+              <p className="text-xs text-indigo-600 mt-1 font-medium">
+                {item.fromUser} → {item.toUser}
+              </p>
+            )}
             {item.timestamp && (
               <p className="text-xs text-gray-400 mt-1">{item.timestamp}</p>
             )}

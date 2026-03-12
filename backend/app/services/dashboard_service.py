@@ -61,6 +61,7 @@ async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
             "total_users": user_stats.get("total", 0),
             "active_users": user_stats.get("active", 0),
             "pending_approvals": approval_stats.get("total_pending", 0),
+            "pending_receipts": dist_stats.get("pending_receipt", 0),
             "total_approved": approval_stats.get("approved", 0),
             "total_rejected": approval_stats.get("rejected", 0),
             "devices": device_stats,

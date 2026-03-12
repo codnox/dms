@@ -266,6 +266,13 @@ export const devicesAPI = {
     return response;
   },
 
+  repairDeviceHolder: async (deviceId) => {
+    const response = await apiRequest(`/devices/${deviceId}/repair-holder`, {
+      method: 'POST',
+    });
+    return response;
+  },
+
   bulkUpload: async (file) => {
     const token = getAuthToken();
     const formData = new FormData();

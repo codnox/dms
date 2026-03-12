@@ -24,6 +24,8 @@ import Unauthorized from './pages/Unauthorized';
 
 import ChangeRequests from './pages/ChangeRequests';
 
+import DeliveryConfirmations from './pages/DeliveryConfirmations';
+
 import BulkImportDevices from './pages/BulkImportDevices';
 
 // Protected Route Component
@@ -165,6 +167,16 @@ function AppRoutes() {
               <Approvals />
             </ProtectedRoute>
           } 
+        />
+
+        {/* Delivery Confirmations */}
+        <Route
+          path="delivery-confirmations"
+          element={
+            <ProtectedRoute allowedRoles={['sub_distributor', 'cluster', 'operator']}>
+              <DeliveryConfirmations />
+            </ProtectedRoute>
+          }
         />
 
         {/* Reports (Admin/Manager/Distributor) */}

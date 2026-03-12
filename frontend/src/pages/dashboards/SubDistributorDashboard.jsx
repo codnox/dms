@@ -5,6 +5,7 @@ import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
 import { dashboardAPI, devicesAPI, distributionsAPI, usersAPI, defectsAPI, returnsAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import {
   Box,
   Users,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 
 const SubDistributorDashboard = () => {
+  const { user } = useAuth();
   const [stats, setStats] = useState({});
   const [myDevices, setMyDevices] = useState([]);
   const [distributions, setDistributions] = useState([]);
@@ -35,7 +37,7 @@ const SubDistributorDashboard = () => {
         const [statsRes, devRes, distRes, usersRes, defRes, retRes] = await Promise.all([
           dashboardAPI.getStats().catch(() => ({ data: {} })),
           devicesAPI.getDevices().catch(() => ({ data: [] })),
-          distributionsAPI.getDistributions({ status: 'pending' }).catch(() => ({ data: [] })),
+          distributionsAPI.getDistributions({ status: 'pending_receipt' }).catch(() => ({ data: [] })),
           usersAPI.getUsers({ role: 'operator' }).catch(() => ({ data: [] })),
           defectsAPI.getDefects().catch(() => ({ data: [] })),
           returnsAPI.getReturns().catch(() => ({ data: [] }))
@@ -55,7 +57,9 @@ const SubDistributorDashboard = () => {
     fetchData();
   }, []);
 
-  const pendingDistributions = distributions.filter(d => d.status === 'pending');
+  const pendingReceipts = distributions.filter(
+    d => d.status === 'pending_receipt' && String(d.to_user_id) === String(user?.id)
+  );
 
   return (
     <div className="space-y-6">
@@ -71,30 +75,30 @@ const SubDistributorDashboard = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard title="Received Devices" value={stats.received_devices || myDevices.length} icon={Box} color="blue" />
-        <StatCard title="Pending Approvals" value={stats.pending_approvals || pendingDistributions.length} icon={CheckSquare} color="yellow" />
+        <StatCard title="Pending Confirmations" value={pendingReceipts.length} icon={CheckSquare} color="orange" />
         <StatCard title="My Operators" value={stats.operator_count || myOperators.length} icon={Users} color="purple" />
         <StatCard title="Defect Reports" value={stats.defect_reports || defectReports.length} icon={AlertTriangle} color="red" />
         <StatCard title="Returns" value={stats.return_requests || returnRequests.length} icon={RotateCcw} color="indigo" />
         <StatCard title="Assigned" value={stats.assigned_to_operators || 0} icon={Package} color="green" />
       </div>
 
-      {/* Pending Approvals Banner */}
-      {pendingDistributions.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+      {/* Pending Receipt Confirmations Banner */}
+      {pendingReceipts.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                <CheckSquare className="w-5 h-5 text-yellow-600" />
+              <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                <Package className="w-5 h-5 text-orange-600" />
               </div>
               <div>
-                <p className="font-medium text-yellow-800">
-                  You have {pendingDistributions.length} distribution(s) awaiting your approval
+                <p className="font-medium text-orange-800">
+                  You have {pendingReceipts.length} delivery(ies) to confirm
                 </p>
-                <p className="text-sm text-yellow-600">Review and approve received devices</p>
+                <p className="text-sm text-orange-600">Confirm that you have received the devices before you can redistribute them</p>
               </div>
             </div>
-            <Link to="/approvals">
-              <Button variant="warning" size="sm">Review Now</Button>
+            <Link to="/delivery-confirmations">
+              <Button variant="warning" size="sm">Confirm Now</Button>
             </Link>
           </div>
         </div>
@@ -128,36 +132,33 @@ const SubDistributorDashboard = () => {
           </div>
         </Card>
 
-        {/* Pending Distributions */}
+        {/* Pending Receipt Confirmations */}
         <Card
-          title="Pending Approvals"
-          icon={CheckSquare}
+          title="Pending Confirmations"
+          icon={Package}
           action={
-            <Link to="/approvals" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+            <Link to="/delivery-confirmations" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
               View all <ArrowRight className="w-4 h-4" />
             </Link>
           }
         >
           <div className="space-y-3">
-            {pendingDistributions.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">No pending approvals</p>
+            {pendingReceipts.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No pending confirmations</p>
             ) : (
-              pendingDistributions.map((dist) => (
-                <div key={dist.id} className="p-3 bg-yellow-50 rounded-lg">
+              pendingReceipts.map((dist) => (
+                <div key={dist.id} className="p-3 bg-orange-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-medium text-gray-800">{dist.distribution_id}</p>
                     <StatusBadge status={dist.status} size="sm" />
                   </div>
                   <p className="text-xs text-gray-500">From: {dist.from_user_name}</p>
                   <p className="text-xs text-gray-400 mb-2">{dist.device_count || dist.device_ids?.length || 0} devices</p>
-                  <div className="flex gap-2">
-                    <button className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200">
-                      <CheckCircle className="w-3 h-3" /> Approve
+                  <Link to="/delivery-confirmations" className="block">
+                    <button className="w-full flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium text-orange-700 bg-orange-100 rounded hover:bg-orange-200">
+                      <Package className="w-3 h-3" /> Confirm Receipt
                     </button>
-                    <button className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">
-                      <XCircle className="w-3 h-3" /> Reject
-                    </button>
-                  </div>
+                  </Link>
                 </div>
               ))
             )}

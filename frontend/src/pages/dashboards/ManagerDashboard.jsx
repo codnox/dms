@@ -52,7 +52,7 @@ const ManagerDashboard = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard title="Total Devices" value={stats.total_devices || 0} icon={Box} color="blue" />
-        <StatCard title="Pending Approvals" value={stats.pending_approvals || 0} icon={CheckSquare} color="yellow" />
+        <StatCard title="Awaiting Receipt" value={stats.pending_receipts || 0} icon={CheckSquare} color="yellow" />
         <StatCard title="Defect Reports" value={stats.defect_reports || 0} icon={AlertTriangle} color="red" />
         <StatCard title="Return Requests" value={stats.return_requests || 0} icon={RotateCcw} color="indigo" />
         <StatCard title="This Month" value={stats.distribution_this_month || distributions.length} icon={Truck} color="green" />
