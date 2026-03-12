@@ -119,9 +119,9 @@ const AdminDashboard = () => {
                   <p className="text-sm font-medium text-gray-800">{activity.action}</p>
                   <p className="text-sm text-gray-500 truncate">{activity.description}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-400">{activity.user}</span>
+                    <span className="text-xs text-gray-400">{activity.user_name || activity.user}</span>
                     <span className="text-xs text-gray-300">•</span>
-                    <span className="text-xs text-gray-400">{activity.timestamp}</span>
+                    <span className="text-xs text-gray-400">{activity.timestamp ? new Date(activity.timestamp).toLocaleString() : ''}</span>
                   </div>
                 </div>
               </div>
@@ -138,30 +138,30 @@ const AdminDashboard = () => {
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <Box className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Devices in Inventory</span>
+                <span className="text-sm font-medium text-gray-700">Available in Inventory</span>
               </div>
-              <span className="text-sm font-bold text-gray-800">4</span>
+              <span className="text-sm font-bold text-gray-800">{stats.available_devices ?? '-'}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <Box className="w-5 h-5 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">Devices with Sub-distributors</span>
+                <span className="text-sm font-medium text-gray-700">Distributed Devices</span>
               </div>
-              <span className="text-sm font-bold text-gray-800">3</span>
+              <span className="text-sm font-bold text-gray-800">{stats.distributed_devices ?? '-'}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <Box className="w-5 h-5 text-purple-600" />
-                <span className="text-sm font-medium text-gray-700">Devices with Operators</span>
+                <span className="text-sm font-medium text-gray-700">Defective Devices</span>
               </div>
-              <span className="text-sm font-bold text-gray-800">5</span>
+              <span className="text-sm font-bold text-red-600">{stats.defective_devices ?? '-'}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <Clock className="w-5 h-5 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">In Transit</span>
+                <span className="text-sm font-medium text-gray-700">Pending Approvals</span>
               </div>
-              <span className="text-sm font-bold text-gray-800">1</span>
+              <span className="text-sm font-bold text-gray-800">{stats.pending_approvals ?? '-'}</span>
             </div>
           </div>
         </Card>
@@ -209,14 +209,19 @@ const AdminDashboard = () => {
           }
         >
           <div className="space-y-3">
-            {defectReports.slice(0, 4).map((defect) => (
+            {defectReports.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No defect reports yet</p>
+            ) : defectReports.slice(0, 4).map((defect) => (
               <div key={defect.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800">{defect.device.model}</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {defect.device_type || 'Unknown'}
+                    </p>
                     <StatusBadge status={defect.severity} size="sm" />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 truncate">{defect.description}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{defect.device_serial || defect.report_id}</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">{defect.description}</p>
                 </div>
                 <StatusBadge status={defect.status} size="sm" />
               </div>

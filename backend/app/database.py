@@ -29,6 +29,9 @@ async def init_db():
             "ALTER TABLE change_requests ADD COLUMN device_id TEXT",
             "ALTER TABLE change_requests ADD COLUMN requested_status TEXT",
             "ALTER TABLE devices ADD COLUMN registered_by_name TEXT",
+            "ALTER TABLE returns ADD COLUMN defect_id TEXT",
+            "ALTER TABLE defects ADD COLUMN auto_return_id TEXT",
+            "ALTER TABLE defects ADD COLUMN replacement_device_id TEXT",
         ]:
             try:
                 await db.execute(stmt)

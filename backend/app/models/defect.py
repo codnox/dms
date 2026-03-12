@@ -74,6 +74,12 @@ class DefectReport(BaseModel):
         from_attributes = True
 
 
+class ReplaceDeviceRequest(BaseModel):
+    mac_address: Optional[str] = None
+    serial_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class DefectResponse(BaseModel):
     id: str
     report_id: str

@@ -8,7 +8,7 @@ import Card from '../components/ui/Card';
 import { defectsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, AlertTriangle, CheckCircle, XCircle, MessageSquare, Loader2 } from 'lucide-react';
+import { Plus, Eye, AlertTriangle, CheckCircle, XCircle, MessageSquare, Loader2, RefreshCw } from 'lucide-react';
 
 const DefectReports = () => {
   const { user } = useAuth();
@@ -18,7 +18,9 @@ const DefectReports = () => {
   const [selectedDefect, setSelectedDefect] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
+  const [replaceData, setReplaceData] = useState({ mac_address: '', serial_number: '', notes: '' });
 
   const fetchDefects = async () => {
     try {
@@ -39,6 +41,7 @@ const DefectReports = () => {
 
   const canReport = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
   const canReview = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
+  const canReplace = ['admin', 'manager', 'staff'].includes(user?.role);
 
   const columns = [
     {
@@ -80,7 +83,7 @@ const DefectReports = () => {
           >
             <Eye className="w-4 h-4" />
           </button>
-          {canReview && row.status === 'open' && (
+          {canReview && row.status === 'reported' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -90,6 +93,20 @@ const DefectReports = () => {
               className="p-1 text-green-600 hover:bg-green-50 rounded"
             >
               <MessageSquare className="w-4 h-4" />
+            </button>
+          )}
+          {canReplace && row.status === 'approved' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedDefect(row);
+                setReplaceData({ mac_address: '', serial_number: '', notes: '' });
+                setShowReplaceModal(true);
+              }}
+              className="p-1 text-purple-600 hover:bg-purple-50 rounded"
+              title="Replace Device"
+            >
+              <RefreshCw className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -104,12 +121,33 @@ const DefectReports = () => {
         action,
         reviewComment
       );
-      showToast(`Defect report ${action}`, action === 'approved' ? 'success' : 'warning');
+      showToast(
+        action === 'approved'
+          ? 'Defect approved — return request automatically created'
+          : 'Defect report rejected',
+        action === 'approved' ? 'success' : 'warning'
+      );
       setShowReviewModal(false);
       setReviewComment('');
       fetchDefects();
     } catch (error) {
       showToast('Failed to update defect report', 'error');
+    }
+  };
+
+  const handleReplace = async () => {
+    if (!replaceData.mac_address && !replaceData.serial_number) {
+      showToast('Please enter MAC address or serial number of the replacement device', 'error');
+      return;
+    }
+    try {
+      await defectsAPI.replaceDevice(selectedDefect._id || selectedDefect.id, replaceData);
+      showToast('Replacement device assigned to original operator successfully', 'success');
+      setShowReplaceModal(false);
+      setReplaceData({ mac_address: '', serial_number: '', notes: '' });
+      fetchDefects();
+    } catch (error) {
+      showToast(error.message || 'Failed to replace device', 'error');
     }
   };
 
@@ -136,13 +174,13 @@ const DefectReports = () => {
         <Card className="!p-4">
           <p className="text-sm text-gray-500">Open</p>
           <p className="text-2xl font-bold text-yellow-600">
-            {defectReports.filter(d => d.status === 'open').length}
+            {defectReports.filter(d => d.status === 'reported').length}
           </p>
         </Card>
         <Card className="!p-4">
           <p className="text-sm text-gray-500">Under Review</p>
           <p className="text-2xl font-bold text-blue-600">
-            {defectReports.filter(d => d.status === 'under-review').length}
+            {defectReports.filter(d => d.status === 'under_review').length}
           </p>
         </Card>
         <Card className="!p-4">
@@ -187,7 +225,7 @@ const DefectReports = () => {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            {canReview && selectedDefect?.status === 'open' && (
+            {canReview && selectedDefect?.status === 'reported' && (
               <Button onClick={() => {
                 setShowModal(false);
                 setShowReviewModal(true);
@@ -238,11 +276,25 @@ const DefectReports = () => {
               <p className="text-gray-800 mt-1 p-3 bg-gray-50 rounded-lg">{selectedDefect.description}</p>
             </div>
 
-            {selectedDefect.photos && selectedDefect.photos.length > 0 && (
+            {selectedDefect.auto_return_id && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <label className="text-xs text-green-600 uppercase tracking-wider">Auto-Created Return Request</label>
+                <p className="font-medium text-green-800 mt-1">{selectedDefect.auto_return_id}</p>
+              </div>
+            )}
+
+            {selectedDefect.replacement_device_id && (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <label className="text-xs text-purple-600 uppercase tracking-wider">Replacement Device</label>
+                <p className="font-medium text-purple-800 mt-1">{selectedDefect.resolution}</p>
+              </div>
+            )}
+
+            {selectedDefect.images && selectedDefect.images.length > 0 && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Photos</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {selectedDefect.photos.map((photo, index) => (
+                  {selectedDefect.images.map((photo, index) => (
                     <div key={index} className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
                       <span className="text-xs text-gray-500">{photo}</span>
                     </div>
@@ -301,8 +353,82 @@ const DefectReports = () => {
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <p className="text-sm text-yellow-800">
-              Approving this defect will allow the reporter to initiate a return request.
+              Approving this defect will automatically create a return request for the device.
             </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Replace Device Modal */}
+      <Modal
+        isOpen={showReplaceModal}
+        onClose={() => {
+          setShowReplaceModal(false);
+          setReplaceData({ mac_address: '', serial_number: '', notes: '' });
+        }}
+        title="Replace Defective Device"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowReplaceModal(false)}>Cancel</Button>
+            <Button onClick={handleReplace}>Assign Replacement</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="font-medium text-gray-800">{selectedDefect?.device_type || 'Unknown'}</p>
+            <p className="text-sm text-gray-500">
+              Original holder: {selectedDefect?.reported_by_name || 'N/A'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              The replacement device will be automatically mapped to the same operator.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Replacement Device MAC Address
+            </label>
+            <input
+              type="text"
+              value={replaceData.mac_address}
+              onChange={(e) => setReplaceData(prev => ({ ...prev, mac_address: e.target.value }))}
+              placeholder="e.g. AA:BB:CC:DD:EE:FF"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center text-sm text-gray-500 gap-2">
+            <div className="flex-1 border-t border-gray-200" />
+            <span>or</span>
+            <div className="flex-1 border-t border-gray-200" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Replacement Device Serial Number
+            </label>
+            <input
+              type="text"
+              value={replaceData.serial_number}
+              onChange={(e) => setReplaceData(prev => ({ ...prev, serial_number: e.target.value }))}
+              placeholder="e.g. SN-12345678"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes (Optional)
+            </label>
+            <textarea
+              value={replaceData.notes}
+              onChange={(e) => setReplaceData(prev => ({ ...prev, notes: e.target.value }))}
+              rows={2}
+              placeholder="Additional notes about the replacement..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
           </div>
         </div>
       </Modal>

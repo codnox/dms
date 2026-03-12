@@ -9,7 +9,7 @@ import Timeline from '../components/ui/Timeline';
 import { returnsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2 } from 'lucide-react';
+import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2, PackageCheck } from 'lucide-react';
 
 const Returns = () => {
   const { user } = useAuth();
@@ -19,6 +19,7 @@ const Returns = () => {
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [actionComment, setActionComment] = useState('');
 
   const fetchReturns = async () => {
@@ -40,6 +41,7 @@ const Returns = () => {
 
   const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
   const canApprove = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
+  const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role);
 
   const columns = [
     {
@@ -47,20 +49,18 @@ const Returns = () => {
       label: 'Device',
       render: (value, row) => (
         <div>
-          <p className="font-medium text-gray-800">{value || row.device_type || 'Unknown'}</p>
-          <p className="text-xs text-gray-500">{row.serial_number || row.mac_address || ''}</p>
+          <p className="font-medium text-gray-800">{row.device_type || value || 'Unknown'}</p>
+          <p className="text-xs text-gray-500">{row.device_serial || ''}</p>
         </div>
       )
     },
     { key: 'reason', label: 'Reason' },
-    { key: 'requested_action', label: 'Requested' },
-    { key: 'initiated_by_name', label: 'Initiated By' },
-    { key: 'created_at', label: 'Date', render: (value) => value ? new Date(value).toLocaleDateString() : '-' },
     {
-      key: 'current_approver',
-      label: 'Awaiting',
-      render: (value) => value ? <span className="capitalize">{value}</span> : '-'
+      key: 'requested_by_name',
+      label: 'Initiated By',
+      render: (value, row) => value || row.initiated_by_name || 'N/A'
     },
+    { key: 'created_at', label: 'Date', render: (value) => value ? new Date(value).toLocaleDateString() : '-' },
     {
       key: 'status',
       label: 'Status',
@@ -91,10 +91,25 @@ const Returns = () => {
                   setShowActionModal(true);
                 }}
                 className="p-1 text-green-600 hover:bg-green-50 rounded"
+                title="Approve/Reject"
               >
                 <CheckCircle className="w-4 h-4" />
               </button>
             </>
+          )}
+          {canConfirmReceipt && row.status === 'approved' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedReturn(row);
+                setActionComment('');
+                setShowReceiptModal(true);
+              }}
+              className="p-1 text-purple-600 hover:bg-purple-50 rounded"
+              title="Confirm device received at PDIC"
+            >
+              <PackageCheck className="w-4 h-4" />
+            </button>
           )}
         </div>
       )
@@ -108,12 +123,33 @@ const Returns = () => {
         action,
         actionComment
       );
-      showToast(`Return request ${action}`, action === 'approved' ? 'success' : 'warning');
+      showToast(
+        action === 'approved'
+          ? 'Return approved — operator notified to bring device to PDIC'
+          : 'Return request rejected',
+        action === 'approved' ? 'success' : 'warning'
+      );
       setShowActionModal(false);
       setActionComment('');
       fetchReturns();
     } catch (error) {
       showToast('Failed to update return request', 'error');
+    }
+  };
+
+  const handleConfirmReceipt = async () => {
+    try {
+      await returnsAPI.updateReturnStatus(
+        selectedReturn._id || selectedReturn.id,
+        'received',
+        actionComment
+      );
+      showToast('Device receipt confirmed — ownership transferred back to PDIC', 'success');
+      setShowReceiptModal(false);
+      setActionComment('');
+      fetchReturns();
+    } catch (error) {
+      showToast(error.message || 'Failed to confirm receipt', 'error');
     }
   };
 
@@ -233,8 +269,15 @@ const Returns = () => {
               <Button onClick={() => {
                 setShowModal(false);
                 setShowActionModal(true);
+              }}>Review Request</Button>
+            )}
+            {canConfirmReceipt && selectedReturn?.status === 'approved' && (
+              <Button onClick={() => {
+                setShowModal(false);
+                setActionComment('');
+                setShowReceiptModal(true);
               }}>
-                Review Request
+                Confirm Receipt at PDIC
               </Button>
             )}
           </>
@@ -253,29 +296,41 @@ const Returns = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Reason</label>
-                <p className="font-medium text-gray-800">{selectedReturn.reason}</p>
+                <p className="font-medium text-gray-800 capitalize">{selectedReturn.reason}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Requested Action</label>
-                <p className="font-medium text-gray-800">{selectedReturn.requested_action}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Status</label>
+                <p className="font-medium"><StatusBadge status={selectedReturn.status} /></p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Initiated By</label>
-                <p className="font-medium text-gray-800">{selectedReturn.initiated_by_name || 'N/A'}</p>
+                <p className="font-medium text-gray-800">{selectedReturn.requested_by_name || selectedReturn.initiated_by_name || 'N/A'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Created At</label>
                 <p className="font-medium text-gray-800">{selectedReturn.created_at ? new Date(selectedReturn.created_at).toLocaleDateString() : 'N/A'}</p>
               </div>
+              {selectedReturn.approved_by_name && (
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider">Approved By</label>
+                  <p className="font-medium text-gray-800">{selectedReturn.approved_by_name}</p>
+                </div>
+              )}
+              {selectedReturn.received_date && (
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider">Received At PDIC</label>
+                  <p className="font-medium text-gray-800">{new Date(selectedReturn.received_date).toLocaleDateString()}</p>
+                </div>
+              )}
             </div>
 
-            {selectedReturn.notes && (
+            {selectedReturn.description && (
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Notes</label>
-                <p className="text-gray-800 mt-1 p-3 bg-gray-50 rounded-lg">{selectedReturn.notes}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Description</label>
+                <p className="text-gray-800 mt-1 p-3 bg-gray-50 rounded-lg">{selectedReturn.description}</p>
               </div>
             )}
 
@@ -314,9 +369,9 @@ const Returns = () => {
       >
         <div className="space-y-4">
           <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="font-medium text-gray-800">{selectedReturn?.device_name || selectedReturn?.device_type || 'Unknown'}</p>
-            <p className="text-sm text-gray-500">{selectedReturn?.reason}</p>
-            <p className="text-sm text-gray-500">Requested: {selectedReturn?.requested_action}</p>
+            <p className="font-medium text-gray-800">{selectedReturn?.device_type || selectedReturn?.device_name || 'Unknown'}</p>
+            <p className="text-sm text-gray-500 capitalize">{selectedReturn?.reason}</p>
+            <p className="text-xs text-gray-400">Serial: {selectedReturn?.device_serial || 'N/A'}</p>
           </div>
 
           <div>
@@ -334,10 +389,61 @@ const Returns = () => {
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
-              {user?.role === 'sub_distributor' 
-                ? 'Approving will forward this request to the management.'
-                : 'Approving will complete this return request.'}
+              Approving will notify the operator to physically return the device to PDIC.
+              Once the device arrives, use ‘Confirm Receipt’ to transfer ownership back to PDIC.
             </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirm Receipt Modal */}
+      <Modal
+        isOpen={showReceiptModal}
+        onClose={() => {
+          setShowReceiptModal(false);
+          setActionComment('');
+        }}
+        title="Confirm Device Receipt at PDIC"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowReceiptModal(false)}>Cancel</Button>
+            <Button onClick={handleConfirmReceipt}>
+              <PackageCheck className="w-4 h-4 mr-1" /> Confirm Received
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-purple-50 rounded-lg">
+            <p className="font-medium text-gray-800">{selectedReturn?.device_type || 'Unknown Device'}</p>
+            <p className="text-sm text-gray-500">Serial: {selectedReturn?.device_serial || 'N/A'}</p>
+            <p className="text-sm text-gray-500">
+              Return ID: {selectedReturn?.return_id || selectedReturn?._id || 'N/A'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Requested by: {selectedReturn?.requested_by_name || 'N/A'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
+            <textarea
+              value={actionComment}
+              onChange={(e) => setActionComment(e.target.value)}
+              rows={3}
+              placeholder="Any notes about the returned device condition..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-sm text-green-800 font-medium">Confirming receipt will:</p>
+            <ul className="text-sm text-green-700 mt-1 space-y-1 list-disc list-inside">
+              <li>Mark the return as received</li>
+              <li>Transfer device ownership back to PDIC</li>
+              <li>Notify the operator that the return is complete</li>
+            </ul>
           </div>
         </div>
       </Modal>
