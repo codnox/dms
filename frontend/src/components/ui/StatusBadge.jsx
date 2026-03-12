@@ -10,11 +10,14 @@ const StatusBadge = ({ status, size = 'md' }) => {
     
     // Distribution statuses
     'pending': { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
+    'pending_receipt': { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Awaiting Receipt' },
+    'disputed': { bg: 'bg-red-100', text: 'text-red-700', label: 'Disputed' },
     'in-transit': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'In Transit' },
     'delivered': { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Delivered' },
-    'approved': { bg: 'bg-green-100', text: 'text-green-700', label: 'Approved' },
+    'approved': { bg: 'bg-green-100', text: 'text-green-700', label: 'Confirmed' },
     'rejected': { bg: 'bg-red-100', text: 'text-red-700', label: 'Rejected' },
     'completed': { bg: 'bg-green-100', text: 'text-green-700', label: 'Completed' },
+    'cancelled': { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Cancelled' },
     
     // Defect/Return statuses
     'open': { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Open' },

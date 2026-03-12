@@ -1,10 +1,16 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import Optional
+from pydantic import BaseModel
 from app.models.distribution import DistributionCreate, DistributionStatusUpdate
 from app.services import distribution_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager, require_management
 
 router = APIRouter()
+
+
+class ReceiptConfirmation(BaseModel):
+    received: bool
+    notes: Optional[str] = None
 
 
 @router.post("/sync-devices")
@@ -118,9 +124,14 @@ async def get_distribution(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_distribution(
     dist_data: DistributionCreate,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(get_current_user)
 ):
-    """Create a new distribution request - Admin and Manager only"""
+    """Create a new distribution request.
+    - admin/manager/staff: can distribute PDIC devices to any sub-level user
+    - sub_distributor: can distribute their held devices to clusters or operators under them
+    - cluster: can distribute their held devices to operators under them
+    - operator: can distribute their held devices to operators in the same cluster
+    """
     
     try:
         distribution = await distribution_service.create_distribution(
@@ -144,6 +155,43 @@ async def create_distribution(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create distribution: {str(e)}"
+        )
+
+
+@router.post("/{distribution_id}/receipt")
+async def confirm_distribution_receipt(
+    distribution_id: str,
+    body: ReceiptConfirmation,
+    current_user: dict = Depends(get_current_user)
+):
+    """Recipient confirms or disputes receipt of a distribution.
+    - received=true  → Distribution becomes APPROVED; receiver can now redistribute devices
+    - received=false → Distribution becomes DISPUTED; admin/manager + sender are notified
+    """
+    try:
+        distribution = await distribution_service.confirm_receipt(
+            distribution_id=distribution_id,
+            received=body.received,
+            user=current_user,
+            notes=body.notes
+        )
+        action = "confirmed" if body.received else "disputed"
+        return {
+            "success": True,
+            "message": f"Receipt {action} successfully",
+            "data": distribution
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to confirm receipt: {str(e)}"
         )
 
 

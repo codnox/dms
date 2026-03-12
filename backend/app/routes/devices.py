@@ -51,13 +51,16 @@ async def get_devices(
 async def get_available_devices(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get available devices for distribution"""
+    """Get devices available to distribute for the current user.
+    - admin/manager/staff: PDIC stock (status='available')
+    - sub_distributor/cluster/operator: all devices they currently hold"""
     try:
-        holder_id = None
-        if current_user["role"] not in ["admin", "manager", "staff"]:
-            holder_id = current_user["id"]
-
-        devices = await device_service.get_available_devices(holder_id)
+        role = current_user["role"]
+        if role in ["admin", "manager", "staff"]:
+            devices = await device_service.get_available_devices(holder_id=None)
+        else:
+            # Sub-level roles can redistribute any device they hold
+            devices = await device_service.get_held_devices(holder_id=current_user["id"])
 
         return {
             "success": True,
@@ -70,6 +73,54 @@ async def get_available_devices(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve available devices: {str(e)}"
+        )
+
+
+@router.get("/my-overview")
+async def get_my_device_overview(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get comprehensive device overview: devices in hand + under hierarchy + distribution stats.
+    - admin/manager/staff: all system devices with full stats
+    - sub_distributor: held + cluster + operator devices in their chain
+    - cluster: held + operator devices under them
+    - operator: only their held devices"""
+    try:
+        role = current_user["role"]
+        if role in ["admin", "manager", "staff"]:
+            result = await device_service.get_devices(page=1, page_size=2000)
+            all_devices = result["data"]
+            stats = await device_service.get_device_stats()
+            return {
+                "success": True,
+                "data": {
+                    "held_by_me": all_devices,
+                    "under_subordinates": [],
+                    "all_under_me": all_devices,
+                    "stats": {
+                        "in_my_hand": stats.get("total", 0),
+                        "under_subordinates": 0,
+                        "total_in_chain": stats.get("total", 0),
+                        "total_devices_received": 0,
+                        "total_devices_sent": 0,
+                        "total_distributions_received": 0,
+                        "total_distributions_sent": 0,
+                        **stats
+                    }
+                }
+            }
+        else:
+            overview = await device_service.get_user_device_overview(
+                user_id=current_user["id"],
+                user_role=role
+            )
+            return {"success": True, "data": overview}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get device overview: {str(e)}"
         )
 
 

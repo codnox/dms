@@ -57,8 +57,8 @@ const TrackDevice = () => {
   const fetchAllDevices = async () => {
     try {
       setDevicesLoading(true);
-      const response = await devicesAPI.getDevices({ page_size: 100 });
-      setAllDevices(response.data || []);
+      const response = await devicesAPI.getMyOverview();
+      setAllDevices(response.data?.all_under_me || []);
     } catch (error) {
       console.error('Failed to fetch devices:', error);
     } finally {
@@ -212,7 +212,7 @@ const TrackDevice = () => {
 
       {/* All Devices List */}
       {!searched && (
-        <Card title="All Devices" icon={Box}>
+        <Card title={['admin','manager','staff'].includes(currentUser?.role) ? 'All Devices' : 'Devices In My Chain'} icon={Box}>
           {devicesLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />

@@ -125,7 +125,7 @@ function AppRoutes() {
         <Route 
           path="distributions/create" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
               <CreateDistribution />
             </ProtectedRoute>
           } 

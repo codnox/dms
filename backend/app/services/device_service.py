@@ -238,7 +238,7 @@ async def update_device_holder(
 
 
 async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Get available devices for distribution"""
+    """Get available devices for distribution (PDIC stock only)"""
     async with get_db() as db:
         if holder_id:
             cursor = await db.execute(
@@ -252,6 +252,96 @@ async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[st
             )
         rows = await cursor.fetchall()
         return rows_to_list(rows)
+
+
+async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
+    """Get all devices currently held by a user (any status) — for sub-level redistribution"""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM devices WHERE current_holder_id = ? ORDER BY updated_at DESC LIMIT 200",
+            (holder_id,)
+        )
+        rows = await cursor.fetchall()
+        return rows_to_list(rows)
+
+
+async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, Any]:
+    """Get comprehensive device overview: devices in hand + under hierarchy + distribution stats"""
+    async with get_db() as db:
+        uid = int(user_id)
+
+        # Devices directly held by this user
+        cursor = await db.execute(
+            "SELECT * FROM devices WHERE current_holder_id = ? ORDER BY updated_at DESC",
+            (user_id,)
+        )
+        held_devices = rows_to_list(await cursor.fetchall())
+
+        subordinate_devices = []
+        if user_role == "sub_distributor":
+            # Devices held by clusters directly under this sub_distributor
+            cursor = await db.execute(
+                """SELECT d.* FROM devices d
+                   JOIN users u ON CAST(d.current_holder_id AS TEXT) = CAST(u.id AS TEXT)
+                   WHERE u.parent_id = ? AND u.role = 'cluster'""",
+                (uid,)
+            )
+            cluster_devices = rows_to_list(await cursor.fetchall())
+
+            # Devices held by operators whose parent cluster belongs to this sub_distributor
+            cursor = await db.execute(
+                """SELECT d.* FROM devices d
+                   JOIN users op ON CAST(d.current_holder_id AS TEXT) = CAST(op.id AS TEXT)
+                   JOIN users cl ON op.parent_id = cl.id
+                   WHERE cl.parent_id = ? AND op.role = 'operator'""",
+                (uid,)
+            )
+            operator_devices = rows_to_list(await cursor.fetchall())
+            subordinate_devices = cluster_devices + operator_devices
+
+        elif user_role == "cluster":
+            # Devices held by operators directly under this cluster
+            cursor = await db.execute(
+                """SELECT d.* FROM devices d
+                   JOIN users u ON CAST(d.current_holder_id AS TEXT) = CAST(u.id AS TEXT)
+                   WHERE u.parent_id = ? AND u.role = 'operator'""",
+                (uid,)
+            )
+            subordinate_devices = rows_to_list(await cursor.fetchall())
+
+        # Distribution stats from the distributions table
+        cursor = await db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(device_count), 0) FROM distributions WHERE to_user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        total_distrib_received = int(row[0]) if row else 0
+        total_devices_received = int(row[1]) if row else 0
+
+        cursor = await db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(device_count), 0) FROM distributions WHERE from_user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        total_distrib_sent = int(row[0]) if row else 0
+        total_devices_sent = int(row[1]) if row else 0
+
+        all_under_me = held_devices + subordinate_devices
+
+        return {
+            "held_by_me": held_devices,
+            "under_subordinates": subordinate_devices,
+            "all_under_me": all_under_me,
+            "stats": {
+                "in_my_hand": len(held_devices),
+                "under_subordinates": len(subordinate_devices),
+                "total_in_chain": len(all_under_me),
+                "total_devices_received": total_devices_received,
+                "total_devices_sent": total_devices_sent,
+                "total_distributions_received": total_distrib_received,
+                "total_distributions_sent": total_distrib_sent,
+            }
+        }
 
 
 async def get_device_history(device_id: str) -> List[Dict[str, Any]]:

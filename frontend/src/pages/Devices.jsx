@@ -8,7 +8,7 @@ import Card from '../components/ui/Card';
 import { devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Edit, Trash2, Box, Download, Upload, Loader2 } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, Box, Upload, Loader2, Users, Send, ArrowDownToLine } from 'lucide-react';
 
 const Devices = () => {
   const { user } = useAuth();
@@ -16,8 +16,12 @@ const Devices = () => {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [devices, setDevices] = useState([]);
+  const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
+
+  const isManagement = ['admin', 'manager', 'staff'].includes(user?.role);
+  const hasHierarchy = ['sub_distributor', 'cluster'].includes(user?.role);
 
   useEffect(() => {
     fetchDevices();
@@ -26,8 +30,8 @@ const Devices = () => {
   const fetchDevices = async () => {
     try {
       setLoading(true);
-      const response = await devicesAPI.getDevices({ page_size: 100 });
-      setDevices(response.data || []);
+      const response = await devicesAPI.getMyOverview();
+      setOverview(response.data);
     } catch (error) {
       console.error('Failed to fetch devices:', error);
       showToast('Failed to load devices', 'error');
@@ -37,6 +41,18 @@ const Devices = () => {
   };
 
   const canRegister = ['admin', 'manager', 'staff'].includes(user?.role);
+
+  const overviewStats = overview?.stats || {};
+
+  const displayedDevices = (() => {
+    if (!overview) return [];
+    if (!hasHierarchy) return overview.all_under_me || [];
+    switch (activeTab) {
+      case 'mine': return overview.held_by_me || [];
+      case 'hierarchy': return overview.under_subordinates || [];
+      default: return overview.all_under_me || [];
+    }
+  })();
 
   const columns = [
     { key: 'mac_address', label: 'MAC Address' },
@@ -114,7 +130,9 @@ const Devices = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Devices</h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">
-            {user?.role === 'operator' ? 'Your assigned devices' : 'Manage all registered devices'}
+            {isManagement ? 'All registered devices in the system'
+              : hasHierarchy ? 'Devices across your entire distribution chain'
+              : 'Your assigned devices'}
           </p>
         </div>
         {canRegister && (
@@ -130,32 +148,110 @@ const Devices = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-800">{devices.length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Available</p>
-          <p className="text-2xl font-bold text-green-600">{devices.filter(d => d.status === 'available').length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Distributed</p>
-          <p className="text-2xl font-bold text-blue-600">{devices.filter(d => d.status === 'distributed').length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">In Use</p>
-          <p className="text-2xl font-bold text-purple-600">{devices.filter(d => d.status === 'in_use').length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Defective</p>
-          <p className="text-2xl font-bold text-red-600">{devices.filter(d => d.status === 'defective').length}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-sm text-gray-500">Returned</p>
-          <p className="text-2xl font-bold text-orange-600">{devices.filter(d => d.status === 'returned').length}</p>
-        </Card>
-      </div>
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          {isManagement ? (
+            <>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-2xl font-bold text-gray-800">{overviewStats.total || (overview?.all_under_me?.length || 0)}</p>
+              </Card>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">Available</p>
+                <p className="text-2xl font-bold text-green-600">{overviewStats.available || (overview?.all_under_me || []).filter(d => d.status === 'available').length}</p>
+              </Card>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">Distributed</p>
+                <p className="text-2xl font-bold text-blue-600">{overviewStats.distributed || (overview?.all_under_me || []).filter(d => d.status === 'distributed').length}</p>
+              </Card>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">In Use</p>
+                <p className="text-2xl font-bold text-purple-600">{overviewStats.in_use || (overview?.all_under_me || []).filter(d => d.status === 'in_use').length}</p>
+              </Card>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">Defective</p>
+                <p className="text-2xl font-bold text-red-600">{overviewStats.defective || (overview?.all_under_me || []).filter(d => d.status === 'defective').length}</p>
+              </Card>
+              <Card className="!p-4">
+                <p className="text-sm text-gray-500">Returned</p>
+                <p className="text-2xl font-bold text-orange-600">{overviewStats.returned || (overview?.all_under_me || []).filter(d => d.status === 'returned').length}</p>
+              </Card>
+            </>
+          ) : (
+            <>
+              <Card className="!p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Box className="w-4 h-4 text-blue-500" />
+                  <p className="text-xs text-gray-500">In My Hand</p>
+                </div>
+                <p className="text-2xl font-bold text-blue-600">{overviewStats.in_my_hand || 0}</p>
+              </Card>
+              {hasHierarchy && (
+                <Card className="!p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className="w-4 h-4 text-purple-500" />
+                    <p className="text-xs text-gray-500">Under My Chain</p>
+                  </div>
+                  <p className="text-2xl font-bold text-purple-600">{overviewStats.under_subordinates || 0}</p>
+                </Card>
+              )}
+              <Card className="!p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Box className="w-4 h-4 text-gray-500" />
+                  <p className="text-xs text-gray-500">Total in Chain</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-700">{overviewStats.total_in_chain || 0}</p>
+              </Card>
+              <Card className="!p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <ArrowDownToLine className="w-4 h-4 text-green-500" />
+                  <p className="text-xs text-gray-500">Total Received</p>
+                </div>
+                <p className="text-2xl font-bold text-green-600">{overviewStats.total_devices_received || 0}</p>
+              </Card>
+              <Card className="!p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Send className="w-4 h-4 text-orange-500" />
+                  <p className="text-xs text-gray-500">Total Sent</p>
+                </div>
+                <p className="text-2xl font-bold text-orange-600">{overviewStats.total_devices_sent || 0}</p>
+              </Card>
+              <Card className="!p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <ArrowDownToLine className="w-4 h-4 text-indigo-500" />
+                  <p className="text-xs text-gray-500">Transfers</p>
+                </div>
+                <p className="text-base font-bold text-indigo-600">
+                  {overviewStats.total_distributions_received || 0} in / {overviewStats.total_distributions_sent || 0} out
+                </p>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tabs for hierarchy roles */}
+      {!loading && hasHierarchy && (
+        <div className="flex border-b border-gray-200">
+          {[
+            { key: 'all', label: `All in Chain (${overviewStats.total_in_chain || 0})` },
+            { key: 'mine', label: `In My Hand (${overviewStats.in_my_hand || 0})` },
+            { key: 'hierarchy', label: `Under My Hierarchy (${overviewStats.under_subordinates || 0})` },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === tab.key
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
@@ -165,7 +261,7 @@ const Devices = () => {
       ) : (
         <DataTable
           columns={columns}
-          data={devices}
+          data={displayedDevices}
           selectable={canRegister}
           onRowClick={(row) => {
             setSelectedDevice(row);
