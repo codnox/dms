@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -33,6 +34,11 @@ const CreateDistribution = () => {
   const [selectedDevices, setSelectedDevices] = useState([]);
   const [availableDevices, setAvailableDevices] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [selectionMode, setSelectionMode] = useState('manual');
+  const [registeredDate, setRegisteredDate] = useState('');
+  const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [serialRange, setSerialRange] = useState({ start: '', end: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Cascading recipient state
   const [subDists, setSubDists] = useState([]);
@@ -125,11 +131,61 @@ const CreateDistribution = () => {
     return [...subDists, ...allClusters, ...allOperators].find(u => String(u.id) === String(formData.toDistributor));
   }, [formData.toDistributor, subDists, allClusters, allOperators]);
 
-  const filteredDevices = availableDevices.filter(d =>
-    (d.mac_address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (d.model || d.device_type || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (d.serial_number || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const normalizeDate = (value) => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  };
+
+  const inSerialRange = (serial) => {
+    if (selectionMode !== 'serial_range') return true;
+    const candidate = String(serial || '').trim();
+    if (!candidate) return false;
+
+    const start = String(serialRange.start || '').trim();
+    const end = String(serialRange.end || '').trim();
+    if (!start && !end) return true;
+
+    if (start && candidate.localeCompare(start, undefined, { numeric: true, sensitivity: 'base' }) < 0) {
+      return false;
+    }
+    if (end && candidate.localeCompare(end, undefined, { numeric: true, sensitivity: 'base' }) > 0) {
+      return false;
+    }
+    return true;
+  };
+
+  const inDateFilters = (device) => {
+    const created = normalizeDate(device.created_at);
+    if (!created) return false;
+
+    if (selectionMode === 'registered_date') {
+      return registeredDate ? created === registeredDate : true;
+    }
+
+    if (selectionMode === 'date_range') {
+      if (!dateRange.from && !dateRange.to) return true;
+      if (dateRange.from && created < dateRange.from) return false;
+      if (dateRange.to && created > dateRange.to) return false;
+      return true;
+    }
+
+    return true;
+  };
+
+  const filteredDevices = availableDevices.filter((d) => {
+    const matchesSearch =
+      (d.mac_address || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.model || d.device_type || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.serial_number || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+    if (selectionMode === 'manual') return true;
+    if (selectionMode === 'registered_date' || selectionMode === 'date_range') return inDateFilters(d);
+    if (selectionMode === 'serial_range') return inSerialRange(d.serial_number);
+    return true;
+  });
 
   const handleAddDevice = (device) => {
     if (!selectedDevices.find(d => (d._id || d.id) === (device._id || device.id))) {
@@ -141,10 +197,49 @@ const CreateDistribution = () => {
     setSelectedDevices(prev => prev.filter(d => (d._id || d.id) !== deviceId));
   };
 
+  const handleBulkSelectFiltered = () => {
+    if (filteredDevices.length === 0) {
+      showToast('No devices match the selected filters', 'error');
+      return;
+    }
+
+    const selectedIds = new Set(selectedDevices.map((d) => String(d._id || d.id)));
+    const additions = filteredDevices.filter((d) => !selectedIds.has(String(d._id || d.id)));
+
+    if (additions.length === 0) {
+      showToast('All filtered devices are already selected', 'info');
+      return;
+    }
+
+    setSelectedDevices((prev) => [...prev, ...additions]);
+    showToast(`${additions.length} device(s) added from current filters`, 'success');
+  };
+
+  const handleClearSelected = () => {
+    setSelectedDevices([]);
+  };
+
+  const confirmSelectionSummary = useMemo(() => {
+    if (selectionMode === 'registered_date') {
+      return registeredDate ? `Registered Date: ${registeredDate}` : 'Registered Date: Any';
+    }
+    if (selectionMode === 'date_range') {
+      return `Date Range: ${dateRange.from || 'Any'} to ${dateRange.to || 'Any'}`;
+    }
+    if (selectionMode === 'serial_range') {
+      return `Serial Range: ${serialRange.start || 'Any'} to ${serialRange.end || 'Any'}`;
+    }
+    return 'Manual selection';
+  }, [selectionMode, registeredDate, dateRange, serialRange]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (selectedDevices.length === 0) { showToast('Please select at least one device', 'error'); return; }
     if (!formData.toDistributor) { showToast('Please select a recipient', 'error'); return; }
+    setShowConfirmModal(true);
+  };
+
+  const performDistribution = async () => {
     setLoading(true);
     try {
       await distributionsAPI.createDistribution({
@@ -153,6 +248,7 @@ const CreateDistribution = () => {
         notes: formData.notes
       });
       showToast('Distribution created successfully!', 'success');
+      setShowConfirmModal(false);
       navigate('/distributions');
     } catch (error) {
       showToast(error.message || 'Failed to create distribution', 'error');
@@ -188,6 +284,91 @@ const CreateDistribution = () => {
           {/* Available / Held Devices */}
           <Card title={isManagement ? 'PDIC Available Devices' : 'Your Held Devices'} icon={Search}>
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Selection Mode</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { key: 'manual', label: 'Manual' },
+                    { key: 'registered_date', label: 'Registered Date' },
+                    { key: 'date_range', label: 'Date Range' },
+                    { key: 'serial_range', label: 'Serial Range' },
+                  ].map((mode) => (
+                    <button
+                      key={mode.key}
+                      type="button"
+                      onClick={() => setSelectionMode(mode.key)}
+                      className={`px-2 py-2 rounded-lg text-xs sm:text-sm border transition-colors ${
+                        selectionMode === mode.key
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectionMode === 'registered_date' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Registered Date</label>
+                  <input
+                    type="date"
+                    value={registeredDate}
+                    onChange={(e) => setRegisteredDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              {selectionMode === 'date_range' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                    <input
+                      type="date"
+                      value={dateRange.from}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                    <input
+                      type="date"
+                      value={dateRange.to}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selectionMode === 'serial_range' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial From</label>
+                    <input
+                      type="text"
+                      value={serialRange.start}
+                      onChange={(e) => setSerialRange((prev) => ({ ...prev, start: e.target.value }))}
+                      placeholder="e.g. SN-000100"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial To</label>
+                    <input
+                      type="text"
+                      value={serialRange.end}
+                      onChange={(e) => setSerialRange((prev) => ({ ...prev, end: e.target.value }))}
+                      placeholder="e.g. SN-000500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
               <input
                 type="text"
                 value={searchQuery}
@@ -195,6 +376,14 @@ const CreateDistribution = () => {
                 placeholder="Search by MAC, model, or serial..."
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" onClick={handleBulkSelectFiltered}>
+                  Select Filtered ({filteredDevices.length})
+                </Button>
+                <Button type="button" variant="outline" onClick={handleClearSelected}>
+                  Clear Selected
+                </Button>
+              </div>
               <div className="max-h-80 overflow-y-auto space-y-2">
                 {loadingData ? (
                   <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
@@ -409,7 +598,7 @@ const CreateDistribution = () => {
                   {selectedDevices.length} device(s) will be transferred to {selectedRecipient.name} ({ROLE_LABELS[selectedRecipient.role] || selectedRecipient.role})
                 </p>
                 <p className="text-xs text-blue-500 mt-0.5">
-                  Device status will become <strong>{selectedRecipient.role === 'operator' ? 'In Use' : 'Distributed'}</strong> immediately
+                  Selection mode: <strong>{confirmSelectionSummary}</strong>
                 </p>
               </div>
               <Truck className="w-8 h-8 text-blue-600 flex-shrink-0" />
@@ -422,6 +611,38 @@ const CreateDistribution = () => {
           <Button type="submit" loading={loading} icon={Save} className="w-full sm:w-auto">Create Distribution</Button>
         </div>
       </form>
+
+      <Modal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        title="Confirm Bulk Device Transfer"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={performDistribution} loading={loading}>
+              Confirm Transfer
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-gray-700">
+            Please confirm this transfer request before it is submitted.
+          </p>
+          <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 space-y-1">
+            <p><span className="font-medium text-gray-700">Devices:</span> {selectedDevices.length}</p>
+            <p><span className="font-medium text-gray-700">Recipient:</span> {selectedRecipient?.name || 'N/A'}</p>
+            <p><span className="font-medium text-gray-700">Recipient Role:</span> {selectedRecipient?.role || 'N/A'}</p>
+            <p><span className="font-medium text-gray-700">Selection Mode:</span> {confirmSelectionSummary}</p>
+          </div>
+          <p className="text-xs text-gray-500">
+            Ownership changes are finalized when the recipient confirms receipt in the distribution workflow.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 };

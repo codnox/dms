@@ -212,7 +212,8 @@ const DefectReports = () => {
       render: (value, row) => (
         <div>
           <p className="font-medium text-gray-800">{value || row.device_type || 'Unknown'}</p>
-          <p className="text-xs text-gray-500">{row.serial_number || row.mac_address || ''}</p>
+          <p className="text-xs text-gray-500">Serial: {row.device_serial || row.defective_device?.serial_number || 'N/A'}</p>
+          <p className="text-xs text-gray-500">MAC: {row.mac_address || row.defective_device?.mac_address || 'N/A'}</p>
         </div>
       )
     },
@@ -631,7 +632,8 @@ const DefectReports = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-800">{selectedDefect.device_name || selectedDefect.device_type || 'Unknown'}</h3>
-                <p className="text-gray-500">{selectedDefect.serial_number || selectedDefect.mac_address || ''}</p>
+                <p className="text-gray-500">Serial: {selectedDefect.device_serial || selectedDefect.defective_device?.serial_number || 'N/A'}</p>
+                <p className="text-gray-500">MAC: {selectedDefect.mac_address || selectedDefect.defective_device?.mac_address || 'N/A'}</p>
                 <div className="flex gap-2 mt-2">
                   <StatusBadge status={selectedDefect.severity} />
                   <StatusBadge status={selectedDefect.status} />

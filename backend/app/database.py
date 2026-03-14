@@ -264,6 +264,98 @@ CREATE TABLE IF NOT EXISTS change_requests (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS external_inventory_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inventory_id TEXT UNIQUE NOT NULL,
+    sku TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    unit TEXT DEFAULT 'pcs',
+    quantity_on_hand INTEGER DEFAULT 0,
+    reorder_level INTEGER DEFAULT 0,
+    unit_cost REAL DEFAULT 0,
+    supplier_name TEXT,
+    location TEXT,
+    status TEXT DEFAULT 'active',
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_purchase_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id TEXT UNIQUE NOT NULL,
+    supplier_name TEXT NOT NULL,
+    status TEXT DEFAULT 'draft',
+    expected_date TEXT,
+    ordered_by TEXT NOT NULL,
+    ordered_by_name TEXT,
+    total_amount REAL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_po_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id TEXT NOT NULL,
+    item_inventory_id TEXT NOT NULL,
+    item_sku TEXT,
+    item_name TEXT,
+    quantity_ordered INTEGER NOT NULL,
+    unit_cost REAL DEFAULT 0,
+    line_total REAL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id TEXT UNIQUE NOT NULL,
+    po_id TEXT NOT NULL,
+    supplier_name TEXT,
+    received_by TEXT NOT NULL,
+    received_by_name TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_receipt_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id TEXT NOT NULL,
+    item_inventory_id TEXT NOT NULL,
+    item_sku TEXT,
+    item_name TEXT,
+    quantity_received INTEGER NOT NULL,
+    unit_cost REAL DEFAULT 0,
+    line_total REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS inventory_stock_movements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    movement_id TEXT UNIQUE NOT NULL,
+    item_inventory_id TEXT NOT NULL,
+    item_sku TEXT,
+    item_name TEXT,
+    movement_type TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    reference_type TEXT,
+    reference_id TEXT,
+    notes TEXT,
+    performed_by TEXT,
+    performed_by_name TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_inventory_items_status ON external_inventory_items(status);
+CREATE INDEX IF NOT EXISTS idx_external_inventory_items_sku ON external_inventory_items(sku);
+CREATE INDEX IF NOT EXISTS idx_inventory_purchase_orders_status ON inventory_purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_inventory_po_lines_po_id ON inventory_po_lines(po_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_receipts_po_id ON inventory_receipts(po_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_receipt_lines_receipt_id ON inventory_receipt_lines(receipt_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_item_id ON inventory_stock_movements(item_inventory_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_created_at ON inventory_stock_movements(created_at);
 """
 
 

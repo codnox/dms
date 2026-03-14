@@ -248,12 +248,12 @@ async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[st
     async with get_db() as db:
         if holder_id:
             cursor = await db.execute(
-                "SELECT * FROM devices WHERE status = ? AND current_holder_id = ? LIMIT 100",
+                "SELECT * FROM devices WHERE status = ? AND current_holder_id = ? ORDER BY created_at DESC LIMIT 5000",
                 (DeviceStatus.AVAILABLE.value, holder_id)
             )
         else:
             cursor = await db.execute(
-                "SELECT * FROM devices WHERE status = ? LIMIT 100",
+                "SELECT * FROM devices WHERE status = ? ORDER BY created_at DESC LIMIT 5000",
                 (DeviceStatus.AVAILABLE.value,)
             )
         rows = await cursor.fetchall()
@@ -283,7 +283,7 @@ async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
     """Get all devices currently held by a user (any status) — for sub-level redistribution"""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT * FROM devices WHERE current_holder_id = ? ORDER BY updated_at DESC LIMIT 200",
+            "SELECT * FROM devices WHERE current_holder_id = ? ORDER BY updated_at DESC LIMIT 5000",
             (holder_id,)
         )
         rows = await cursor.fetchall()

@@ -17,6 +17,8 @@ import Users from './pages/Users';
 import UserHierarchy from './pages/UserHierarchy';
 import Approvals from './pages/Approvals';
 import Reports from './pages/Reports';
+import Notifications from './pages/Notifications';
+import ExternalInventory from './pages/ExternalInventory';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
@@ -207,6 +209,24 @@ function AppRoutes() {
               <Reports />
             </ProtectedRoute>
           } 
+        />
+
+        <Route
+          path="external-inventory"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+              <ExternalInventory />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="notifications"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+              <Notifications />
+            </ProtectedRoute>
+          }
         />
 
         {/* Change Requests */}

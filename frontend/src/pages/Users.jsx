@@ -75,7 +75,9 @@ const Users = () => {
 
   // For admin/manager: parent options when creating cluster or operator
   const [parentOptions, setParentOptions] = useState([]);
+  const [subDistributorOptions, setSubDistributorOptions] = useState([]);
   const [loadingParents, setLoadingParents] = useState(false);
+  const [selectedOperatorSubDistId, setSelectedOperatorSubDistId] = useState('');
 
   // For admin detail modal: child users (clusters under sub_distributor, operators under cluster)
   const [detailChildren, setDetailChildren] = useState([]);
@@ -130,6 +132,8 @@ const Users = () => {
     const defaultRole = creatableRoles[0] || 'operator';
     setFormData({ ...emptyForm, role: defaultRole, parentId: '' });
     setParentOptions([]);
+    setSubDistributorOptions([]);
+    setSelectedOperatorSubDistId('');
     // For sub_distributor creating cluster, no parent selector needed.
     // For admin/manager, kick off load if default role requires it.
     if (['admin', 'manager'].includes(currentUser?.role)) {
@@ -144,6 +148,7 @@ const Users = () => {
   const loadParentOptions = async (role) => {
     setLoadingParents(true);
     setParentOptions([]);
+    setSubDistributorOptions([]);
     try {
       if (role === 'cluster') {
         const res = await usersAPI.getUsers({ role: 'sub_distributor' });
@@ -153,9 +158,8 @@ const Users = () => {
           usersAPI.getUsers({ role: 'sub_distributor' }),
           usersAPI.getUsers({ role: 'cluster' }),
         ]);
-        const subDists = (subRes.data || []).map(u => ({ ...u, groupLabel: 'Sub Distributor' }));
-        const clusters = (clusterRes.data || []).map(u => ({ ...u, groupLabel: 'Cluster' }));
-        setParentOptions([...subDists, ...clusters]);
+        setSubDistributorOptions(subRes.data || []);
+        setParentOptions(clusterRes.data || []);
       }
     } catch (err) {
       console.error('Failed to load parent options:', err);
@@ -168,11 +172,13 @@ const Users = () => {
   // for sub_distributor creating operator, populate from local clusters state.
   const handleRoleChange = (newRole) => {
     setFormData(prev => ({ ...prev, role: newRole, parentId: '' }));
+    setSelectedOperatorSubDistId('');
     if (['admin', 'manager'].includes(currentUser?.role)) {
       if (newRole === 'cluster' || newRole === 'operator') {
         loadParentOptions(newRole);
       } else {
         setParentOptions([]);
+        setSubDistributorOptions([]);
       }
     } else if (currentUser?.role === 'sub_distributor') {
       if (newRole === 'operator') {
@@ -352,6 +358,13 @@ const Users = () => {
   const isCluster  = currentUser?.role === 'cluster';
   const isAdmin    = currentUser?.role === 'admin';
   const isManager  = currentUser?.role === 'manager';
+  const isAdminOrManager = ['admin', 'manager'].includes(currentUser?.role);
+
+  const filteredClusterParentOptions = useMemo(() => {
+    if (!isAdminOrManager || formData.role !== 'operator') return parentOptions;
+    if (!selectedOperatorSubDistId) return [];
+    return parentOptions.filter((cluster) => String(cluster.parent_id) === String(selectedOperatorSubDistId));
+  }, [isAdminOrManager, formData.role, parentOptions, selectedOperatorSubDistId]);
 
   // Cascading filtered users for admin/manager table
   const filteredUsers = useMemo(() => {
@@ -806,7 +819,13 @@ const Users = () => {
       {/* Add User Modal */}
       <Modal
         isOpen={showAddModal}
-        onClose={() => { setShowAddModal(false); setFormData(emptyForm); setParentOptions([]); }}
+        onClose={() => {
+          setShowAddModal(false);
+          setFormData(emptyForm);
+          setParentOptions([]);
+          setSubDistributorOptions([]);
+          setSelectedOperatorSubDistId('');
+        }}
         title={
           isSubDist ? (formData.role === 'operator' ? 'Add New Operator' : 'Add New Cluster')
           : isCluster ? 'Add New Operator'
@@ -878,37 +897,87 @@ const Users = () => {
 
             {/* Parent selector — shown when admin/manager creates cluster/operator,
                 OR when sub_distributor creates an operator (must select a cluster) */}
-            {(['admin', 'manager'].includes(currentUser?.role) && (formData.role === 'cluster' || formData.role === 'operator')) ||
+            {((isAdminOrManager) && (formData.role === 'cluster' || formData.role === 'operator')) ||
              (currentUser?.role === 'sub_distributor' && formData.role === 'operator') ? (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {formData.role === 'cluster' ? 'Assign to Sub-Distributor' :
-                   currentUser?.role === 'sub_distributor' ? 'Assign to Cluster' :
-                   'Assign to Parent (Sub-Distributor or Cluster)'}
-                  <span className="text-red-500"> *</span>
-                </label>
-                {loadingParents ? (
-                  <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
-                    <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                    <span className="text-sm text-gray-500">Loading options...</span>
+                {isAdminOrManager && formData.role === 'operator' ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Select Sub-Distributor <span className="text-red-500">*</span>
+                      </label>
+                      {loadingParents ? (
+                        <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                          <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                          <span className="text-sm text-gray-500">Loading options...</span>
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedOperatorSubDistId}
+                          onChange={(e) => {
+                            setSelectedOperatorSubDistId(e.target.value);
+                            setFormData((prev) => ({ ...prev, parentId: '' }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        >
+                          <option value="">Select Sub-Distributor...</option>
+                          {subDistributorOptions.map((sd) => (
+                            <option key={sd.id} value={sd.id}>{sd.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Assign to Cluster <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={formData.parentId}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, parentId: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                        disabled={!selectedOperatorSubDistId}
+                      >
+                        <option value="">
+                          {selectedOperatorSubDistId ? 'Select Cluster...' : 'Select Sub-Distributor first...'}
+                        </option>
+                        {filteredClusterParentOptions.map((cluster) => (
+                          <option key={cluster.id} value={cluster.id}>{cluster.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 ) : (
-                  <select
-                    value={formData.parentId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, parentId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  >
-                    <option value="">
-                      Select {formData.role === 'cluster' ? 'Sub-Distributor' :
-                              currentUser?.role === 'sub_distributor' ? 'Cluster' : 'Parent'}...
-                    </option>
-                    {(currentUser?.role === 'sub_distributor' ? users : parentOptions).map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.groupLabel ? `[${p.groupLabel}] ${p.name}` : p.name}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {formData.role === 'cluster' ? 'Assign to Sub-Distributor' : 'Assign to Cluster'}
+                      <span className="text-red-500"> *</span>
+                    </label>
+                    {loadingParents ? (
+                      <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                        <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                        <span className="text-sm text-gray-500">Loading options...</span>
+                      </div>
+                    ) : (
+                      <select
+                        value={formData.parentId}
+                        onChange={(e) => setFormData(prev => ({ ...prev, parentId: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                      >
+                        <option value="">
+                          Select {formData.role === 'cluster' ? 'Sub-Distributor' : 'Cluster'}...
+                        </option>
+                        {(currentUser?.role === 'sub_distributor' ? users : parentOptions).map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.groupLabel ? `[${p.groupLabel}] ${p.name}` : p.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </>
                 )}
               </div>
             ) : null}
@@ -950,7 +1019,17 @@ const Users = () => {
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={() => { setShowAddModal(false); setFormData(emptyForm); }}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowAddModal(false);
+                setFormData(emptyForm);
+                setParentOptions([]);
+                setSubDistributorOptions([]);
+                setSelectedOperatorSubDistId('');
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={submitting}>

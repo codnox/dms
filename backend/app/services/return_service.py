@@ -132,7 +132,7 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
             ),
             notification_type="info",
             category="return",
-            link=f"/returns/{return_row_id}"
+            link=f"/returns?returnId={return_row_id}"
         )
 
     return await get_return_by_id(str(return_row_id))
@@ -221,7 +221,7 @@ async def update_return_status(
         ),
         notification_type="success" if status in ["approved", "received"] else "warning",
         category="return",
-        link=f"/returns/{return_id}"
+        link=f"/returns?returnId={return_id}"
     )
 
     # When approved, remind all other staff to watch for the incoming device
@@ -244,7 +244,7 @@ async def update_return_status(
                 ),
                 notification_type="info",
                 category="return",
-                link=f"/returns/{return_id}"
+                link=f"/returns?returnId={return_id}"
             )
 
     return await get_return_by_id(return_id)
@@ -394,7 +394,7 @@ async def auto_create_defect_return(
         ),
         notification_type="warning",
         category="return",
-        link=f"/returns/{return_row_id}"
+        link=f"/returns?returnId={return_row_id}"
     )
 
     # Alert the operator (requester) to physically return the device
@@ -413,7 +413,7 @@ async def auto_create_defect_return(
         ),
         notification_type="warning",
         category="return",
-        link=f"/returns/{return_row_id}"
+        link=f"/returns?returnId={return_row_id}"
     )
 
     return await get_return_by_id(str(return_row_id))

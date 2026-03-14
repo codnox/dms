@@ -7,6 +7,17 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const response = await notificationsAPI.getUnreadCount();
+      const count = response?.data?.count ?? 0;
+      setUnreadCount(Number.isFinite(count) ? count : 0);
+    } catch (error) {
+      console.error('[NotificationContext] Failed to refresh unread count:', error);
+    }
+  }, []);
 
   const fetchLatestNotifications = async () => {
     setLoading(true);
@@ -27,6 +38,7 @@ export const NotificationProvider = ({ children }) => {
           category: notif.category
         }));
         setNotifications(formattedNotifications);
+        await refreshUnreadCount();
         console.log('[NotificationContext] Successfully loaded', formattedNotifications.length, 'notifications');
       }
     } catch (error) {
@@ -50,6 +62,7 @@ export const NotificationProvider = ({ children }) => {
       timestamp: new Date().toISOString()
     };
     setNotifications(prev => [newNotification, ...prev].slice(0, 5)); // Keep only latest 5
+    setUnreadCount(prev => prev + 1);
   }, []);
 
   const markAsRead = useCallback(async (id) => {
@@ -59,6 +72,7 @@ export const NotificationProvider = ({ children }) => {
       setNotifications(prev =>
         prev.map(n => (n.id === id ? { ...n, read: true } : n))
       );
+      setUnreadCount(prev => Math.max(0, prev - 1));
       console.log('[NotificationContext] Successfully marked notification as read');
     } catch (error) {
       console.error('[NotificationContext] Failed to mark notification as read:', error);
@@ -74,6 +88,7 @@ export const NotificationProvider = ({ children }) => {
       console.log('[NotificationContext] Marking all notifications as read');
       await notificationsAPI.markAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
       console.log('[NotificationContext] Successfully marked all notifications as read');
     } catch (error) {
       console.error('[NotificationContext] Failed to mark all notifications as read:', error);
@@ -107,7 +122,7 @@ export const NotificationProvider = ({ children }) => {
     }, 4000);
   }, []);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  
 
   return (
     <NotificationContext.Provider value={{
@@ -120,7 +135,8 @@ export const NotificationProvider = ({ children }) => {
       markAllAsRead,
       removeNotification,
       showToast,
-      fetchLatestNotifications
+      fetchLatestNotifications,
+      refreshUnreadCount
     }}>
       {children}
     </NotificationContext.Provider>

@@ -62,6 +62,8 @@ const Reports = () => {
     pendingReturns: returnRequests.filter(r => r.status === 'pending').length
   };
 
+  const deviceReportRows = devices;
+
   const devicesByLocation = [
     { location: 'NOC Warehouse', count: 45, percentage: 25 },
     { location: 'Main Distributor', count: 90, percentage: 50 },
@@ -382,6 +384,41 @@ const Reports = () => {
           </div>
         </Card>
       </div>
+
+      {reportType === 'devices' && (
+        <Card title="Device Report (Includes MAC ID)">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
+                  <th className="py-3 px-3">Device</th>
+                  <th className="py-3 px-3">Serial Number</th>
+                  <th className="py-3 px-3">MAC ID</th>
+                  <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3">Holder</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {deviceReportRows.length === 0 ? (
+                  <tr>
+                    <td className="py-4 px-3 text-sm text-gray-500" colSpan={5}>No device records found.</td>
+                  </tr>
+                ) : (
+                  deviceReportRows.map((device) => (
+                    <tr key={device.id || device._id} className="hover:bg-gray-50">
+                      <td className="py-3 px-3 text-sm text-gray-800">{device.model || device.device_type || '-'}</td>
+                      <td className="py-3 px-3 text-sm text-gray-600">{device.serial_number || '-'}</td>
+                      <td className="py-3 px-3 text-sm font-medium text-gray-800">{device.mac_address || '-'}</td>
+                      <td className="py-3 px-3 text-sm text-gray-600">{device.status || '-'}</td>
+                      <td className="py-3 px-3 text-sm text-gray-600">{device.current_holder_name || 'PDIC'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Summary Table */}
       <Card title="Summary Statistics">

@@ -8,3 +8,10 @@ from app.models.operator import Operator, OperatorCreate, OperatorUpdate
 from app.models.approval import Approval, ApprovalCreate, ApprovalUpdate, ApprovalStatus, ApprovalType
 from app.models.notification import Notification, NotificationCreate, NotificationType, NotificationCategory
 from app.models.auth import Token, TokenData, LoginRequest
+from app.models.inventory import (
+	InventoryItemCreate,
+	InventoryItemUpdate,
+	PurchaseOrderCreate,
+	ReceiptCreate,
+	StockAdjustmentCreate,
+)

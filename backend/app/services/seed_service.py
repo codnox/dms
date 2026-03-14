@@ -59,8 +59,24 @@ async def reset_and_seed():
     async with get_db() as db:
         print("🗑️  Clearing all database tables...")
         
-        tables = ["notifications", "approvals", "operators", "returns", 
-                   "defects", "distributions", "device_history", "devices", "users"]
+        tables = [
+            "inventory_stock_movements",
+            "inventory_receipt_lines",
+            "inventory_receipts",
+            "inventory_po_lines",
+            "inventory_purchase_orders",
+            "external_inventory_items",
+            "change_requests",
+            "notifications",
+            "approvals",
+            "operators",
+            "returns",
+            "defects",
+            "distributions",
+            "device_history",
+            "devices",
+            "users",
+        ]
         
         for table in tables:
             await db.execute(f"DELETE FROM {table}")
