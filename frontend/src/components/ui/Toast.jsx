@@ -9,16 +9,16 @@ const Toast = ({ message, type = 'success', onClose }) => {
   };
 
   const bgColors = {
-    success: 'bg-green-50 border-green-200',
-    error: 'bg-red-50 border-red-200',
-    warning: 'bg-yellow-50 border-yellow-200',
-    info: 'bg-blue-50 border-blue-200',
+    success: 'bg-emerald-900/45 border-emerald-400/35',
+    error: 'bg-rose-900/45 border-rose-400/35',
+    warning: 'bg-amber-900/45 border-amber-400/35',
+    info: 'bg-cyan-900/45 border-cyan-400/35',
   };
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg animate-slideIn ${bgColors[type]}`}>
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg backdrop-blur animate-slideIn ${bgColors[type]}`}>
       {icons[type]}
-      <p className="text-sm text-gray-800">{message}</p>
+      <p className="text-sm text-slate-100">{message}</p>
     </div>
   );
 };

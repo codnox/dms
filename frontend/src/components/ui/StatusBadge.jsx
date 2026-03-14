@@ -1,11 +1,11 @@
 const StatusBadge = ({ status, size = 'md' }) => {
   const statusConfig = {
     // Device statuses
-    'active': { bg: 'bg-green-100', text: 'text-green-700', label: 'Active' },
-    'inactive': { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Inactive' },
-    'in-use': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'In Use' },
-    'stored': { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Stored' },
-    'defective': { bg: 'bg-red-100', text: 'text-red-700', label: 'Defective' },
+    'active': { bg: 'bg-green-100/30', text: 'text-green-300', label: 'Active' },
+    'inactive': { bg: 'bg-gray-100/30', text: 'text-gray-300', label: 'Inactive' },
+    'in-use': { bg: 'bg-blue-100/30', text: 'text-blue-300', label: 'In Use' },
+    'stored': { bg: 'bg-purple-100/30', text: 'text-purple-300', label: 'Stored' },
+    'defective': { bg: 'bg-red-100/30', text: 'text-red-300', label: 'Defective' },
     'replaced': { bg: 'bg-gray-200', text: 'text-gray-700 line-through', label: 'Replaced' },
     'returned': { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Returned' },
     

@@ -16,13 +16,13 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md', footer }) => {
       <div className="flex min-h-screen items-end sm:items-center justify-center p-0 sm:p-4">
         {/* Backdrop */}
         <div
-          className="fixed inset-0 bg-black/50 transition-opacity"
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-[2px] transition-opacity"
           onClick={onClose}
         />
 
         {/* Modal */}
         <div
-          className={`relative bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full ${sizeClasses[size]} animate-fadeIn max-h-[90vh] sm:max-h-[85vh] flex flex-col`}
+          className={`relative glass-panel rounded-t-xl sm:rounded-xl shadow-xl w-full ${sizeClasses[size]} animate-fadeIn max-h-[90vh] sm:max-h-[85vh] flex flex-col`}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 flex-shrink-0">

@@ -114,3 +114,25 @@ async def get_system_alerts(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve system alerts: {str(e)}"
         )
+
+
+@router.get("/advanced-metrics")
+async def get_advanced_dashboard_metrics(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get advanced management analytics for graph-heavy dashboards."""
+    try:
+        data = await dashboard_service.get_advanced_dashboard_metrics(current_user)
+
+        return {
+            "success": True,
+            "message": "Advanced dashboard metrics retrieved successfully",
+            "data": data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve advanced dashboard metrics: {str(e)}"
+        )
