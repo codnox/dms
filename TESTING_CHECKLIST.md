@@ -1,7 +1,7 @@
 # System Testing Checklist
 
 ## Prerequisites
-- [ ] Backend is running on http://localhost:8000
+- [ ] Backend is running on http://localhost:8080
 - [ ] Frontend is running on http://localhost:5173
 - [ ] Comprehensive data has been seeded
 - [ ] MongoDB connection is active

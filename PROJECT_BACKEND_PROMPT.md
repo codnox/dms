@@ -527,7 +527,7 @@ ENVIRONMENT=production
 
 # Server
 HOST=0.0.0.0
-PORT=8000
+PORT=8080
 
 # Database
 MONGODB_URL=mongodb+srv://dms_db_user:WK56LWAAoBquBnCI@cluster0.gzmwm30.mongodb.net/?appName=Cluster0
