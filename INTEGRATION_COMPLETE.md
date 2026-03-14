@@ -11,7 +11,7 @@ The frontend and backend are now fully integrated and working together!
 ```
 distribution-management-system/
 │
-├── 📁 backend/                      # FastAPI Backend (Port 8000)
+├── 📁 backend/                      # FastAPI Backend (Port 8080)
 │   ├── app/
 │   │   ├── models/                  # Pydantic data models
 │   │   ├── routes/                  # 11 API route modules
@@ -26,7 +26,7 @@ distribution-management-system/
 │   ├── .env                         # Environment variables
 │   └── README.md
 │
-├── 📁 frontend/                     # React Frontend (Port 3000)
+├── 📁 frontend/                     # React Frontend (port 5173)
 │   ├── public/
 │   │   └── favicon.svg              # ✨ NEW: Custom DMS icon
 │   ├── src/
@@ -139,8 +139,8 @@ Frontend updates UI
 .\start.ps1
 ```
 This will:
-- Start backend on port 8000
-- Start frontend on port 3000
+- Start backend on port 8080
+- Start frontend on port 5173
 - Open browser automatically
 
 ### Method 2: Manual Start
@@ -148,7 +148,7 @@ This will:
 **Terminal 1 - Backend:**
 ```bash
 cd backend
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 **Terminal 2 - Frontend:**
@@ -163,10 +163,10 @@ npm run dev
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Frontend** | http://localhost:3000 | Main application UI |
-| **Backend API** | http://localhost:8000 | REST API server |
-| **API Docs (Swagger)** | http://localhost:8000/docs | Interactive API documentation |
-| **API Docs (ReDoc)** | http://localhost:8000/redoc | Alternative API docs |
+| **Frontend** | http://localhost:5173 | Main application UI |
+| **Backend API** | http://localhost:8080 | REST API server |
+| **API Docs (Swagger)** | http://localhost:8080/docs | Interactive API documentation |
+| **API Docs (ReDoc)** | http://localhost:8080/redoc | Alternative API docs |
 
 ---
 
@@ -185,7 +185,7 @@ npm run dev
 ## 🧪 Testing the Integration
 
 ### 1. Test Login
-1. Open http://localhost:3000
+1. Open http://localhost:5173
 2. Login with `admin@dms.com` / `admin123`
 3. Check browser console - should see no errors
 4. Check Network tab - should see successful `/api/auth/login` request
@@ -199,7 +199,7 @@ npm run dev
 Open browser DevTools Console and run:
 ```javascript
 // Check if API is accessible
-fetch('http://localhost:8000/api/auth/me', {
+fetch('http://localhost:8080/api/auth/me', {
   headers: {
     'Authorization': 'Bearer YOUR_TOKEN_HERE'
   }
@@ -275,7 +275,7 @@ const distribution = await distributionsAPI.createDistribution({
 import requests
 
 # Login
-response = requests.post('http://localhost:8000/api/auth/login', json={
+response = requests.post('http://localhost:8080/api/auth/login', json={
     'email': 'admin@dms.com',
     'password': 'admin123'
 })
@@ -283,19 +283,19 @@ token = response.json()['data']['access_token']
 
 # Get dashboard stats
 headers = {'Authorization': f'Bearer {token}'}
-stats = requests.get('http://localhost:8000/api/dashboard/stats', headers=headers)
+stats = requests.get('http://localhost:8080/api/dashboard/stats', headers=headers)
 print(stats.json())
 ```
 
 ### cURL
 ```bash
 # Login
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@dms.com","password":"admin123"}'
 
 # Get devices (with token)
-curl http://localhost:8000/api/devices \
+curl http://localhost:8080/api/devices \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
@@ -322,12 +322,12 @@ SECRET_KEY=your-secret-key-here-change-in-production
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 REFRESH_TOKEN_EXPIRE_DAYS=7
-CORS_ORIGINS=http://localhost:3000,http://localhost:3002,http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://localhost:3002
 ```
 
 ### Frontend `.env`
 ```env
-VITE_API_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8080/api
 ```
 
 ---
@@ -338,11 +338,11 @@ VITE_API_URL=http://localhost:8000/api
 **Solution:**
 ```bash
 # Check if backend is running
-curl http://localhost:8000/docs
+curl http://localhost:8080/docs
 
 # If not, start it
 cd backend
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Issue: "401 Unauthorized"
@@ -359,8 +359,8 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ### Issue: "Port already in use"
 **Solution:**
 ```powershell
-# Windows - kill process on port 8000
-netstat -ano | findstr :8000
+# Windows - kill process on port 8080
+netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 
 # Or use stop.ps1 script
@@ -386,8 +386,8 @@ taskkill /PID <PID> /F
 
 ## ✅ Verification Checklist
 
-- [x] Backend running on port 8000
-- [x] Frontend running on port 3000
+- [x] Backend running on port 8080
+- [x] Frontend running on port 5173
 - [x] Login works with real API
 - [x] JWT token stored in localStorage
 - [x] Dashboard shows real data from backend

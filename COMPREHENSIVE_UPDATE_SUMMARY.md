@@ -227,7 +227,7 @@ cd backend
 python -m uvicorn app.main:app --reload
 
 # Call seed endpoint
-curl -X POST http://localhost:8000/seed-comprehensive
+curl -X POST http://localhost:8080/seed-comprehensive
 ```
 
 ### To Test User Settings:
