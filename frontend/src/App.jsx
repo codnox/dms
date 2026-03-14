@@ -255,7 +255,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <NotificationProvider>
-          <AppRoutes />
+          <div className="ops-theme min-h-screen">
+            <AppRoutes />
+          </div>
         </NotificationProvider>
       </AuthProvider>
     </BrowserRouter>

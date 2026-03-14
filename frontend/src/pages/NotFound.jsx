@@ -4,8 +4,8 @@ import { Home, ArrowLeft } from 'lucide-react';
 
 const NotFound = () => {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="text-center">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="text-center glass-panel rounded-2xl p-8 border border-slate-500/40">
         <div className="mb-8">
           <h1 className="text-9xl font-bold text-gray-200">404</h1>
           <div className="relative -mt-20">

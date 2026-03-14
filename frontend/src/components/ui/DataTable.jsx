@@ -89,7 +89,7 @@ const DataTable = ({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div className="glass-panel rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-gray-200">
         {searchable && (
@@ -113,7 +113,7 @@ const DataTable = ({
           {exportable && (
             <button
               onClick={handleExport}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-100 bg-slate-700/70 hover:bg-slate-600/80 rounded-lg transition-colors border border-slate-500/40"
             >
               <Download className="w-4 h-4" />
               Export

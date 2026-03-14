@@ -5,6 +5,16 @@ from app.database import get_db, rows_to_list
 from app.services import device_service, distribution_service, defect_service, return_service, user_service, approval_service, operator_service
 
 
+def _month_start(dt: datetime) -> datetime:
+    return datetime(dt.year, dt.month, 1)
+
+
+def _shift_months(dt: datetime, months: int) -> datetime:
+    year = dt.year + (dt.month - 1 + months) // 12
+    month = (dt.month - 1 + months) % 12 + 1
+    return datetime(year, month, 1)
+
+
 async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
     """Get dashboard statistics based on user role"""
     role = user.get("role")
@@ -258,3 +268,214 @@ async def get_system_alerts(user: Dict[str, Any]) -> list:
                 })
 
     return alerts
+
+
+async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Get advanced analytics payload for management dashboards."""
+    role = user.get("role")
+
+    # Keep existing role boundary: advanced analytics is a management surface.
+    if role not in ["admin", "manager", "staff"]:
+        return {
+            "kpis": {},
+            "charts": {},
+            "alerts": []
+        }
+
+    now = datetime.utcnow()
+    month_start = _month_start(now)
+    year_start = datetime(now.year, 1, 1)
+
+    device_stats = await device_service.get_device_stats()
+    user_stats = await user_service.get_user_stats()
+    defect_stats = await defect_service.get_defect_stats()
+    return_stats = await return_service.get_return_stats()
+    dist_stats = await distribution_service.get_distribution_stats()
+    approval_stats = await approval_service.get_approval_stats()
+    alerts = await get_system_alerts(user)
+
+    async with get_db() as db:
+        # Defect month/year totals
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM defects WHERE created_at >= ?",
+            (month_start.isoformat(),)
+        )
+        defects_this_month = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM defects WHERE created_at >= ?",
+            (year_start.isoformat(),)
+        )
+        defects_this_year = (await cursor.fetchone())[0]
+
+        # Replacement metrics
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM defects WHERE replacement_device_id IS NOT NULL"
+        )
+        replacements_total = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            """SELECT COUNT(*) FROM defects
+               WHERE replacement_device_id IS NOT NULL
+               AND replacement_confirmed_at IS NOT NULL"""
+        )
+        replacements_confirmed = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            """SELECT COUNT(*) FROM defects
+               WHERE replacement_device_id IS NOT NULL
+               AND replacement_confirmed_at IS NULL"""
+        )
+        replacements_pending = (await cursor.fetchone())[0]
+
+        # Role totals
+        cursor = await db.execute(
+            "SELECT role, COUNT(*) AS total FROM users GROUP BY role"
+        )
+        role_rows = await cursor.fetchall()
+        role_counts = {str(r[0]): int(r[1]) for r in role_rows}
+
+        # Device status distribution
+        cursor = await db.execute(
+            "SELECT status, COUNT(*) AS total FROM devices GROUP BY status"
+        )
+        device_rows = await cursor.fetchall()
+        device_status_counts = {str(r[0]): int(r[1]) for r in device_rows}
+
+        # Monthly defect trend (last 12 months)
+        defect_trend = []
+        distribution_trend = []
+        for i in range(11, -1, -1):
+            start = _shift_months(month_start, -i)
+            end = _shift_months(start, 1)
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM defects WHERE created_at >= ? AND created_at < ?",
+                (start.isoformat(), end.isoformat())
+            )
+            reported = (await cursor.fetchone())[0]
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM defects WHERE status = 'resolved' AND resolved_at >= ? AND resolved_at < ?",
+                (start.isoformat(), end.isoformat())
+            )
+            resolved = (await cursor.fetchone())[0]
+
+            cursor = await db.execute(
+                """SELECT COUNT(*) FROM defects
+                   WHERE replacement_device_id IS NOT NULL
+                   AND replacement_requested_at >= ? AND replacement_requested_at < ?""",
+                (start.isoformat(), end.isoformat())
+            )
+            replaced = (await cursor.fetchone())[0]
+
+            defect_trend.append({
+                "month": start.strftime("%b"),
+                "reported": reported,
+                "resolved": resolved,
+                "replaced": replaced
+            })
+
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM distributions WHERE created_at >= ? AND created_at < ?",
+                (start.isoformat(), end.isoformat())
+            )
+            total_dist = (await cursor.fetchone())[0]
+
+            cursor = await db.execute(
+                """SELECT COUNT(*) FROM distributions
+                   WHERE status IN ('approved', 'delivered')
+                   AND created_at >= ? AND created_at < ?""",
+                (start.isoformat(), end.isoformat())
+            )
+            delivered = (await cursor.fetchone())[0]
+
+            distribution_trend.append({
+                "month": start.strftime("%b"),
+                "total": total_dist,
+                "delivered": delivered
+            })
+
+    active_devices = (
+        device_stats.get("available", 0) +
+        device_stats.get("distributed", 0) +
+        device_stats.get("in_use", 0)
+    )
+    total_devices = int(device_stats.get("total", 0))
+    inactive_devices = max(0, total_devices - active_devices)
+
+    replacement_success_rate = (
+        round((replacements_confirmed / replacements_total) * 100, 2)
+        if replacements_total > 0 else 0
+    )
+
+    management_kpis = {
+        "total_devices": total_devices,
+        "active_devices": active_devices,
+        "inactive_devices": inactive_devices,
+        "total_users": int(user_stats.get("total", 0)),
+        "total_staff": int(role_counts.get("staff", 0)),
+        "total_operators": int(role_counts.get("operator", 0)),
+        "total_sub_distributors": int(role_counts.get("sub_distributor", 0)),
+        "total_clusters": int(role_counts.get("cluster", 0)),
+        "defects_this_month": int(defects_this_month),
+        "defects_this_year": int(defects_this_year),
+        "replacements_total": int(replacements_total),
+        "replacements_confirmed": int(replacements_confirmed),
+        "replacements_pending": int(replacements_pending),
+        "replacement_success_rate": replacement_success_rate,
+        "pending_approvals": int(approval_stats.get("total_pending", 0)),
+        "pending_receipts": int(dist_stats.get("pending_receipt", 0)),
+    }
+
+    charts = {
+        "device_status": {
+            "available": int(device_status_counts.get("available", 0)),
+            "distributed": int(device_status_counts.get("distributed", 0)),
+            "in_use": int(device_status_counts.get("in_use", 0)),
+            "defective": int(device_status_counts.get("defective", 0)),
+            "returned": int(device_status_counts.get("returned", 0)),
+        },
+        "device_active_split": {
+            "active": active_devices,
+            "inactive": inactive_devices,
+        },
+        "user_roles": {
+            "staff": int(role_counts.get("staff", 0)),
+            "sub_distributor": int(role_counts.get("sub_distributor", 0)),
+            "cluster": int(role_counts.get("cluster", 0)),
+            "operator": int(role_counts.get("operator", 0)),
+            "manager": int(role_counts.get("manager", 0)),
+            "admin": int(role_counts.get("admin", 0)),
+        },
+        "defect_severity": {
+            "critical": int(defect_stats.get("by_severity", {}).get("critical", 0)),
+            "high": int(defect_stats.get("by_severity", {}).get("high", 0)),
+            "medium": int(defect_stats.get("by_severity", {}).get("medium", 0)),
+            "low": int(defect_stats.get("by_severity", {}).get("low", 0)),
+        },
+        "defect_trend_12m": defect_trend,
+        "distribution_trend_12m": distribution_trend,
+        "replacement_pipeline": {
+            "replaced": int(replacements_total),
+            "confirmed": int(replacements_confirmed),
+            "pending_confirmation": int(replacements_pending),
+        },
+        "returns_by_status": {
+            "pending": int(return_stats.get("by_status", {}).get("pending", 0)),
+            "approved": int(return_stats.get("by_status", {}).get("approved", 0)),
+            "received": int(return_stats.get("by_status", {}).get("received", 0)),
+            "rejected": int(return_stats.get("by_status", {}).get("rejected", 0)),
+        },
+    }
+
+    # Staff should not get governance-only user-role visibility for admin/manager counts.
+    if role == "staff":
+        charts["user_roles"].pop("admin", None)
+        charts["user_roles"].pop("manager", None)
+
+    return {
+        "kpis": management_kpis,
+        "charts": charts,
+        "alerts": alerts,
+    }

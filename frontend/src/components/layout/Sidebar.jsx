@@ -270,7 +270,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 left-0 h-full w-64 glass-panel border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
       >
@@ -278,7 +278,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           {/* Logo */}
           <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-cyan-500 to-orange-500 shadow-lg">
                 <Truck className="w-6 h-6 text-white" />
               </div>
               <span className="text-xl font-bold text-gray-800">DMS</span>
@@ -298,7 +298,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
           {/* User role badge */}
           <div className="p-4 border-t border-gray-200">
-            <div className="bg-gray-50 rounded-lg p-3">
+            <div className="glass-panel rounded-lg p-3">
               <div className="text-xs text-gray-500 uppercase tracking-wider">Logged in as</div>
               <div className="text-sm font-medium text-gray-800 capitalize mt-1">
                 {user?.role?.replace(/[-_]/g, ' ')}

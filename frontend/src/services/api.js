@@ -787,6 +787,11 @@ export const dashboardAPI = {
     return response;
   },
 
+  getAdvancedMetrics: async () => {
+    const response = await apiRequest('/dashboard/advanced-metrics');
+    return response;
+  },
+
   getRecentActivities: async (limit = 10) => {
     const response = await apiRequest(`/dashboard/recent-activities?limit=${limit}`);
     return response;

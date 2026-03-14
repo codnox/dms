@@ -15,7 +15,7 @@ const Input = ({
       )}
       <input
         className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-          error ? 'border-red-300 bg-red-50' : 'border-gray-300'
+          error ? 'border-red-300/70 bg-red-900/20 text-red-100' : 'border-gray-300 bg-slate-900/55 text-slate-100'
         }`}
         {...props}
       />

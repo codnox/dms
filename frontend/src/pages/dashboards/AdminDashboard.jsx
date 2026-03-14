@@ -1,25 +1,89 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Doughnut, Pie, Line, Bar } from 'react-chartjs-2';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { dashboardAPI, usersAPI, devicesAPI, defectsAPI, returnsAPI } from '../../services/api';
+import { dashboardAPI, usersAPI, defectsAPI } from '../../services/api';
 import {
-  Box,
-  Users,
-  AlertTriangle,
-  RotateCcw,
-  CheckSquare,
   Activity,
-  TrendingUp,
-  Clock,
+  AlertTriangle,
   ArrowRight,
+  Boxes,
+  CheckSquare,
+  Clock,
   Cpu,
-  Loader2
+  HardHat,
+  Loader2,
+  Radar,
+  RotateCcw,
+  ShieldCheck,
+  UserCog,
+  Users,
+  Wrench,
 } from 'lucide-react';
+
+ChartJS.register(
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend,
+  Filler
+);
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      labels: {
+        color: '#d1d5db',
+        boxWidth: 12,
+        font: {
+          family: 'Segoe UI',
+          size: 11,
+        },
+      },
+    },
+    tooltip: {
+      backgroundColor: '#101827',
+      titleColor: '#f9fafb',
+      bodyColor: '#e5e7eb',
+      borderColor: '#374151',
+      borderWidth: 1,
+    },
+  },
+  scales: {
+    x: {
+      ticks: { color: '#9ca3af' },
+      grid: { color: 'rgba(148, 163, 184, 0.12)' },
+    },
+    y: {
+      ticks: { color: '#9ca3af' },
+      grid: { color: 'rgba(148, 163, 184, 0.12)' },
+    },
+  },
+};
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({});
+  const [advanced, setAdvanced] = useState({ kpis: {}, charts: {}, alerts: [], reliability: { summary: {}, trend: [] } });
   const [recentActivities, setRecentActivities] = useState([]);
   const [users, setUsers] = useState([]);
   const [defectReports, setDefectReports] = useState([]);
@@ -29,77 +93,258 @@ const AdminDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [statsRes, usersRes, defectsRes] = await Promise.all([
+        const [statsRes, advancedRes, usersRes, defectsRes] = await Promise.all([
           dashboardAPI.getStats().catch(() => ({ data: {} })),
+          dashboardAPI.getAdvancedMetrics().catch(() => ({ data: { kpis: {}, charts: {}, alerts: [], reliability: { summary: {}, trend: [] } } })),
           usersAPI.getUsers().catch(() => ({ data: [] })),
-          defectsAPI.getDefects().catch(() => ({ data: [] }))
+          defectsAPI.getDefects().catch(() => ({ data: [] })),
         ]);
         setStats(statsRes.data || {});
+        setAdvanced(advancedRes.data || { kpis: {}, charts: {}, alerts: [], reliability: { summary: {}, trend: [] } });
         setUsers(usersRes.data || []);
         setDefectReports(defectsRes.data || []);
+
         try {
           const activitiesRes = await dashboardAPI.getRecentActivities();
           setRecentActivities(activitiesRes.data || []);
-        } catch (e) { setRecentActivities([]); }
+        } catch {
+          setRecentActivities([]);
+        }
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
   }, []);
 
+  const kpis = advanced.kpis || {};
+  const charts = advanced.charts || {};
+  const alerts = advanced.alerts || [];
+  const reliabilitySummary = advanced.reliability?.summary || {};
+
+  const activeInactiveData = useMemo(() => ({
+    labels: ['Active', 'Inactive'],
+    datasets: [{
+      data: [charts.device_active_split?.active || 0, charts.device_active_split?.inactive || 0],
+      backgroundColor: ['#10b981', '#ef4444'],
+      borderColor: ['#064e3b', '#7f1d1d'],
+      borderWidth: 1,
+    }],
+  }), [charts.device_active_split]);
+
+  const deviceStatusData = useMemo(() => ({
+    labels: ['Available', 'Distributed', 'In Use', 'Defective', 'Returned'],
+    datasets: [{
+      data: [
+        charts.device_status?.available || 0,
+        charts.device_status?.distributed || 0,
+        charts.device_status?.in_use || 0,
+        charts.device_status?.defective || 0,
+        charts.device_status?.returned || 0,
+      ],
+      backgroundColor: ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7'],
+      borderWidth: 1,
+      borderColor: '#111827',
+    }],
+  }), [charts.device_status]);
+
+  const userRoleData = useMemo(() => ({
+    labels: ['Staff', 'Sub Distributor', 'Cluster', 'Operator', 'Manager', 'Admin'],
+    datasets: [{
+      label: 'Users',
+      data: [
+        charts.user_roles?.staff || 0,
+        charts.user_roles?.sub_distributor || 0,
+        charts.user_roles?.cluster || 0,
+        charts.user_roles?.operator || 0,
+        charts.user_roles?.manager || 0,
+        charts.user_roles?.admin || 0,
+      ],
+      backgroundColor: ['#f97316', '#14b8a6', '#8b5cf6', '#3b82f6', '#facc15', '#ef4444'],
+      borderColor: '#111827',
+      borderWidth: 1,
+    }],
+  }), [charts.user_roles]);
+
+  const defectSeverityData = useMemo(() => ({
+    labels: ['Critical', 'High', 'Medium', 'Low'],
+    datasets: [{
+      data: [
+        charts.defect_severity?.critical || 0,
+        charts.defect_severity?.high || 0,
+        charts.defect_severity?.medium || 0,
+        charts.defect_severity?.low || 0,
+      ],
+      backgroundColor: ['#dc2626', '#ea580c', '#f59e0b', '#10b981'],
+      borderColor: '#111827',
+      borderWidth: 1,
+    }],
+  }), [charts.defect_severity]);
+
+  const defectTrendData = useMemo(() => ({
+    labels: (charts.defect_trend_12m || []).map((d) => d.month),
+    datasets: [
+      {
+        label: 'Reported',
+        data: (charts.defect_trend_12m || []).map((d) => d.reported),
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239, 68, 68, 0.18)',
+        fill: true,
+        tension: 0.35,
+      },
+      {
+        label: 'Resolved',
+        data: (charts.defect_trend_12m || []).map((d) => d.resolved),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+        fill: true,
+        tension: 0.35,
+      },
+      {
+        label: 'Replaced',
+        data: (charts.defect_trend_12m || []).map((d) => d.replaced),
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56, 189, 248, 0.12)',
+        fill: true,
+        tension: 0.35,
+      },
+    ],
+  }), [charts.defect_trend_12m]);
+
+  const distributionTrendData = useMemo(() => ({
+    labels: (charts.distribution_trend_12m || []).map((d) => d.month),
+    datasets: [
+      {
+        label: 'Total',
+        data: (charts.distribution_trend_12m || []).map((d) => d.total),
+        backgroundColor: '#64748b',
+      },
+      {
+        label: 'Delivered',
+        data: (charts.distribution_trend_12m || []).map((d) => d.delivered),
+        backgroundColor: '#10b981',
+      },
+    ],
+  }), [charts.distribution_trend_12m]);
+
+  const replacementPipelineData = useMemo(() => ({
+    labels: ['Replaced', 'Confirmed', 'Pending Confirmation'],
+    datasets: [{
+      data: [
+        charts.replacement_pipeline?.replaced || 0,
+        charts.replacement_pipeline?.confirmed || 0,
+        charts.replacement_pipeline?.pending_confirmation || 0,
+      ],
+      backgroundColor: ['#38bdf8', '#10b981', '#f59e0b'],
+      borderColor: '#111827',
+      borderWidth: 1,
+    }],
+  }), [charts.replacement_pipeline]);
+
+  const returnsStatusData = useMemo(() => ({
+    labels: ['Pending', 'Approved', 'Received', 'Rejected'],
+    datasets: [{
+      label: 'Returns',
+      data: [
+        charts.returns_by_status?.pending || 0,
+        charts.returns_by_status?.approved || 0,
+        charts.returns_by_status?.received || 0,
+        charts.returns_by_status?.rejected || 0,
+      ],
+      backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ef4444'],
+      borderColor: '#111827',
+      borderWidth: 1,
+    }],
+  }), [charts.returns_by_status]);
+
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-        <p className="text-gray-500 mt-1 text-sm sm:text-base">Welcome back! Here's an overview of your system.</p>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="industrial-hero relative overflow-hidden rounded-2xl p-5 sm:p-6 animate-fadeIn">
+        <div className="absolute right-0 top-0 h-20 w-20 rounded-full bg-orange-400/20 blur-2xl" />
+        <div className="absolute left-8 bottom-0 h-16 w-16 rounded-full bg-red-500/20 blur-2xl" />
+        <div className="relative z-10 flex flex-col gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wide">Operations Command Center</h1>
+          <p className="text-slate-200 text-sm sm:text-base">Industrial Ops overview of fleet health, defects, replacements, and workforce distribution.</p>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 animate-slideUp">
+        <StatCard title="Total Devices" value={kpis.total_devices ?? stats.total_devices ?? 0} icon={Boxes} color="blue" />
+        <StatCard title="Active Devices" value={kpis.active_devices ?? stats.active_devices ?? 0} icon={Cpu} color="green" />
+        <StatCard title="Inactive Devices" value={kpis.inactive_devices ?? 0} icon={AlertTriangle} color="red" />
+        <StatCard title="Defects (Month)" value={kpis.defects_this_month ?? 0} icon={HardHat} color="yellow" />
+        <StatCard title="Defects (Year)" value={kpis.defects_this_year ?? 0} icon={Radar} color="indigo" />
+        <StatCard title="Replacements" value={kpis.replacements_total ?? 0} icon={Wrench} color="purple" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 animate-slideUp">
         <StatCard
-          title="Total Devices"
-          value={stats.total_devices || 0}
-          icon={Box}
-          color="blue"
-        />
-        <StatCard
-          title="Active Devices"
-          value={stats.active_devices || 0}
-          icon={Cpu}
-          color="green"
-        />
-        <StatCard
-          title="Total Users"
-          value={stats.total_users || users.length}
-          icon={Users}
-          color="purple"
-        />
-        <StatCard
-          title="Awaiting Receipt"
-          value={stats.pending_receipts || 0}
-          icon={CheckSquare}
-          color="yellow"
-        />
-        <StatCard
-          title="Defect Reports"
-          value={stats.defect_reports || defectReports.length}
-          icon={AlertTriangle}
+          title="Defect Incidence"
+          value={`${reliabilitySummary.defect_incidence_percentage ?? 0}%`}
+          icon={Activity}
           color="red"
         />
         <StatCard
-          title="Return Requests"
-          value={stats.return_requests || 0}
-          icon={RotateCcw}
+          title="Repaired in 60 Days"
+          value={reliabilitySummary.repaired_within_sla_devices ?? 0}
+          icon={CheckSquare}
+          color="green"
+        />
+        <StatCard
+          title="60-Day Repair Rate"
+          value={`${reliabilitySummary.repaired_within_sla_percentage ?? 0}%`}
+          icon={ShieldCheck}
           color="indigo"
         />
       </div>
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-slideUp">
+        <div className="industrial-mini-card"><p className="text-xs text-slate-300">Operators</p><p className="text-xl font-bold text-white">{kpis.total_operators ?? 0}</p></div>
+        <div className="industrial-mini-card"><p className="text-xs text-slate-300">Sub Distributors</p><p className="text-xl font-bold text-white">{kpis.total_sub_distributors ?? 0}</p></div>
+        <div className="industrial-mini-card"><p className="text-xs text-slate-300">Clusters</p><p className="text-xl font-bold text-white">{kpis.total_clusters ?? 0}</p></div>
+        <div className="industrial-mini-card"><p className="text-xs text-slate-300">Staff</p><p className="text-xl font-bold text-white">{kpis.total_staff ?? 0}</p></div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-slideUp">
+        <Card title="Device Active vs Inactive" icon={ShieldCheck} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Doughnut data={activeInactiveData} options={chartOptions} /></div>
+        </Card>
+        <Card title="Device Status Composition" icon={Cpu} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Pie data={deviceStatusData} options={chartOptions} /></div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-slideUp">
+        <Card title="Workforce Role Distribution" icon={Users} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={userRoleData} options={chartOptions} /></div>
+        </Card>
+        <Card title="Defect Severity Split" icon={AlertTriangle} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Doughnut data={defectSeverityData} options={chartOptions} /></div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-slideUp">
+        <Card title="12-Month Defect Trend" icon={Activity} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Line data={defectTrendData} options={chartOptions} /></div>
+        </Card>
+        <Card title="12-Month Distribution Throughput" icon={CheckSquare} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={distributionTrendData} options={chartOptions} /></div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-slideUp">
+        <Card title="Replacement Pipeline" icon={Wrench} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Doughnut data={replacementPipelineData} options={chartOptions} /></div>
+        </Card>
+        <Card title="Returns Status Distribution" icon={RotateCcw} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={returnsStatusData} options={chartOptions} /></div>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Activities */}
         <Card
           title="Recent Activities"
           icon={Activity}
@@ -109,69 +354,60 @@ const AdminDashboard = () => {
             </Link>
           }
         >
-          <div className="space-y-4">
-            {recentActivities.slice(0, 5).map((activity) => (
-              <div key={activity.id} className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Activity className="w-4 h-4 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{activity.action}</p>
-                  <p className="text-sm text-gray-500 truncate">{activity.description}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-400">{activity.user_name || activity.user}</span>
-                    <span className="text-xs text-gray-300">•</span>
-                    <span className="text-xs text-gray-400">{activity.timestamp ? new Date(activity.timestamp).toLocaleString() : ''}</span>
+          {loading ? (
+            <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
+          ) : (
+            <div className="space-y-4">
+              {recentActivities.slice(0, 5).map((activity) => (
+                <div key={activity.id} className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{activity.action}</p>
+                    <p className="text-sm text-gray-500 truncate">{activity.description}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-gray-400">{activity.user_name || activity.user}</span>
+                      <span className="text-xs text-gray-300">.</span>
+                      <span className="text-xs text-gray-400">{activity.timestamp ? new Date(activity.timestamp).toLocaleString() : ''}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
 
-        {/* System Overview */}
-        <Card
-          title="System Overview"
-          icon={TrendingUp}
-        >
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Box className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Available in Inventory</span>
-              </div>
-              <span className="text-sm font-bold text-gray-800">{stats.available_devices ?? '-'}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Box className="w-5 h-5 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">Distributed Devices</span>
-              </div>
-              <span className="text-sm font-bold text-gray-800">{stats.distributed_devices ?? '-'}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Box className="w-5 h-5 text-purple-600" />
-                <span className="text-sm font-medium text-gray-700">Defective Devices</span>
-              </div>
-              <span className="text-sm font-bold text-red-600">{stats.defective_devices ?? '-'}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-yellow-600" />
-                <span className="text-sm font-medium text-gray-700">Pending Approvals</span>
-              </div>
-              <span className="text-sm font-bold text-gray-800">{stats.pending_approvals ?? '-'}</span>
+        <Card title="Critical Ops Alerts" icon={Clock}>
+          <div className="space-y-3">
+            {alerts.length === 0 ? (
+              <p className="text-sm text-gray-500">No active alerts right now.</p>
+            ) : alerts.map((alert, idx) => (
+              <Link
+                key={`${alert.title}-${idx}`}
+                to={alert.link || '/dashboard'}
+                className="block rounded-lg border border-gray-200 p-3 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-gray-800">{alert.title}</p>
+                  <StatusBadge status={alert.type === 'error' ? 'critical' : 'pending'} size="sm" />
+                </div>
+                <p className="text-xs text-gray-600 mt-1">{alert.message}</p>
+              </Link>
+            ))}
+            <div className="rounded-lg bg-slate-50 p-3 border border-slate-200">
+              <p className="text-sm font-semibold text-slate-700">Replacement Success</p>
+              <p className="text-2xl font-bold text-slate-900">{kpis.replacement_success_rate ?? 0}%</p>
+              <p className="text-xs text-slate-500 mt-1">Confirmed replacement completion ratio</p>
             </div>
           </div>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Users */}
         <Card
           title="Recent Users"
-          icon={Users}
+          icon={UserCog}
           action={
             <Link to="/users" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
               Manage users <ArrowRight className="w-4 h-4" />
@@ -183,9 +419,7 @@ const AdminDashboard = () => {
               <div key={user.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-medium text-blue-600">
-                      {user.name.split(' ').map(n => n[0]).join('')}
-                    </span>
+                    <span className="text-sm font-medium text-blue-600">{user.name.split(' ').map((n) => n[0]).join('')}</span>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-800">{user.name}</p>
@@ -198,7 +432,6 @@ const AdminDashboard = () => {
           </div>
         </Card>
 
-        {/* Recent Defects */}
         <Card
           title="Recent Defect Reports"
           icon={AlertTriangle}
@@ -215,9 +448,7 @@ const AdminDashboard = () => {
               <div key={defect.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800">
-                      {defect.device_type || 'Unknown'}
-                    </p>
+                    <p className="text-sm font-medium text-gray-800">{defect.device_type || 'Unknown'}</p>
                     <StatusBadge status={defect.severity} size="sm" />
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">{defect.device_serial || defect.report_id}</p>

@@ -9,7 +9,7 @@ const StatCard = ({ title, value, change, changeType, icon: Icon, color = 'blue'
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+    <div className="glass-panel rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs sm:text-sm font-medium text-gray-500 truncate">{title}</p>
@@ -28,7 +28,7 @@ const StatCard = ({ title, value, change, changeType, icon: Icon, color = 'blue'
           )}
         </div>
         {Icon && (
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${colorClasses[color]}`}>
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 border border-slate-500/30 ${colorClasses[color]}`}>
             <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         )}

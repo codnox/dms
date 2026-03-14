@@ -25,7 +25,7 @@ const Layout = () => {
   const breadcrumbs = generateBreadcrumbs();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       
       <div className="lg:ml-64 min-h-screen flex flex-col">
@@ -33,7 +33,7 @@ const Layout = () => {
         
         {/* Breadcrumbs */}
         {breadcrumbs.length > 0 && (
-          <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-3">
+          <div className="glass-panel border-b border-gray-200 px-4 lg:px-6 py-3">
             <nav className="flex items-center gap-2 text-sm">
               <Link to="/" className="text-gray-500 hover:text-gray-700">
                 <Home className="w-4 h-4" />
@@ -60,7 +60,7 @@ const Layout = () => {
         </main>
 
         {/* Footer */}
-        <footer className="bg-white border-t border-gray-200 px-4 lg:px-6 py-4">
+        <footer className="glass-panel border-t border-gray-200 px-4 lg:px-6 py-4">
           <div className="text-center text-sm text-gray-500">
             © 2024 Distribution Management System. All rights reserved.
           </div>
