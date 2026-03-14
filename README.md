@@ -87,17 +87,17 @@ distribution-management-system/
 
 5. **Run the backend server:**
    ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
    ```
 
    Or use Python module:
    ```bash
-   python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
    ```
 
 6. **Access API documentation:**
-   - Swagger UI: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
+   - Swagger UI: http://localhost:8080/docs
+   - ReDoc: http://localhost:8080/redoc
 
 ### Frontend Setup
 
@@ -113,7 +113,7 @@ distribution-management-system/
 
 3. **Configure environment (already configured):**
    - `.env` file is already created with correct API URL
-   - Default: `VITE_API_URL=http://localhost:8000/api`
+   - Default: `VITE_API_URL=http://localhost:8080/api`
 
 4. **Run the development server:**
    ```bash
@@ -121,7 +121,7 @@ distribution-management-system/
    ```
 
 5. **Access the application:**
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:5173
 
 ## 👥 Demo Accounts
 
@@ -296,7 +296,7 @@ distribution-management-system/
 **Terminal 1 - Backend:**
 ```bash
 cd backend
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 **Terminal 2 - Frontend:**
@@ -310,7 +310,7 @@ npm run dev
 Create `start.ps1` in the root directory:
 ```powershell
 # Start backend
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080"
 
 # Wait a moment for backend to start
 Start-Sleep -Seconds 3
@@ -329,17 +329,17 @@ Run with:
 ### Test Backend API
 ```bash
 # Login
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@dms.com","password":"admin123"}'
 
 # Get dashboard stats (replace TOKEN with actual token)
-curl http://localhost:8000/api/dashboard/stats \
+curl http://localhost:8080/api/dashboard/stats \
   -H "Authorization: Bearer TOKEN"
 ```
 
 ### Test Frontend
-1. Open http://localhost:3000
+1. Open http://localhost:5173
 2. Login with demo credentials
 3. Navigate through different features
 4. Check browser console for any errors
@@ -352,7 +352,7 @@ curl http://localhost:8000/api/dashboard/stats \
 - To reset data, clear MongoDB collections and restart backend
 
 ### CORS Configuration
-- Backend CORS is configured for `localhost:3000`, `localhost:3002`, and `localhost:5173`
+- Backend CORS is configured for `localhost:5173` and `localhost:3002`
 - Update `backend/.env` if using different ports
 
 ### Environment Variables
@@ -364,12 +364,12 @@ SECRET_KEY=your-secret-key-here
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 REFRESH_TOKEN_EXPIRE_DAYS=7
-CORS_ORIGINS=http://localhost:3000,http://localhost:3002,http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://localhost:3002
 ```
 
 **Frontend (.env):**
 ```env
-VITE_API_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8080/api
 ```
 
 ## 🐛 Troubleshooting
@@ -381,25 +381,25 @@ VITE_API_URL=http://localhost:8000/api
 - Verify MongoDB Atlas cluster is running
 - Ensure IP address is whitelisted in MongoDB Atlas
 
-**Port 8000 Already in Use:**
+**Port 8080 Already in Use:**
 ```bash
 # Windows
-netstat -ano | findstr :8000
+netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 
 # Linux/Mac
-lsof -i :8000
+lsof -i :8080
 kill -9 <PID>
 ```
 
 ### Frontend Issues
 
-**Port 3000 Already in Use:**
+**port 5173 Already in Use:**
 - Change port in `frontend/vite.config.js`
 - Update `CORS_ORIGINS` in backend `.env`
 
 **API Connection Error:**
-- Ensure backend is running on port 8000
+- Ensure backend is running on port 8080
 - Check `.env` file has correct API URL
 - Verify CORS settings in backend
 
@@ -416,7 +416,7 @@ npm install
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ### Frontend
@@ -444,7 +444,7 @@ This project is licensed under the MIT License.
 
 For issues and questions:
 - Check the troubleshooting section
-- Review API documentation at http://localhost:8000/docs
+- Review API documentation at http://localhost:8080/docs
 - Check browser console for frontend errors
 - Check terminal output for backend errors
 

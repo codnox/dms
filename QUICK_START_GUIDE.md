@@ -7,7 +7,7 @@
 cd backend
 python -m uvicorn app.main:app --reload
 ```
-Backend runs on: http://localhost:8000
+Backend runs on: http://localhost:8080
 
 ### Frontend
 ```bash
@@ -29,16 +29,16 @@ Frontend runs on: http://localhost:5173
 
 ### Method 1: Using PowerShell
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/reset-and-seed" -Method Post
+Invoke-RestMethod -Uri "http://localhost:8080/reset-and-seed" -Method Post
 ```
 
 ### Method 2: Using curl
 ```bash
-curl -X POST http://localhost:8000/reset-and-seed
+curl -X POST http://localhost:8080/reset-and-seed
 ```
 
 ### Method 3: Using Swagger UI
-1. Navigate to http://localhost:8000/docs
+1. Navigate to http://localhost:8080/docs
 2. Find `/reset-and-seed` endpoint
 3. Click "Try it out"
 4. Click "Execute"
@@ -138,8 +138,8 @@ curl -X POST http://localhost:8000/reset-and-seed
 
 ### Backend won't start
 ```bash
-# Check if port 8000 is already in use
-netstat -ano | findstr :8000
+# Check if port 8080 is already in use
+netstat -ano | findstr :8080
 
 # Install dependencies
 cd backend
@@ -193,8 +193,8 @@ npm install
 
 ## 📖 Additional Resources
 
-- **API Documentation**: http://localhost:8000/docs (Swagger UI)
-- **ReDoc**: http://localhost:8000/redoc (Alternative API docs)
+- **API Documentation**: http://localhost:8080/docs (Swagger UI)
+- **ReDoc**: http://localhost:8080/redoc (Alternative API docs)
 - **Full Summary**: See `COMPREHENSIVE_UPDATE_SUMMARY.md`
 - **Integration Guide**: See `INTEGRATION_COMPLETE.md`
 

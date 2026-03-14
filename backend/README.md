@@ -42,16 +42,16 @@ cp .env.example .env
 
 ```bash
 # Development
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 
 # Production
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4
 ```
 
 ## API Documentation
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8080/docs
+- ReDoc: http://localhost:8080/redoc
 
 ## Demo Accounts
 

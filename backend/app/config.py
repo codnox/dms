@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # Server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8080
     
     # Database - SQLite
     DATABASE_PATH: str = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dms.db")
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3002,http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3002"
     
     # API
     API_V1_PREFIX: str = "/api"

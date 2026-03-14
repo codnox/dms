@@ -127,7 +127,7 @@ npm run dev
 
 ### Step 2: Seed Comprehensive Data
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/seed-comprehensive" -Method Post
+Invoke-RestMethod -Uri "http://localhost:8080/seed-comprehensive" -Method Post
 ```
 
 ### Step 3: Test Login Credentials
@@ -325,7 +325,7 @@ Invoke-RestMethod -Uri "http://localhost:8000/seed-comprehensive" -Method Post
 ## 📞 Support & Maintenance
 
 ### If Backend Won't Start:
-- Check port 8000 not in use
+- Check port 8080 not in use
 - Verify Python dependencies installed
 - Check MongoDB connection string
 - Review backend logs for errors
