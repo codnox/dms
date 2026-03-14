@@ -21,7 +21,8 @@ import {
   Bell,
   X,
   Network,
-  PackageCheck
+  PackageCheck,
+  ArrowLeftRight
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -79,6 +80,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           ]
         },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -110,6 +112,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           ]
         },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -137,6 +140,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           ]
         },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -150,6 +154,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
       ],
@@ -162,16 +167,19 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
       ],
       operator: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
+        { path: '/replacement-confirmation', icon: PackageCheck, label: 'Replacement Confirmation' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Transfer Device' },
         { path: '/defects/create', icon: AlertTriangle, label: 'Report Defect' },
         { path: '/defects', icon: ClipboardList, label: 'My Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/returns/create', icon: RotateCcw, label: 'Initiate Return' },
         { path: '/returns', icon: RotateCcw, label: 'My Returns' },
       ],

@@ -32,6 +32,11 @@ async def init_db():
             "ALTER TABLE returns ADD COLUMN defect_id TEXT",
             "ALTER TABLE defects ADD COLUMN auto_return_id TEXT",
             "ALTER TABLE defects ADD COLUMN replacement_device_id TEXT",
+            "ALTER TABLE defects ADD COLUMN replacement_requested_at TEXT",
+            "ALTER TABLE defects ADD COLUMN replacement_confirmed_at TEXT",
+            "ALTER TABLE defects ADD COLUMN replacement_confirmed_by TEXT",
+            "ALTER TABLE defects ADD COLUMN replacement_confirmed_by_name TEXT",
+            "ALTER TABLE returns ADD COLUMN mac_address TEXT",
         ]:
             try:
                 await db.execute(stmt)
@@ -159,6 +164,10 @@ CREATE TABLE IF NOT EXISTS defects (
     resolved_by TEXT,
     resolved_by_name TEXT,
     resolved_at TEXT,
+    replacement_requested_at TEXT,
+    replacement_confirmed_at TEXT,
+    replacement_confirmed_by TEXT,
+    replacement_confirmed_by_name TEXT,
     images TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

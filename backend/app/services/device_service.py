@@ -170,6 +170,12 @@ async def update_device_status(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update device status"""
+    valid_statuses = {item.value for item in DeviceStatus}
+    if status not in valid_statuses:
+        raise ValueError(
+            f"Invalid device status '{status}'. Allowed values: {', '.join(sorted(valid_statuses))}"
+        )
+
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
         row = await cursor.fetchone()
@@ -254,6 +260,25 @@ async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[st
         return rows_to_list(rows)
 
 
+async def get_devices_for_replacement(exclude_device_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get all devices eligible as replacements (available or returned status).
+    Used exclusively by management (admin/manager/staff) during the replace-device flow."""
+    async with get_db() as db:
+        statuses = (DeviceStatus.AVAILABLE.value, DeviceStatus.RETURNED.value)
+        if exclude_device_id:
+            cursor = await db.execute(
+                "SELECT * FROM devices WHERE status IN (?, ?) AND id != ? ORDER BY updated_at DESC LIMIT 300",
+                (statuses[0], statuses[1], int(exclude_device_id))
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM devices WHERE status IN (?, ?) ORDER BY updated_at DESC LIMIT 300",
+                statuses
+            )
+        rows = await cursor.fetchall()
+        return rows_to_list(rows)
+
+
 async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
     """Get all devices currently held by a user (any status) — for sub-level redistribution"""
     async with get_db() as db:
@@ -266,16 +291,35 @@ async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
 
 
 async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, Any]:
-    """Get comprehensive device overview: devices in hand + under hierarchy + distribution stats"""
+    """Get comprehensive device overview: devices in hand + under hierarchy + distribution stats.
+    Also includes defective devices whose original holder is within the user's chain."""
     async with get_db() as db:
         uid = int(user_id)
 
-        # Devices directly held by this user
+        # Devices directly held by this user (any status)
         cursor = await db.execute(
             "SELECT * FROM devices WHERE current_holder_id = ? ORDER BY updated_at DESC",
             (user_id,)
         )
         held_devices = rows_to_list(await cursor.fetchall())
+        held_device_ids = {str(d["id"]) for d in held_devices}
+
+        # Also fetch defective devices reported by this user that may have had holder cleared
+        cursor = await db.execute(
+            """SELECT d.* FROM devices d
+               JOIN defects def ON CAST(def.device_id AS TEXT) = CAST(d.id AS TEXT)
+               WHERE (CAST(def.reported_by AS TEXT) = ? OR CAST(d.current_holder_id AS TEXT) = ?)
+               AND d.status = 'defective'
+               AND CAST(d.id AS TEXT) NOT IN ({held_ids})""".format(
+                held_ids=",".join(["?" for _ in held_device_ids]) if held_device_ids else "'__none__'"
+            ),
+            [user_id, user_id] + list(held_device_ids) if held_device_ids else [user_id, user_id]
+        )
+        my_defective_devices = rows_to_list(await cursor.fetchall())
+        for d in my_defective_devices:
+            if str(d["id"]) not in held_device_ids:
+                held_devices.append(d)
+                held_device_ids.add(str(d["id"]))
 
         subordinate_devices = []
         if user_role == "sub_distributor":
@@ -287,6 +331,7 @@ async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, An
                 (uid,)
             )
             cluster_devices = rows_to_list(await cursor.fetchall())
+            cluster_device_ids = {str(d["id"]) for d in cluster_devices}
 
             # Devices held by operators whose parent cluster belongs to this sub_distributor
             cursor = await db.execute(
@@ -297,6 +342,29 @@ async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, An
                 (uid,)
             )
             operator_devices = rows_to_list(await cursor.fetchall())
+            operator_device_ids = {str(d["id"]) for d in operator_devices}
+
+            # Also include defective devices reported by operators/clusters in the chain
+            cursor = await db.execute(
+                """SELECT DISTINCT d.* FROM devices d
+                   JOIN defects def ON CAST(def.device_id AS TEXT) = CAST(d.id AS TEXT)
+                   JOIN users op ON CAST(def.reported_by AS TEXT) = CAST(op.id AS TEXT)
+                   LEFT JOIN users cl ON op.parent_id = cl.id
+                   WHERE (
+                     (op.role = 'operator' AND cl.parent_id = ?)
+                     OR (op.role = 'cluster' AND op.parent_id = ?)
+                   )
+                   AND d.status = 'defective'""",
+                (uid, uid)
+            )
+            defective_subordinate = rows_to_list(await cursor.fetchall())
+
+            all_sub_ids = cluster_device_ids | operator_device_ids
+            for d in defective_subordinate:
+                if str(d["id"]) not in all_sub_ids and str(d["id"]) not in held_device_ids:
+                    operator_devices.append(d)
+                    all_sub_ids.add(str(d["id"]))
+
             subordinate_devices = cluster_devices + operator_devices
 
         elif user_role == "cluster":
@@ -308,6 +376,22 @@ async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, An
                 (uid,)
             )
             subordinate_devices = rows_to_list(await cursor.fetchall())
+            sub_device_ids = {str(d["id"]) for d in subordinate_devices}
+
+            # Also include defective devices reported by operators under this cluster
+            cursor = await db.execute(
+                """SELECT DISTINCT d.* FROM devices d
+                   JOIN defects def ON CAST(def.device_id AS TEXT) = CAST(d.id AS TEXT)
+                   JOIN users op ON CAST(def.reported_by AS TEXT) = CAST(op.id AS TEXT)
+                   WHERE op.parent_id = ? AND op.role = 'operator'
+                   AND d.status = 'defective'""",
+                (uid,)
+            )
+            defective_subordinate = rows_to_list(await cursor.fetchall())
+            for d in defective_subordinate:
+                if str(d["id"]) not in sub_device_ids and str(d["id"]) not in held_device_ids:
+                    subordinate_devices.append(d)
+                    sub_device_ids.add(str(d["id"]))
 
         # Distribution stats from the distributions table
         cursor = await db.execute(
@@ -326,7 +410,13 @@ async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, An
         total_distrib_sent = int(row[0]) if row else 0
         total_devices_sent = int(row[1]) if row else 0
 
-        all_under_me = held_devices + subordinate_devices
+        # Deduplicate across held + subordinate
+        seen_ids = set()
+        all_under_me = []
+        for d in held_devices + subordinate_devices:
+            if str(d["id"]) not in seen_ids:
+                seen_ids.add(str(d["id"]))
+                all_under_me.append(d)
 
         return {
             "held_by_me": held_devices,

@@ -55,16 +55,37 @@ const CreateDefectReport = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const normalizedDescription = (formData.description || '').trim();
+    const normalizedPayload = {
+      device_id: String(formData.deviceId || '').trim(),
+      defect_type: String(formData.defectType || '').trim().toLowerCase(),
+      severity: String(formData.severity || '').trim().toLowerCase(),
+      description: normalizedDescription,
+      images: formData.images || []
+    };
+
+    if (!normalizedPayload.device_id) {
+      showToast('Please select a device', 'error');
+      return;
+    }
+    if (!normalizedPayload.defect_type) {
+      showToast('Please select a defect type', 'error');
+      return;
+    }
+    if (!normalizedPayload.severity) {
+      showToast('Please select a severity', 'error');
+      return;
+    }
+    if (normalizedDescription.length < 10) {
+      showToast('Description must be at least 10 characters', 'error');
+      return;
+    }
+
     setLoading(true);
     
     try {
-      await defectsAPI.createDefect({
-        device_id: formData.deviceId,
-        defect_type: formData.defectType,
-        severity: formData.severity,
-        description: formData.description,
-        images: formData.images
-      });
+      await defectsAPI.createDefect(normalizedPayload);
       showToast('Defect report submitted successfully!', 'success');
       navigate('/defects');
     } catch (error) {
@@ -176,10 +197,12 @@ const CreateDefectReport = () => {
               value={formData.description}
               onChange={handleChange}
               rows={4}
+              minLength={10}
               placeholder="Describe the defect in detail..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               required
             />
+            <p className="text-xs text-gray-500 mt-1">Minimum 10 characters.</p>
           </div>
 
           {/* Photo Upload */}

@@ -169,12 +169,6 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         
-        # operator receives device for active use; everyone else is in transit/distributed
-        role_to_device_status = {
-            "operator": DeviceStatus.IN_USE.value,
-        }
-        device_status_for_recipient = role_to_device_status.get(to_user["role"], DeviceStatus.DISTRIBUTED.value)
-        
         now = datetime.utcnow().isoformat()
         dist_id = generate_distribution_id()
         
@@ -198,21 +192,9 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         new_id = str(cursor.lastrowid)
         await db.commit()
     
-    # Update device holder/status immediately — no approval step required
-    for dev_id in dist_data.device_ids:
-        await device_service.update_device_holder(
-            device_id=str(dev_id),
-            holder_id=str(to_user["id"]),
-            holder_name=to_user["name"],
-            holder_type=role_to_type.get(to_user["role"], "staff"),
-            location=to_user["name"],
-            status=device_status_for_recipient,
-            performed_by=from_user_id,
-            performed_by_name=from_user["name"],
-            from_user_id=from_user_id,
-            from_user_name=from_user["name"],
-            notes=f"Transferred via distribution {dist_id}"
-        )
+    # NOTE: Device holders are NOT moved here. They move only when the recipient
+    # confirms receipt (confirm_receipt with received=True). This ensures devices
+    # do not appear in the recipient's account before they acknowledge them.
     
     # Notify recipient — ask them to confirm receipt
     await notification_service.create_notification(
@@ -263,28 +245,8 @@ async def update_distribution_status(
                     WHERE entity_id = ? AND approval_type = 'distribution'""",
                 (user_id, user["name"], now, notes, now, distribution_id)
             )
-            # Reset devices back to sender
-            sender_noc = dist.get("from_user_type") in ["noc", "staff"]
-            reset_status   = DeviceStatus.AVAILABLE.value if sender_noc else DeviceStatus.DISTRIBUTED.value
-            reset_holder_id   = None if sender_noc else dist["from_user_id"]
-            reset_holder_name = "PDIC (Distribution)" if sender_noc else dist["from_user_name"]
-            reset_holder_type = "noc" if sender_noc else dist["from_user_type"]
-            reset_location    = "PDIC" if sender_noc else dist["from_user_name"]
-            device_ids_on_reject = dist.get("device_ids", [])
-            for dev_id in device_ids_on_reject:
-                await device_service.update_device_holder(
-                    device_id=str(dev_id),
-                    holder_id=reset_holder_id,
-                    holder_name=reset_holder_name,
-                    holder_type=reset_holder_type,
-                    location=reset_location,
-                    status=reset_status,
-                    performed_by=user_id,
-                    performed_by_name=user["name"],
-                    from_user_id=dist["to_user_id"],
-                    from_user_name=dist["to_user_name"],
-                    notes=f"Returned — distribution {dist['distribution_id']} rejected"
-                )
+            # Devices were never moved (holder update is deferred until recipient confirms receipt),
+            # so no device reset is needed on rejection.
         
         if notes:
             update_fields.append("notes = ?")
@@ -314,9 +276,9 @@ async def confirm_receipt(
     distribution_id: str, received: bool, user: Dict[str, Any], notes: Optional[str] = None
 ) -> Dict[str, Any]:
     """Receiver confirms or disputes receipt of a distribution.
-    - received=True  → status APPROVED, sender notified
+    - received=True  → status APPROVED, devices moved to recipient, sender notified
     - received=False → status DISPUTED, all admins/managers + sender notified
-    Without confirming, receiver cannot redistribute the devices.
+    Without confirming, receiver cannot redistribute the devices and devices stay with sender.
     """
     dist = await get_distribution_by_id(distribution_id)
     if not dist:
@@ -332,8 +294,20 @@ async def confirm_receipt(
 
     now = datetime.utcnow().isoformat()
 
+    role_to_type = {
+        "admin": "noc", "manager": "noc", "staff": "staff",
+        "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
+    }
+
     async with get_db() as db:
         if received:
+            # Look up to_user role so we can set the correct device status
+            cursor = await db.execute(
+                "SELECT role FROM users WHERE id = ?", (int(dist["to_user_id"]),)
+            )
+            to_user_row = await cursor.fetchone()
+            to_user_role = dict(to_user_row)["role"] if to_user_row else "operator"
+
             await db.execute(
                 """UPDATE distributions
                    SET status = ?, approval_date = ?, approved_by = ?, approved_by_name = ?,
@@ -345,16 +319,9 @@ async def confirm_receipt(
                 )
             )
             await db.commit()
-            # Notify sender: receipt confirmed
-            await notification_service.create_notification(
-                user_id=dist["from_user_id"],
-                title="Receipt Confirmed",
-                message=f"{user['name']} confirmed receipt of {dist['device_count']} device(s) "
-                        f"(Distribution: {dist['distribution_id']}).",
-                notification_type="success", category="distribution",
-                link=f"/distributions/{distribution_id}"
-            )
+
         else:
+            to_user_role = None
             await db.execute(
                 """UPDATE distributions
                    SET status = 'disputed', notes = COALESCE(?, notes), updated_at = ?
@@ -389,6 +356,41 @@ async def confirm_receipt(
                 link=f"/distributions/{distribution_id}"
             )
 
+    if received and to_user_role:
+        # NOW move devices to the recipient — only after they confirm receipt
+        device_status_for_recipient = (
+            DeviceStatus.IN_USE.value if to_user_role == "operator" else DeviceStatus.DISTRIBUTED.value
+        )
+        holder_type = role_to_type.get(to_user_role, "staff")
+        device_ids = dist.get("device_ids", [])
+        for dev_id in device_ids:
+            try:
+                await device_service.update_device_holder(
+                    device_id=str(dev_id),
+                    holder_id=dist["to_user_id"],
+                    holder_name=dist["to_user_name"],
+                    holder_type=holder_type,
+                    location=dist["to_user_name"],
+                    status=device_status_for_recipient,
+                    performed_by=user_id,
+                    performed_by_name=user["name"],
+                    from_user_id=dist["from_user_id"],
+                    from_user_name=dist["from_user_name"],
+                    notes=f"Receipt confirmed for distribution {dist['distribution_id']}"
+                )
+            except Exception:
+                pass  # Log but don't fail the confirmation
+
+        # Notify sender: receipt confirmed
+        await notification_service.create_notification(
+            user_id=dist["from_user_id"],
+            title="Receipt Confirmed",
+            message=f"{user['name']} confirmed receipt of {dist['device_count']} device(s) "
+                    f"(Distribution: {dist['distribution_id']}).",
+            notification_type="success", category="distribution",
+            link=f"/distributions/{distribution_id}"
+        )
+
     return await get_distribution_by_id(distribution_id)
 
 
@@ -402,6 +404,8 @@ async def cancel_distribution(distribution_id: str, user: dict) -> bool:
         raise ValueError("Only the creator can cancel this distribution")
     if dist["status"] == DistributionStatus.CANCELLED.value:
         raise ValueError("Distribution is already cancelled")
+    if dist["status"] == DistributionStatus.APPROVED.value:
+        raise ValueError("Cannot cancel a distribution that has already been confirmed")
     
     async with get_db() as db:
         now = datetime.utcnow().isoformat()
@@ -411,30 +415,8 @@ async def cancel_distribution(distribution_id: str, user: dict) -> bool:
         )
         await db.commit()
     
-    # Reset device holders back to sender
-    sender_noc = dist.get("from_user_type") in ["noc", "staff"]
-    reset_status      = DeviceStatus.AVAILABLE.value if sender_noc else DeviceStatus.DISTRIBUTED.value
-    reset_holder_id   = None if sender_noc else dist["from_user_id"]
-    reset_holder_name = "PDIC (Distribution)" if sender_noc else dist["from_user_name"]
-    reset_holder_type = "noc" if sender_noc else dist["from_user_type"]
-    reset_location    = "PDIC" if sender_noc else dist["from_user_name"]
-    for dev_id in (dist.get("device_ids") or []):
-        try:
-            await device_service.update_device_holder(
-                device_id=str(dev_id),
-                holder_id=reset_holder_id,
-                holder_name=reset_holder_name,
-                holder_type=reset_holder_type,
-                location=reset_location,
-                status=reset_status,
-                performed_by=user_id,
-                performed_by_name=user.get("name", "Unknown"),
-                from_user_id=dist["to_user_id"],
-                from_user_name=dist["to_user_name"],
-                notes=f"Returned — distribution {dist['distribution_id']} cancelled"
-            )
-        except Exception:
-            pass
+    # Devices were never moved (hold is deferred until receipt confirmation),
+    # so no device holder reset is needed on cancel.
     return True
 
 

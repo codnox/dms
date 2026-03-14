@@ -50,7 +50,8 @@ const Returns = () => {
       render: (value, row) => (
         <div>
           <p className="font-medium text-gray-800">{row.device_type || value || 'Unknown'}</p>
-          <p className="text-xs text-gray-500">{row.device_serial || ''}</p>
+          <p className="text-xs text-gray-500">SN: {row.device_serial || 'N/A'}</p>
+          <p className="text-xs text-gray-400">MAC: {row.mac_address || 'N/A'}</p>
         </div>
       )
     },
@@ -291,7 +292,8 @@ const Returns = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-800">{selectedReturn.device_name || selectedReturn.device_type || 'Unknown'}</h3>
-                <p className="text-gray-500">{selectedReturn.serial_number || selectedReturn.mac_address || ''}</p>
+                <p className="text-gray-500">SN: {selectedReturn.device_serial || selectedReturn.serial_number || 'N/A'}</p>
+                <p className="text-gray-400 text-sm">MAC: {selectedReturn.mac_address || 'N/A'}</p>
                 <StatusBadge status={selectedReturn.status} />
               </div>
             </div>
@@ -371,7 +373,7 @@ const Returns = () => {
           <div className="p-4 bg-gray-50 rounded-lg">
             <p className="font-medium text-gray-800">{selectedReturn?.device_type || selectedReturn?.device_name || 'Unknown'}</p>
             <p className="text-sm text-gray-500 capitalize">{selectedReturn?.reason}</p>
-            <p className="text-xs text-gray-400">Serial: {selectedReturn?.device_serial || 'N/A'}</p>
+            <p className="text-xs text-gray-400">Serial: {selectedReturn?.device_serial || 'N/A'} | MAC: {selectedReturn?.mac_address || 'N/A'}</p>
           </div>
 
           <div>
@@ -418,6 +420,7 @@ const Returns = () => {
           <div className="p-4 bg-purple-50 rounded-lg">
             <p className="font-medium text-gray-800">{selectedReturn?.device_type || 'Unknown Device'}</p>
             <p className="text-sm text-gray-500">Serial: {selectedReturn?.device_serial || 'N/A'}</p>
+            <p className="text-sm text-gray-500">MAC: {selectedReturn?.mac_address || 'N/A'}</p>
             <p className="text-sm text-gray-500">
               Return ID: {selectedReturn?.return_id || selectedReturn?._id || 'N/A'}
             </p>

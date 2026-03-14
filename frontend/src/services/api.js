@@ -49,10 +49,43 @@ const apiRequest = async (endpoint, options = {}) => {
       endpoint
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { message: raw || 'API request failed' };
+    }
 
     if (!response.ok) {
-      const errorMessage = data.message || data.detail || 'API request failed';
+      let errorMessage =
+        data?.message ||
+        data?.detail ||
+        (typeof data?.error?.details === 'string' ? data.error.details : null) ||
+        'API request failed';
+
+      // FastAPI validation errors are returned as structured details by backend middleware.
+      if (
+        response.status === 422 &&
+        data?.error?.code === 'VALIDATION_ERROR' &&
+        Array.isArray(data?.error?.details) &&
+        data.error.details.length > 0
+      ) {
+        const first = data.error.details[0];
+        const field = first?.field ? String(first.field).replace('body.', '') : 'field';
+        const message = first?.message || 'Invalid value';
+        errorMessage = `${field}: ${message}`;
+      }
+
+      if (
+        response.status === 400 &&
+        Array.isArray(data?.error?.details) &&
+        data.error.details.length > 0
+      ) {
+        const first = data.error.details[0];
+        errorMessage = first?.message || errorMessage;
+      }
+
       console.error('[API] Request failed:', {
         endpoint,
         status: response.status,
@@ -287,6 +320,20 @@ export const devicesAPI = {
     if (!response.ok) throw new Error(data.message || data.detail || 'Upload failed');
     return data;
   },
+
+  getDevicesForReplacement: async (excludeDeviceId = null) => {
+    const params = excludeDeviceId ? `?exclude_device_id=${excludeDeviceId}` : '';
+    const response = await apiRequest(`/devices/for-replacement${params}`);
+    return response;
+  },
+
+  requestDeviceEdit: async (deviceId, changes) => {
+    const response = await apiRequest(`/devices/${deviceId}/request-edit`, {
+      method: 'POST',
+      body: JSON.stringify(changes),
+    });
+    return response;
+  },
 };
 
 // Distributions API
@@ -388,6 +435,43 @@ export const defectsAPI = {
     const response = await apiRequest(`/defects/${defectId}/replace`, {
       method: 'POST',
       body: JSON.stringify(replaceData),
+    });
+    return response;
+  },
+
+  enquireReplacement: async (defectId, message) => {
+    const response = await apiRequest(`/defects/${defectId}/enquire`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+    return response;
+  },
+
+  resendReplacementConfirmation: async (defectId) => {
+    const response = await apiRequest(`/defects/${defectId}/resend-confirmation`, {
+      method: 'POST',
+    });
+    return response;
+  },
+
+  markReplacementWaiting: async (defectId, notes = '') => {
+    const response = await apiRequest(`/defects/${defectId}/mark-waiting`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+    return response;
+  },
+
+  getReplacements: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/defects/replacements?${queryString}`);
+    return response;
+  },
+
+  confirmReplacementReceipt: async (defectId, notes = '') => {
+    const response = await apiRequest(`/defects/${defectId}/replacement/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
     });
     return response;
   },
@@ -655,6 +739,15 @@ export const dashboardAPI = {
 // Change Requests API
 export const changeRequestsAPI = {
   submit: (data) => apiRequest('/change-requests', { method: 'POST', body: JSON.stringify(data) }),
+  requestReplacementTransferFix: (defectId, notes = '') =>
+    apiRequest('/change-requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        request_type: 'replacement_transfer_fix',
+        device_id: String(defectId),
+        reason: notes || undefined,
+      }),
+    }),
   getRequests: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return apiRequest(`/change-requests?${qs}`);

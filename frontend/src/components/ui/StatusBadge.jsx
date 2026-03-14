@@ -6,6 +6,7 @@ const StatusBadge = ({ status, size = 'md' }) => {
     'in-use': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'In Use' },
     'stored': { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Stored' },
     'defective': { bg: 'bg-red-100', text: 'text-red-700', label: 'Defective' },
+    'replaced': { bg: 'bg-gray-200', text: 'text-gray-700 line-through', label: 'Replaced' },
     'returned': { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Returned' },
     
     // Distribution statuses
@@ -15,6 +16,8 @@ const StatusBadge = ({ status, size = 'md' }) => {
     'in-transit': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'In Transit' },
     'delivered': { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Delivered' },
     'approved': { bg: 'bg-green-100', text: 'text-green-700', label: 'Confirmed' },
+    'replacement_pending_confirmation': { bg: 'bg-amber-100', text: 'text-amber-800', label: 'Pending Confirmation' },
+    'replacement_waiting_for_device': { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Waiting For Device' },
     'rejected': { bg: 'bg-red-100', text: 'text-red-700', label: 'Rejected' },
     'completed': { bg: 'bg-green-100', text: 'text-green-700', label: 'Completed' },
     'cancelled': { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Cancelled' },
@@ -34,6 +37,10 @@ const StatusBadge = ({ status, size = 'md' }) => {
     // Condition
     'new': { bg: 'bg-green-100', text: 'text-green-700', label: 'New' },
     'refurbished': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Refurbished' },
+
+    // Replacement relation
+    'replacement': { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Replacement Device' },
+    'defective_device': { bg: 'bg-red-100', text: 'text-red-700', label: 'Defective Device' },
   };
 
   const sizeClasses = {

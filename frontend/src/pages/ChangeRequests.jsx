@@ -17,6 +17,7 @@ const TYPE_LABELS = {
   password_reset: 'Password Reset',
   both: 'Email & Password',
   device_status_change: 'Device Status Change',
+  replacement_transfer_fix: 'Replacement Transfer Fix',
 };
 
 const ChangeRequests = () => {
@@ -134,6 +135,11 @@ const ChangeRequests = () => {
                           <div>Device ID: {req.device_id || '—'}</div>
                           <div>New Status: <span className="font-medium capitalize">{req.requested_status || '—'}</span></div>
                         </div>
+                      ) : req.request_type === 'replacement_transfer_fix' ? (
+                        <div>
+                          <div>Defect ID: {req.device_id || '—'}</div>
+                          <div>Action: <span className="font-medium">Transfer fix request</span></div>
+                        </div>
                       ) : (
                         <>
                           {req.new_email && <div>Email: {req.new_email}</div>}
@@ -202,7 +208,7 @@ const ChangeRequests = () => {
                   <p className="text-blue-600 mt-1">Approving will update the device status immediately.</p>
                 </div>
               )}
-              {reviewing.action === 'approve' && reviewing.req.request_type !== 'device_status_change' && (
+              {reviewing.action === 'approve' && reviewing.req.request_type !== 'device_status_change' && reviewing.req.request_type !== 'replacement_transfer_fix' && (
                 <>
                   <p className="text-sm text-gray-600">You can override the requested values before approving:</p>
                   {reviewing.req.request_type !== 'password_reset' && (
@@ -230,6 +236,13 @@ const ChangeRequests = () => {
                     </div>
                   )}
                 </>
+              )}
+              {reviewing.action === 'approve' && reviewing.req.request_type === 'replacement_transfer_fix' && (
+                <div className="p-3 bg-amber-50 rounded-lg text-sm">
+                  <p className="font-medium text-amber-800 mb-1">Replacement Transfer Fix Request</p>
+                  <p className="text-amber-700">Defect ID: {reviewing.req.device_id || '—'}</p>
+                  <p className="text-amber-600 mt-1">Approving will notify the operator and mark this request as approved for management processing.</p>
+                </div>
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
