@@ -6,6 +6,20 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.utils.helpers import get_pagination
 
 
+def _parse_notification_metadata(notification: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = notification.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            notification["metadata"] = json.loads(metadata)
+        except json.JSONDecodeError:
+            notification["metadata"] = None
+    return notification
+
+
+def _parse_notification_list(notifications: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [_parse_notification_metadata(notification) for notification in notifications]
+
+
 async def get_notifications(
     user_id: str,
     page: int = 1,
@@ -32,9 +46,10 @@ async def get_notifications(
             params + [page_size, offset]
         )
         rows = await cursor.fetchall()
+        data = _parse_notification_list(rows_to_list(rows))
         
         return {
-            "data": rows_to_list(rows),
+            "data": data,
             "pagination": get_pagination(page, page_size, total)
         }
 
@@ -57,7 +72,7 @@ async def get_latest_notifications(user_id: str, limit: int = 5) -> List[Dict[st
             (user_id, limit)
         )
         rows = await cursor.fetchall()
-        return rows_to_list(rows)
+        return _parse_notification_list(rows_to_list(rows))
 
 
 async def create_notification(
@@ -83,7 +98,7 @@ async def create_notification(
         
         cursor = await db.execute("SELECT * FROM notifications WHERE id = ?", (cursor.lastrowid,))
         row = await cursor.fetchone()
-        return row_to_dict(row)
+        return _parse_notification_metadata(row_to_dict(row))
 
 
 async def mark_as_read(notification_id: str, user_id: str) -> bool:

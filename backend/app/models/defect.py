@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+from app.models.device import DeviceType
 
 
 class DefectType(str, Enum):
@@ -24,6 +25,8 @@ class DefectStatus(str, Enum):
     REPORTED = "reported"
     UNDER_REVIEW = "under_review"
     APPROVED = "approved"
+    REPLACEMENT_PENDING_CONFIRMATION = "replacement_pending_confirmation"
+    REPLACEMENT_WAITING_FOR_DEVICE = "replacement_waiting_for_device"
     REJECTED = "rejected"
     RESOLVED = "resolved"
 
@@ -74,9 +77,19 @@ class DefectReport(BaseModel):
         from_attributes = True
 
 
+class ReplacementDeviceCreate(BaseModel):
+    device_type: DeviceType
+    model: str = Field(..., min_length=1, max_length=100)
+    serial_number: str = Field(..., min_length=1, max_length=100)
+    mac_address: str = Field(..., min_length=1, max_length=50)
+    manufacturer: str = Field(..., min_length=1, max_length=100)
+
+
 class ReplaceDeviceRequest(BaseModel):
+    replacement_device_id: Optional[str] = None
     mac_address: Optional[str] = None
     serial_number: Optional[str] = None
+    register_device: Optional[ReplacementDeviceCreate] = None
     notes: Optional[str] = None
 
 
@@ -108,3 +121,15 @@ class DefectResolve(BaseModel):
 class DefectStatusUpdate(BaseModel):
     status: DefectStatus
     notes: Optional[str] = None
+
+
+class ReplacementConfirmationRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class DefectEnquiryRequest(BaseModel):
+    message: str = Field(..., min_length=5, max_length=1000)
+
+
+class DefectActionRequest(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=1000)

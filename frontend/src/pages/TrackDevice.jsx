@@ -5,16 +5,17 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Timeline from '../components/ui/Timeline';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { devicesAPI, changeRequestsAPI } from '../services/api';
+import { devicesAPI, changeRequestsAPI, defectsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Search, Box, MapPin, Clock, User, ChevronRight, Loader2, Edit, Send, RefreshCw } from 'lucide-react';
+import { Search, Box, MapPin, Clock, User, ChevronRight, Loader2, Edit, Send, RefreshCw, Link2, AlertTriangle } from 'lucide-react';
 
 const DEVICE_STATUSES = [
   { value: 'available', label: 'Available' },
   { value: 'distributed', label: 'Distributed' },
   { value: 'in_use', label: 'In Use' },
   { value: 'defective', label: 'Defective' },
+  { value: 'replaced', label: 'Replaced' },
   { value: 'returned', label: 'Returned' },
   { value: 'maintenance', label: 'Maintenance' },
 ];
@@ -29,6 +30,7 @@ const TrackDevice = () => {
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [allDevices, setAllDevices] = useState([]);
+  const [replacementMappings, setReplacementMappings] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
   const [deviceHistory, setDeviceHistory] = useState([]);
 
@@ -57,14 +59,32 @@ const TrackDevice = () => {
   const fetchAllDevices = async () => {
     try {
       setDevicesLoading(true);
-      const response = await devicesAPI.getMyOverview();
-      setAllDevices(response.data?.all_under_me || []);
+      const [overviewResponse, replacementsResponse] = await Promise.all([
+        devicesAPI.getMyOverview(),
+        defectsAPI.getReplacements({ page_size: 300 })
+      ]);
+      setAllDevices(overviewResponse.data?.all_under_me || []);
+      setReplacementMappings(Array.isArray(replacementsResponse.data) ? replacementsResponse.data : []);
     } catch (error) {
       console.error('Failed to fetch devices:', error);
     } finally {
       setDevicesLoading(false);
     }
   };
+
+  const replacementMapByDefectiveId = replacementMappings.reduce((acc, defect) => {
+    if (defect?.device_id) {
+      acc[String(defect.device_id)] = defect;
+    }
+    return acc;
+  }, {});
+
+  const activeDevices = allDevices.filter((device) => device.status !== 'replaced');
+  const replacedDevices = allDevices.filter((device) => device.status === 'replaced');
+
+  const searchedReplacementMapping = searchResult
+    ? replacementMapByDefectiveId[String(searchResult.id)]
+    : null;
 
   const handleSearchBySerial = async (serialOrMac) => {
     setLoading(true);
@@ -255,9 +275,11 @@ const TrackDevice = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-gray-500 mb-4">Click on a device to view its tracking history</p>
+              <p className="text-sm text-gray-500 mb-2">Active devices are listed first. Replaced devices are shown in a separate section below.</p>
+
+              <h3 className="text-sm font-semibold text-gray-700 mt-2">Active Devices</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {allDevices.map((device) => (
+                {activeDevices.map((device) => (
                   <div
                     key={device.id}
                     onClick={() => handleDeviceClick(device)}
@@ -277,6 +299,43 @@ const TrackDevice = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="pt-4 mt-4 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-red-700 line-through decoration-red-500 mb-3">Replaced Devices</h3>
+                {replacedDevices.length === 0 ? (
+                  <p className="text-sm text-gray-500">No replaced devices in your current scope.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {replacedDevices.map((device) => {
+                      const mapping = replacementMapByDefectiveId[String(device.id)];
+                      return (
+                        <div
+                          key={device.id}
+                          onClick={() => handleDeviceClick(device)}
+                          className="flex items-center gap-3 p-4 border border-red-200 rounded-lg cursor-pointer hover:border-red-400 hover:bg-red-50 transition-all"
+                        >
+                          <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <AlertTriangle className="w-5 h-5 text-red-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800 truncate line-through decoration-red-400">{device.model || 'Unknown Model'}</p>
+                            <p className="text-xs text-gray-500 font-mono truncate">{device.serial_number}</p>
+                            <p className="text-xs text-red-600 truncate">
+                              {mapping?.replacement_device?.device_id
+                                ? `Replaced by ${mapping.replacement_device.device_id}`
+                                : 'Replacement mapping available'}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusBadge status="replaced" size="sm" />
+                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -300,6 +359,32 @@ const TrackDevice = () => {
               >
                 ← Back to all devices
               </button>
+
+              {(searchResult.status === 'replaced' || searchedReplacementMapping) && (
+                <div className="p-4 bg-gray-100 border border-gray-300 rounded-lg">
+                  <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                    <Link2 className="w-4 h-4" />
+                    This device was replaced
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    This device is no longer active. Use the link below to open the replacement device mapping.
+                  </p>
+                  {searchedReplacementMapping?.replacement_device && (
+                    <button
+                      onClick={() => {
+                        if (!searchedReplacementMapping.replacement_device?.serial_number) {
+                          showToast('Replacement device serial is unavailable for quick open', 'warning');
+                          return;
+                        }
+                        handleDeviceClick(searchedReplacementMapping.replacement_device);
+                      }}
+                      className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+                    >
+                      Open Replacement Device {searchedReplacementMapping.replacement_device.device_id || ''}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Device Info Card */}
               <Card>

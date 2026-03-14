@@ -19,6 +19,7 @@ class DeviceStatus(str, Enum):
     DISTRIBUTED = "distributed"
     IN_USE = "in_use"
     DEFECTIVE = "defective"
+    REPLACED = "replaced"
     RETURNED = "returned"
     MAINTENANCE = "maintenance"
 

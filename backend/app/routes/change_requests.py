@@ -5,7 +5,7 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.middleware.auth_middleware import get_current_user, require_admin, require_admin_or_manager
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
-from app.services import device_service
+from app.services import device_service, notification_service
 from datetime import datetime
 import uuid
 
@@ -13,12 +13,55 @@ router = APIRouter()
 
 
 class ChangeRequestCreate(BaseModel):
-    request_type: str  # 'email_change', 'password_reset', 'both', 'device_status_change'
+    request_type: str  # 'email_change', 'password_reset', 'both', 'device_status_change', 'replacement_transfer_fix'
     new_email: Optional[str] = None
     new_password: Optional[str] = None
     device_id: Optional[str] = None
     requested_status: Optional[str] = None
     reason: Optional[str] = None
+
+
+ALLOWED_TRANSFER_FIX_DEFECT_STATUSES = {
+    "replacement_pending_confirmation",
+    "replacement_waiting_for_device",
+}
+
+
+async def _validate_operator_transfer_fix_request(db, operator_user: dict, defect_id: str) -> dict:
+    """Validate that operator is involved in the defect and transfer-fix is applicable."""
+    if not str(defect_id).isdigit():
+        raise HTTPException(status_code=400, detail="defect_id must be numeric")
+
+    cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
+    defect = await cursor.fetchone()
+    if not defect:
+        raise HTTPException(status_code=404, detail="Defect not found")
+    defect = dict(defect)
+
+    if defect.get("status") not in ALLOWED_TRANSFER_FIX_DEFECT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Transfer fix can only be requested for pending/waiting replacement defects",
+        )
+
+    if not defect.get("replacement_device_id"):
+        raise HTTPException(status_code=400, detail="Defect has no replacement device mapping yet")
+
+    cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(defect["device_id"]),))
+    defective_device = await cursor.fetchone()
+    defective_device = dict(defective_device) if defective_device else {}
+
+    operator_id = str(operator_user["id"])
+    reported_by = str(defect.get("reported_by")) if defect.get("reported_by") is not None else None
+    holder_id = (
+        str(defective_device.get("current_holder_id"))
+        if defective_device.get("current_holder_id") is not None
+        else None
+    )
+    if operator_id not in {reported_by, holder_id}:
+        raise HTTPException(status_code=403, detail="You are not involved in this defect")
+
+    return defect
 
 
 class ReviewRequest(BaseModel):
@@ -35,11 +78,16 @@ async def submit_change_request(
     current_user: dict = Depends(get_current_user)
 ):
     """Submit a change request"""
-    VALID_TYPES = ["email_change", "password_reset", "both", "device_status_change"]
+    VALID_TYPES = ["email_change", "password_reset", "both", "device_status_change", "replacement_transfer_fix"]
     if data.request_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail="Invalid request_type")
 
-    if data.request_type == "device_status_change":
+    if data.request_type == "replacement_transfer_fix":
+        if current_user["role"] != "operator":
+            raise HTTPException(status_code=403, detail="Only operators can submit replacement transfer fix requests")
+        if not data.device_id:
+            raise HTTPException(status_code=400, detail="defect_id is required in device_id for replacement_transfer_fix")
+    elif data.request_type == "device_status_change":
         if current_user["role"] not in ["staff", "manager"]:
             raise HTTPException(status_code=403, detail="Only staff and managers can submit device status change requests")
         if not data.device_id:
@@ -61,8 +109,27 @@ async def submit_change_request(
     try:
         now = datetime.utcnow().isoformat()
         request_id = f"CR-{uuid.uuid4().hex[:8].upper()}"
+        manager_notification_payloads = []
 
         async with get_db() as db:
+            defect = None
+            if data.request_type == "replacement_transfer_fix":
+                defect = await _validate_operator_transfer_fix_request(db, current_user, data.device_id)
+
+                cursor = await db.execute(
+                    """SELECT id FROM change_requests
+                       WHERE request_type = 'replacement_transfer_fix'
+                       AND requested_by = ? AND device_id = ? AND status = 'pending'
+                       LIMIT 1""",
+                    (int(current_user["id"]), str(data.device_id)),
+                )
+                existing = await cursor.fetchone()
+                if existing:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="A transfer-fix request is already pending for this defect",
+                    )
+
             await db.execute(
                 """INSERT INTO change_requests
                    (request_id, requested_by, requested_by_name, requested_by_role,
@@ -78,12 +145,44 @@ async def submit_change_request(
                     data.new_email,
                     data.new_password,
                     data.device_id,
-                    data.requested_status,
+                    data.requested_status if data.request_type != "replacement_transfer_fix" else "transfer_fix",
                     data.reason,
                     now, now
                 )
             )
+
+            if data.request_type == "replacement_transfer_fix":
+                cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+                managers = await cursor.fetchall()
+                defect_report_id = defect.get("report_id") if defect else None
+                for row in managers:
+                    manager_id = str(row[0])
+                    manager_notification_payloads.append(
+                        {
+                            "user_id": manager_id,
+                            "title": "Replacement Transfer Fix Requested",
+                            "message": (
+                                f"Operator {current_user['name']} requested transfer fix for "
+                                f"defect {defect_report_id or data.device_id}."
+                            ),
+                            "notification_type": "warning",
+                            "category": "approval",
+                            "link": "/change-requests",
+                            "metadata": {
+                                "action": "replacement_transfer_fix",
+                                "request_id": request_id,
+                                "defect_id": str(data.device_id),
+                                "defect_report_id": defect_report_id,
+                                "operator_id": str(current_user["id"]),
+                                "operator_name": current_user["name"],
+                                "notes": data.reason,
+                            },
+                        }
+                    )
             await db.commit()
+
+        for payload in manager_notification_payloads:
+            await notification_service.create_notification(**payload)
 
         return {"success": True, "message": "Change request submitted successfully", "data": {"request_id": request_id}}
     except HTTPException:
@@ -113,8 +212,8 @@ async def get_change_requests(
             params = []
 
             if role == "manager":
-                # Manager only sees staff requests
-                conditions.append("requested_by_role = 'staff'")
+                # Manager sees staff requests and operator transfer-fix requests.
+                conditions.append("(requested_by_role = 'staff' OR request_type = 'replacement_transfer_fix')")
 
             if status_filter:
                 conditions.append("status = ?")
@@ -162,6 +261,8 @@ async def review_change_request(
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
 
     try:
+        operator_notification_payload = None
+        transfer_plan = None
         async with get_db() as db:
             cursor = await db.execute(
                 "SELECT * FROM change_requests WHERE request_id = ?", (request_id,)
@@ -173,7 +274,7 @@ async def review_change_request(
             req = row_to_dict(row)
 
             # Managers can only review staff requests
-            if role == "manager" and req["requested_by_role"] != "staff":
+            if role == "manager" and req["requested_by_role"] != "staff" and req["request_type"] != "replacement_transfer_fix":
                 raise HTTPException(status_code=403, detail="Managers can only review staff requests")
 
             if req["status"] != "pending":
@@ -194,7 +295,7 @@ async def review_change_request(
                             performed_by_name=current_user["name"],
                             notes=f"Approved via change request {request_id}"
                         )
-                else:
+                elif req["request_type"] in ["email_change", "password_reset", "both"]:
                     # Use override values if provided, else use original request values
                     email_to_set = review.new_email or req.get("new_email")
                     password_to_set = review.new_password or req.get("new_password")
@@ -227,6 +328,92 @@ async def review_change_request(
                             f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
                             update_params
                         )
+                elif req["request_type"] == "replacement_transfer_fix":
+                    defect_id = req.get("device_id")
+                    if not defect_id or not str(defect_id).isdigit():
+                        raise HTTPException(status_code=400, detail="Invalid defect id in transfer-fix request")
+
+                    cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
+                    defect = await cursor.fetchone()
+                    if not defect:
+                        raise HTTPException(status_code=404, detail="Defect not found for transfer-fix request")
+                    defect = dict(defect)
+
+                    replacement_device_id = defect.get("replacement_device_id")
+                    if not replacement_device_id:
+                        raise HTTPException(status_code=400, detail="No replacement device mapped for this defect")
+
+                    cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(defect["device_id"]),))
+                    old_device_row = await cursor.fetchone()
+                    old_device = dict(old_device_row) if old_device_row else {}
+
+                    # Always transfer to the operator who requested the fix.
+                    # This prevents misrouting to stale defect/device holder metadata.
+                    target_holder_id = req.get("requested_by")
+                    target_holder_name = req.get("requested_by_name") or old_device.get("current_holder_name") or defect.get("reported_by_name")
+                    target_location = old_device.get("current_location") or "Field"
+
+                    if not target_holder_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Unable to determine operator holder for replacement transfer"
+                        )
+
+                    cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(replacement_device_id),))
+                    replacement_row = await cursor.fetchone()
+                    if not replacement_row:
+                        raise HTTPException(status_code=404, detail="Replacement device not found")
+                    replacement_device = dict(replacement_row)
+
+                    already_assigned = (
+                        str(replacement_device.get("current_holder_id")) == str(target_holder_id)
+                        and replacement_device.get("current_holder_type") == "operator"
+                    )
+
+                    transfer_plan = {
+                        "already_assigned": already_assigned,
+                        "replacement_device_id": str(replacement_device_id),
+                        "replacement_device_code": replacement_device.get("device_id"),
+                        "replacement_serial": replacement_device.get("serial_number"),
+                        "from_user_id": replacement_device.get("current_holder_id"),
+                        "from_user_name": replacement_device.get("current_holder_name"),
+                        "target_holder_id": str(target_holder_id),
+                        "target_holder_name": target_holder_name,
+                        "target_location": target_location,
+                        "defect_id": str(defect_id),
+                        "defect_report_id": defect.get("report_id"),
+                    }
+
+                    # If it was marked waiting and this transfer fix is approved, return it to pending confirmation.
+                    if defect.get("status") == "replacement_waiting_for_device":
+                        await db.execute(
+                            "UPDATE defects SET status = ?, updated_at = ? WHERE id = ?",
+                            ("replacement_pending_confirmation", now, int(defect_id))
+                        )
+
+            if req["request_type"] == "replacement_transfer_fix":
+                operator_notification_payload = {
+                    "user_id": str(req["requested_by"]),
+                    "title": (
+                        "Replacement Transfer Fix Approved"
+                        if review.action == "approve"
+                        else "Replacement Transfer Fix Rejected"
+                    ),
+                    "message": (
+                        "Your replacement transfer-fix request is approved. Your replacement device has been transferred."
+                        if review.action == "approve"
+                        else "Your replacement transfer-fix request was rejected."
+                    ),
+                    "notification_type": "success" if review.action == "approve" else "warning",
+                    "category": "approval",
+                    "link": "/replacement-confirmation",
+                    "metadata": {
+                        "action": "replacement_transfer_fix_reviewed",
+                        "request_id": request_id,
+                        "decision": review.action,
+                        "defect_id": str(req.get("device_id") or ""),
+                    },
+                }
 
             # Update the request status
             await db.execute(
@@ -236,6 +423,50 @@ async def review_change_request(
                  review.review_note, now, request_id)
             )
             await db.commit()
+
+        if review.action == "approve" and req["request_type"] == "replacement_transfer_fix" and transfer_plan:
+            if not transfer_plan["already_assigned"]:
+                await device_service.update_device_holder(
+                    device_id=transfer_plan["replacement_device_id"],
+                    holder_id=transfer_plan["target_holder_id"],
+                    holder_name=transfer_plan["target_holder_name"],
+                    holder_type="operator",
+                    location=transfer_plan["target_location"],
+                    status="distributed",
+                    performed_by=str(current_user["id"]),
+                    performed_by_name=current_user["name"],
+                    from_user_id=(str(transfer_plan["from_user_id"]) if transfer_plan["from_user_id"] is not None else None),
+                    from_user_name=transfer_plan["from_user_name"],
+                    notes=(
+                        f"Replacement transfer-fix approved via {request_id} for "
+                        f"defect {transfer_plan['defect_report_id']}"
+                    )
+                )
+
+            # Additional explicit transfer confirmation for the operator.
+            await notification_service.create_notification(
+                user_id=str(req["requested_by"]),
+                title="Replacement Device Transferred",
+                message=(
+                    f"Replacement device {transfer_plan.get('replacement_device_code') or transfer_plan.get('replacement_serial') or ''} "
+                    "has been transferred to your possession."
+                ),
+                notification_type="success",
+                category="defect",
+                link="/replacement-confirmation",
+                metadata={
+                    "action": "replacement_transfer_completed",
+                    "request_id": request_id,
+                    "defect_id": transfer_plan.get("defect_id"),
+                    "defect_report_id": transfer_plan.get("defect_report_id"),
+                    "replacement_device_id": transfer_plan.get("replacement_device_id"),
+                    "assigned_holder_id": transfer_plan.get("target_holder_id"),
+                    "assigned_holder_name": transfer_plan.get("target_holder_name"),
+                },
+            )
+
+        if operator_notification_payload:
+            await notification_service.create_notification(**operator_notification_payload)
 
         return {"success": True, "message": f"Request {review.action}d successfully"}
     except HTTPException:

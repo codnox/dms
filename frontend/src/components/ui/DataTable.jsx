@@ -12,6 +12,7 @@ const DataTable = ({
   exportable = true,
   pageSize = 10,
   searchPlaceholder = "Search...",
+  getRowClassName,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -173,9 +174,9 @@ const DataTable = ({
                 <tr
                   key={row.id}
                   onClick={() => onRowClick?.(row)}
-                  className={`hover:bg-gray-50 transition-colors ${
+                  className={`hover:brightness-95 transition-colors ${
                     onRowClick ? 'cursor-pointer' : ''
-                  } ${selectedRows.includes(row.id) ? 'bg-blue-50' : ''}`}
+                  } ${selectedRows.includes(row.id) ? 'bg-blue-50' : getRowClassName ? getRowClassName(row) : ''}`}
                 >
                   {selectable && (
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -216,7 +217,7 @@ const DataTable = ({
             return (
               <div
                 key={row.id}
-                className={`p-4 ${selectedRows.includes(row.id) ? 'bg-blue-50' : ''}`}
+                className={`p-4 ${selectedRows.includes(row.id) ? 'bg-blue-50' : getRowClassName ? getRowClassName(row) : ''}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0" onClick={() => onRowClick?.(row)}>

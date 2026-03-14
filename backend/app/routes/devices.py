@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.models.device import DeviceCreate, DeviceUpdate, DeviceType
-from app.services import device_service
+from app.services import device_service, notification_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
 
 router = APIRouter()
@@ -44,6 +44,36 @@ async def get_devices(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve devices: {str(e)}"
+        )
+
+
+@router.get("/for-replacement")
+async def get_devices_for_replacement(
+    exclude_device_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all devices available as replacements (status=available or returned).
+    Management only — returns full stock regardless of holder. Used in the Replace Device modal."""
+    if current_user["role"] not in ["admin", "manager", "staff"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only management can access replacement device pool"
+        )
+    try:
+        devices = await device_service.get_devices_for_replacement(
+            exclude_device_id=exclude_device_id
+        )
+        return {
+            "success": True,
+            "message": "Replacement-eligible devices retrieved successfully",
+            "data": devices
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve replacement devices: {str(e)}"
         )
 
 
@@ -149,6 +179,68 @@ async def repair_device_holder(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to repair device holder: {str(e)}"
+        )
+
+
+
+@router.post("/{device_id}/request-edit")
+async def request_device_edit(
+    device_id: str,
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user)
+):
+    """Staff: request an edit to a device. Sends an approval notification to admins/managers.
+    The device is NOT modified until a manager/admin reviews and applies the change."""
+    if current_user["role"] not in ["staff", "admin", "manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only management users can request device edits"
+        )
+
+    try:
+        device = await device_service.get_device_by_id(device_id)
+        if not device:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+        proposer_name = current_user.get("name") or current_user.get("email", "Staff")
+        changes_summary = ", ".join(
+            f"{k}: '{v}'" for k, v in payload.items()
+            if k not in ("_edit_note",) and v
+        )
+        message = (
+            f"Staff Edit Request from {proposer_name}:\n"
+            f"Device: {device.get('device_id')} (Serial: {device.get('serial_number')})\n"
+            f"Proposed Changes: {changes_summary or 'No changes specified'}"
+        )
+
+        from app.database import get_db, rows_to_list
+        async with get_db() as db:
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE role IN ('admin', 'manager')"
+            )
+            rows = await cursor.fetchall()
+            admin_ids = [str(row[0]) for row in rows]
+
+        for admin_id in admin_ids:
+            await notification_service.create_notification(
+                user_id=admin_id,
+                title="⚙️ Device Edit Approval Request",
+                message=message,
+                notification_type="device_edit_request",
+                reference_id=device_id,
+                reference_type="device"
+            )
+
+        return {
+            "success": True,
+            "message": f"Edit request sent to {len(admin_ids)} manager(s)/admin(s) for approval."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit edit request: {str(e)}"
         )
 
 

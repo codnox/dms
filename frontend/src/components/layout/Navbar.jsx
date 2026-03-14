@@ -42,6 +42,14 @@ const Navbar = ({ onMenuClick }) => {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      fetchLatestNotifications();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileRef.current && !profileRef.current.contains(event.target)) {
         setShowProfile(false);
@@ -133,7 +141,13 @@ const Navbar = ({ onMenuClick }) => {
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => {
+                const nextState = !showNotifications;
+                setShowNotifications(nextState);
+                if (nextState) {
+                  fetchLatestNotifications();
+                }
+              }}
               className="relative p-2 hover:bg-gray-100 rounded-lg"
             >
               <Bell className="w-6 h-6 text-gray-600" />

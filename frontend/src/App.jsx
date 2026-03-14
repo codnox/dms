@@ -25,6 +25,8 @@ import Unauthorized from './pages/Unauthorized';
 import ChangeRequests from './pages/ChangeRequests';
 
 import DeliveryConfirmations from './pages/DeliveryConfirmations';
+import ReplacementConfirmation from './pages/ReplacementConfirmation';
+import Replacements from './pages/Replacements';
 
 import BulkImportDevices from './pages/BulkImportDevices';
 
@@ -136,6 +138,14 @@ function AppRoutes() {
         {/* Defect Reports */}
         <Route path="defects" element={<DefectReports />} />
         <Route path="defects/create" element={<CreateDefectReport />} />
+        <Route
+          path="replacements"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+              <Replacements />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Returns */}
         <Route path="returns" element={<Returns />} />
@@ -175,6 +185,16 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={['sub_distributor', 'cluster', 'operator']}>
               <DeliveryConfirmations />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Replacement Confirmations */}
+        <Route
+          path="replacement-confirmation"
+          element={
+            <ProtectedRoute allowedRoles={['operator']}>
+              <ReplacementConfirmation />
             </ProtectedRoute>
           }
         />

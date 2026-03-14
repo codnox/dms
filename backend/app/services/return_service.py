@@ -79,16 +79,17 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
         now = datetime.utcnow().isoformat()
 
         cursor = await db.execute(
-            """INSERT INTO returns (return_id, device_id, device_serial, device_type,
+            """INSERT INTO returns (return_id, device_id, device_serial, device_type, mac_address,
             requested_by, requested_by_name, return_to, return_to_name, reason, description,
             status, request_date, approval_date, received_date, approved_by, approved_by_name,
             created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 generate_return_id(),
                 return_data.device_id,
                 device["serial_number"],
                 device["device_type"],
+                device.get("mac_address"),
                 str(requester["_id"]),
                 requester["name"],
                 str(return_to_user["id"]),
@@ -345,16 +346,17 @@ async def auto_create_defect_return(
         now = datetime.utcnow().isoformat()
 
         cursor = await db.execute(
-            """INSERT INTO returns (return_id, device_id, device_serial, device_type,
+            """INSERT INTO returns (return_id, device_id, device_serial, device_type, mac_address,
             requested_by, requested_by_name, return_to, return_to_name, reason, description,
             status, request_date, approval_date, received_date, approved_by, approved_by_name,
             defect_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 generate_return_id(),
                 device_id,
                 device["serial_number"],
                 device["device_type"],
+                device.get("mac_address"),
                 requester_id,
                 requester_name,
                 str(return_to_user["id"]),
