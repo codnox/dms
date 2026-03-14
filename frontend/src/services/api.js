@@ -612,7 +612,7 @@ export const notificationsAPI = {
     console.log('[notificationsAPI] Getting unread count');
     try {
       const response = await apiRequest('/notifications/unread');
-      console.log('[notificationsAPI] Unread count:', response.count);
+      console.log('[notificationsAPI] Unread count:', response.data?.count ?? 0);
       return response;
     } catch (error) {
       console.error('[notificationsAPI] Failed to get unread count:', error.message);
@@ -672,6 +672,78 @@ export const notificationsAPI = {
       console.error('[notificationsAPI] Failed to delete notification:', error.message);
       throw error;
     }
+  },
+};
+
+// External Inventory API
+export const externalInventoryAPI = {
+  getDashboard: async () => {
+    const response = await apiRequest('/external-inventory/dashboard');
+    return response;
+  },
+
+  getItems: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/external-inventory/items?${queryString}`);
+    return response;
+  },
+
+  createItem: async (payload) => {
+    const response = await apiRequest('/external-inventory/items', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  updateItem: async (inventoryId, payload) => {
+    const response = await apiRequest(`/external-inventory/items/${inventoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  createAdjustment: async (payload) => {
+    const response = await apiRequest('/external-inventory/adjustments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  getPurchaseOrders: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/external-inventory/purchase-orders?${queryString}`);
+    return response;
+  },
+
+  createPurchaseOrder: async (payload) => {
+    const response = await apiRequest('/external-inventory/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  receivePurchaseOrder: async (poId, payload) => {
+    const response = await apiRequest(`/external-inventory/purchase-orders/${poId}/receive`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  getReceipts: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/external-inventory/receipts?${queryString}`);
+    return response;
+  },
+
+  getMovements: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/external-inventory/movements?${queryString}`);
+    return response;
   },
 };
 
@@ -769,6 +841,7 @@ export default {
   approvals: approvalsAPI,
   operators: operatorsAPI,
   notifications: notificationsAPI,
+  externalInventory: externalInventoryAPI,
   reports: reportsAPI,
   dashboard: dashboardAPI,
 };

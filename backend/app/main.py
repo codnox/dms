@@ -7,7 +7,8 @@ from app.database import init_db
 from app.routes import (
     auth, users, devices, distributions, 
     defects, returns, approvals, operators,
-    notifications, reports, dashboard, change_requests
+    notifications, reports, dashboard, change_requests,
+    external_inventory
 )
 from app.middleware.error_handler import add_exception_handlers
 
@@ -62,6 +63,7 @@ app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notif
 app.include_router(reports.router, prefix=f"{settings.API_V1_PREFIX}/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix=f"{settings.API_V1_PREFIX}/dashboard", tags=["Dashboard"])
 app.include_router(change_requests.router, prefix=f"{settings.API_V1_PREFIX}/change-requests", tags=["Change Requests"])
+app.include_router(external_inventory.router, prefix=f"{settings.API_V1_PREFIX}/external-inventory", tags=["External Inventory"])
 
 
 @app.get("/", tags=["Root"])

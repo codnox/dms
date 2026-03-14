@@ -96,6 +96,17 @@ async def _enrich_defect_rows(db, defects: List[Dict[str, Any]]) -> List[Dict[st
         defect["replacement_device"] = replacement_device
         defect["replacement_mapped"] = bool(replacement_device)
 
+        # Keep top-level fields populated for list/report UIs that render direct columns.
+        if defective_device:
+            if not defect.get("device_serial"):
+                defect["device_serial"] = defective_device.get("serial_number")
+            if not defect.get("mac_address"):
+                defect["mac_address"] = defective_device.get("mac_address")
+            if not defect.get("device_type"):
+                defect["device_type"] = defective_device.get("device_type")
+            if not defect.get("device_name"):
+                defect["device_name"] = defective_device.get("model") or defective_device.get("device_type")
+
     # Enrich with auto_return_status for replace-button gating
     auto_return_ids = [d.get("auto_return_id") for d in defects if d.get("auto_return_id")]
     if auto_return_ids:
@@ -261,7 +272,7 @@ async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> 
                 message=f"A new {defect_data.severity.value} severity defect has been reported for device {device['device_id']}",
                 notification_type="warning" if defect_data.severity.value in ["critical", "high"] else "info",
                 category="defect",
-                link=f"/defects/{new_id}",
+                link=f"/defects?defectId={new_id}",
                 metadata={"action": "new_defect_report", "defect_id": str(new_id)}
             )
 
@@ -358,7 +369,7 @@ async def update_defect_status(
             ),
             notification_type="warning" if status == DefectStatus.APPROVED.value else "info",
             category="defect",
-            link=f"/defects/{defect_id}"
+            link=f"/defects?defectId={defect_id}"
         )
 
         # Notify all admins/managers/staff when approved so they can confirm receipt
@@ -422,7 +433,7 @@ async def resolve_defect(
                 message=f"Your defect report {defect['report_id']} has been resolved",
                 notification_type="success",
                 category="defect",
-                link=f"/defects/{defect_id}"
+                link=f"/defects?defectId={defect_id}"
             )
             return await get_defect_by_id(defect_id)
     return None

@@ -9,23 +9,16 @@ import {
   User,
   LogOut,
   Settings,
-  ChevronDown,
-  Check,
-  X,
-  AlertTriangle,
-  Info
+  ChevronDown
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 
 const Navbar = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchLatestNotifications } = useNotifications();
+  const { unreadCount, fetchLatestNotifications } = useNotifications();
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const profileRef = useRef(null);
-  const notifRef = useRef(null);
 
   // Fetch notifications when user is logged in
   useEffect(() => {
@@ -54,9 +47,6 @@ const Navbar = ({ onMenuClick }) => {
       if (profileRef.current && !profileRef.current.contains(event.target)) {
         setShowProfile(false);
       }
-      if (notifRef.current && !notifRef.current.contains(event.target)) {
-        setShowNotifications(false);
-      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -75,37 +65,6 @@ const Navbar = ({ onMenuClick }) => {
       console.log('[Navbar] Searching for device:', searchQuery);
       navigate(`/track-device?q=${encodeURIComponent(searchQuery)}`);
       setSearchQuery('');
-    }
-  };
-
-  const getNotificationIcon = (type) => {
-    switch (type) {
-      case 'error': return <AlertTriangle className="w-4 h-4 text-red-500" />;
-      case 'warning': return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
-      default: return <Info className="w-4 h-4 text-blue-500" />;
-    }
-  };
-
-  const handleNotificationClick = (notif) => {
-    console.log('[Navbar] Notification clicked:', notif.id);
-    try {
-      markAsRead(notif.id);
-      if (notif.link) {
-        console.log('[Navbar] Navigating to:', notif.link);
-        navigate(notif.link);
-        setShowNotifications(false);
-      }
-    } catch (error) {
-      console.error('[Navbar] Error handling notification click:', error);
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    console.log('[Navbar] Marking all notifications as read');
-    try {
-      await markAllAsRead();
-    } catch (error) {
-      console.error('[Navbar] Error marking all as read:', error);
     }
   };
 
@@ -139,87 +98,19 @@ const Navbar = ({ onMenuClick }) => {
         {/* Right side */}
         <div className="flex items-center gap-2">
           {/* Notifications */}
-          <div className="relative" ref={notifRef}>
-            <button
-              onClick={() => {
-                const nextState = !showNotifications;
-                setShowNotifications(nextState);
-                if (nextState) {
-                  fetchLatestNotifications();
-                }
-              }}
-              className="relative p-2 hover:bg-gray-100 rounded-lg"
-            >
-              <Bell className="w-6 h-6 text-gray-600" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-w-sm bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-800">Notifications</h3>
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={handleMarkAllAsRead}
-                      className="text-sm text-blue-600 hover:text-blue-700"
-                    >
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500">
-                      No notifications
-                    </div>
-                  ) : (
-                    notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        onClick={() => handleNotificationClick(notif)}
-                        className={`p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 ${
-                          !notif.read ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          {getNotificationIcon(notif.type)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800">
-                              {notif.title}
-                            </p>
-                            <p className="text-sm text-gray-600 truncate">
-                              {notif.message}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formatDistanceToNow(new Date(notif.timestamp), { addSuffix: true })}
-                            </p>
-                          </div>
-                          {!notif.read && (
-                            <div className="w-2 h-2 bg-blue-600 rounded-full" />
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="p-3 border-t border-gray-100">
-                  <button
-                    onClick={() => {
-                      setShowNotifications(false);
-                      navigate('/notifications');
-                    }}
-                    className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    View all notifications
-                  </button>
-                </div>
-              </div>
+          <button
+            onClick={() => navigate('/notifications')}
+            className="relative p-2 hover:bg-gray-100 rounded-lg"
+            title="Open notifications"
+            aria-label="Open notifications"
+          >
+            <Bell className="w-6 h-6 text-gray-600" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
             )}
-          </div>
+          </button>
 
           {/* Profile dropdown */}
           <div className="relative" ref={profileRef}>

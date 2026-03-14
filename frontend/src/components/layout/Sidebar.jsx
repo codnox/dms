@@ -18,7 +18,7 @@ import {
   ClipboardList,
   UserCog,
   BarChart3,
-  Bell,
+  Warehouse,
   X,
   Network,
   PackageCheck,
@@ -84,6 +84,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         { path: '/settings', icon: Settings, label: 'Settings' },
       ],
@@ -116,6 +117,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
       ],
       staff: [
@@ -144,6 +146,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
       ],
       sub_distributor: [
         ...commonItems,

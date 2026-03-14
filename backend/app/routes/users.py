@@ -143,25 +143,27 @@ async def create_user(
             detail=f"You cannot create a user with role '{target_role}'"
         )
 
+    # Operator must always be linked to a valid cluster parent.
+    if target_role == "operator":
+        if not user_data.parent_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Must select a cluster to assign the operator to"
+            )
+        cluster = await user_service.get_user_by_id(user_data.parent_id)
+        if not cluster or cluster.get("role") != "cluster":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid cluster selected"
+            )
+
     # Auto-assign parent_id for sub_distributor and cluster creators
     if creator_role == "sub_distributor":
         if target_role == "cluster" and not user_data.parent_id:
             # Cluster goes directly under this sub_distributor
             user_data = user_data.model_copy(update={"parent_id": str(current_user["id"])})
         elif target_role == "operator":
-            # Operator must be assigned to one of this sub_distributor's clusters
-            if not user_data.parent_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Must select a cluster to assign the operator to"
-                )
-            # Validate the cluster belongs to this sub_distributor
-            cluster = await user_service.get_user_by_id(user_data.parent_id)
-            if not cluster or cluster.get("role") != "cluster":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid cluster selected"
-                )
+            # Validate the selected cluster belongs to this sub_distributor
             if str(cluster.get("parent_id")) != str(current_user["id"]):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

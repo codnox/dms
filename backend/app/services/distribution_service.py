@@ -203,7 +203,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {from_user['name']}. "
                 f"Please confirm receipt in your Distributions page (Distribution ID: {dist_id}).",
         notification_type="warning", category="distribution",
-        link=f"/distributions/{new_id}"
+        link=f"/distributions?distributionId={new_id}"
     )
     
     return await get_distribution_by_id(new_id)
@@ -266,7 +266,7 @@ async def update_distribution_status(
         title=f"Distribution {status.capitalize()}",
         message=f"Distribution {dist['distribution_id']} has been {status}",
         notification_type="success" if status in ["approved", "delivered"] else "warning",
-        category="distribution", link=f"/distributions/{distribution_id}"
+        category="distribution", link=f"/distributions?distributionId={distribution_id}"
     )
     
     return await get_distribution_by_id(distribution_id)
@@ -344,7 +344,7 @@ async def confirm_receipt(
                     title="Device Not Received — Dispute",
                     message=dispute_msg,
                     notification_type="error", category="distribution",
-                    link=f"/distributions/{distribution_id}"
+                    link=f"/distributions?distributionId={distribution_id}"
                 )
             # Also notify sender
             await notification_service.create_notification(
@@ -353,7 +353,7 @@ async def confirm_receipt(
                 message=f"{user['name']} reported NOT receiving your device(s) in distribution "
                         f"{dist['distribution_id']}. Admin and manager have been notified.",
                 notification_type="error", category="distribution",
-                link=f"/distributions/{distribution_id}"
+                link=f"/distributions?distributionId={distribution_id}"
             )
 
     if received and to_user_role:
@@ -388,7 +388,7 @@ async def confirm_receipt(
             message=f"{user['name']} confirmed receipt of {dist['device_count']} device(s) "
                     f"(Distribution: {dist['distribution_id']}).",
             notification_type="success", category="distribution",
-            link=f"/distributions/{distribution_id}"
+            link=f"/distributions?distributionId={distribution_id}"
         )
 
     return await get_distribution_by_id(distribution_id)
