@@ -172,6 +172,9 @@ const isAuthorizedForPath = (role, path) => {
   if (path.startsWith('/reports')) {
     return ['admin', 'manager', 'staff'].includes(role);
   }
+  if (path.startsWith('/delivery-confirmations')) {
+    return ['sub_distributor', 'cluster', 'operator'].includes(role);
+  }
   if (path.startsWith('/replacement-confirmation')) {
     return role === 'operator';
   }

@@ -272,7 +272,7 @@ const Users = () => {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {hasRole(['admin', 'manager']) && (
+          {currentUser?.role === 'admin' && (
             <>
               {row.id !== currentUser.id && (
                 <button
@@ -360,6 +360,12 @@ const Users = () => {
   const isManager  = currentUser?.role === 'manager';
   const isAdminOrManager = ['admin', 'manager'].includes(currentUser?.role);
 
+  const visibleUsers = useMemo(() => {
+    if (!isManager) return users;
+    // Managers should not see admin user details in the users surface.
+    return users.filter((u) => u.role !== 'admin');
+  }, [users, isManager]);
+
   const filteredClusterParentOptions = useMemo(() => {
     if (!isAdminOrManager || formData.role !== 'operator') return parentOptions;
     if (!selectedOperatorSubDistId) return [];
@@ -368,8 +374,8 @@ const Users = () => {
 
   // Cascading filtered users for admin/manager table
   const filteredUsers = useMemo(() => {
-    if (!isAdmin && !isManager) return users;
-    let result = users;
+    if (!isAdmin && !isManager) return visibleUsers;
+    let result = visibleUsers;
     if (filters.role) {
       result = result.filter(u => u.role === filters.role);
     }
@@ -379,7 +385,7 @@ const Users = () => {
         String(u.parent_id) === filters.clusterId
       );
     } else if (filters.subDistId) {
-      const clusterIds = users
+      const clusterIds = visibleUsers
         .filter(u => u.role === 'cluster' && String(u.parent_id) === filters.subDistId)
         .map(u => String(u.id));
       result = result.filter(u =>
@@ -389,7 +395,7 @@ const Users = () => {
       );
     }
     return result;
-  }, [users, filters, isAdmin, isManager]);
+  }, [visibleUsers, filters, isAdmin, isManager]);
 
   // Compute clusterOperators map for sub_distributor hierarchical view
   const clusterOperatorsMap = useMemo(() => {
@@ -426,11 +432,11 @@ const Users = () => {
       ]
     : isManager
     ? [
-        { label: 'Total Users',       value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
-        { label: 'Staff',             value: users.filter(u => u.role === 'staff').length,                            icon: UsersIcon,  color: 'blue'   },
-        { label: 'Sub Distributors',  value: users.filter(u => u.role === 'sub_distributor').length,                  icon: Building,   color: 'indigo' },
-        { label: 'Clusters',          value: users.filter(u => u.role === 'cluster').length,                          icon: Network,    color: 'teal'   },
-        { label: 'Operators',         value: users.filter(u => u.role === 'operator').length,                         icon: UsersIcon,  color: 'green'  },
+        { label: 'Total Users',       value: visibleUsers.length,                                                     icon: UsersIcon,  color: 'blue'   },
+        { label: 'Staff',             value: visibleUsers.filter(u => u.role === 'staff').length,                     icon: UsersIcon,  color: 'blue'   },
+        { label: 'Sub Distributors',  value: visibleUsers.filter(u => u.role === 'sub_distributor').length,           icon: Building,   color: 'indigo' },
+        { label: 'Clusters',          value: visibleUsers.filter(u => u.role === 'cluster').length,                   icon: Network,    color: 'teal'   },
+        { label: 'Operators',         value: visibleUsers.filter(u => u.role === 'operator').length,                  icon: UsersIcon,  color: 'green'  },
       ]
     : [
         { label: 'Total Users',       value: users.length,                                                            icon: UsersIcon,  color: 'blue'   },
@@ -629,7 +635,7 @@ const Users = () => {
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[180px]"
                     >
                       <option value="">All Sub-Distributors</option>
-                      {users.filter(u => u.role === 'sub_distributor').map(sd => (
+                      {visibleUsers.filter(u => u.role === 'sub_distributor').map(sd => (
                         <option key={sd.id} value={String(sd.id)}>{sd.name}</option>
                       ))}
                     </select>
@@ -646,7 +652,7 @@ const Users = () => {
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[170px]"
                     >
                       <option value="">All Clusters</option>
-                      {users
+                      {visibleUsers
                         .filter(u => u.role === 'cluster' && (!filters.subDistId || String(u.parent_id) === filters.subDistId))
                         .map(c => (
                           <option key={c.id} value={String(c.id)}>{c.name}</option>
@@ -668,7 +674,7 @@ const Users = () => {
                     )}
                     {filters.subDistId && (
                       <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 flex items-center gap-1.5">
-                        {users.find(u => String(u.id) === filters.subDistId)?.name || 'Sub-Dist'}
+                        {visibleUsers.find(u => String(u.id) === filters.subDistId)?.name || 'Sub-Dist'}
                         <button onClick={() => setFilters(p => ({ ...p, subDistId: '', clusterId: '' }))}>
                           <X className="w-3 h-3" />
                         </button>
@@ -676,7 +682,7 @@ const Users = () => {
                     )}
                     {filters.clusterId && (
                       <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 flex items-center gap-1.5">
-                        {users.find(u => String(u.id) === filters.clusterId)?.name || 'Cluster'}
+                        {visibleUsers.find(u => String(u.id) === filters.clusterId)?.name || 'Cluster'}
                         <button onClick={() => setFilters(p => ({ ...p, clusterId: '' }))}>
                           <X className="w-3 h-3" />
                         </button>

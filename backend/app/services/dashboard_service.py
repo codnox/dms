@@ -5,6 +5,9 @@ from app.database import get_db, rows_to_list
 from app.services import device_service, distribution_service, defect_service, return_service, user_service, approval_service, operator_service
 
 
+ACTIVE_DEVICE_STATUSES = {"active", "available", "distributed", "in_use"}
+
+
 def _month_start(dt: datetime) -> datetime:
     return datetime(dt.year, dt.month, 1)
 
@@ -13,6 +16,45 @@ def _shift_months(dt: datetime, months: int) -> datetime:
     year = dt.year + (dt.month - 1 + months) // 12
     month = (dt.month - 1 + months) % 12 + 1
     return datetime(year, month, 1)
+
+
+def _active_inactive_from_status_counts(status_counts: Dict[str, int]) -> Dict[str, int]:
+    active = sum(int(total) for status, total in status_counts.items() if status in ACTIVE_DEVICE_STATUSES)
+    total = sum(int(total) for total in status_counts.values())
+    return {
+        "active": int(active),
+        "inactive": int(max(0, total - active)),
+    }
+
+
+async def _get_user_status_split_by_role(db, role: str, parent_id: Optional[str] = None) -> Dict[str, int]:
+    query = """
+        SELECT
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_total,
+            SUM(CASE WHEN status != 'active' THEN 1 ELSE 0 END) AS inactive_total
+        FROM users
+        WHERE role = ?
+    """
+    params = [role]
+    if parent_id is not None:
+        query += " AND parent_id = ?"
+        params.append(int(parent_id))
+
+    cursor = await db.execute(query, tuple(params))
+    row = await cursor.fetchone()
+    return {
+        "active": int((row[0] if row and row[0] is not None else 0)),
+        "inactive": int((row[1] if row and row[1] is not None else 0)),
+    }
+
+
+async def _get_device_status_counts_for_holder(db, holder_id: str) -> Dict[str, int]:
+    cursor = await db.execute(
+        "SELECT status, COUNT(*) AS total FROM devices WHERE current_holder_id = ? GROUP BY status",
+        (str(holder_id),)
+    )
+    rows = await cursor.fetchall()
+    return {str(row[0]): int(row[1]) for row in rows}
 
 
 async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -273,13 +315,77 @@ async def get_system_alerts(user: Dict[str, Any]) -> list:
 async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]:
     """Get advanced analytics payload for management dashboards."""
     role = user.get("role")
+    user_id = str(user.get("_id", user.get("id", "")))
 
-    # Keep existing role boundary: advanced analytics is a management surface.
-    if role not in ["admin", "manager", "staff"]:
+    if role not in ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"]:
+        return {"kpis": {}, "charts": {}, "alerts": []}
+
+    # Role-scoped advanced payload for non-management dashboards.
+    if role in ["sub_distributor", "cluster", "operator"]:
+        async with get_db() as db:
+            my_device_status = await _get_device_status_counts_for_holder(db, user_id)
+            my_device_active_split = _active_inactive_from_status_counts(my_device_status)
+
+            charts = {
+                "my_device_status": my_device_status,
+                "my_device_active_split": my_device_active_split,
+            }
+            kpis = {
+                "my_total_devices": int(sum(my_device_status.values())),
+                "my_active_devices": int(my_device_active_split.get("active", 0)),
+                "my_inactive_devices": int(my_device_active_split.get("inactive", 0)),
+            }
+
+            if role == "sub_distributor":
+                cluster_status_split = await _get_user_status_split_by_role(db, "cluster", user_id)
+                cursor = await db.execute(
+                    "SELECT id FROM users WHERE role = 'cluster' AND parent_id = ?",
+                    (int(user_id),)
+                )
+                cluster_rows = await cursor.fetchall()
+                cluster_ids = [int(row[0]) for row in cluster_rows]
+
+                if cluster_ids:
+                    placeholders = ",".join("?" * len(cluster_ids))
+                    cursor = await db.execute(
+                        f"""
+                        SELECT
+                            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_total,
+                            SUM(CASE WHEN status != 'active' THEN 1 ELSE 0 END) AS inactive_total
+                        FROM users
+                        WHERE role = 'operator' AND parent_id IN ({placeholders})
+                        """,
+                        tuple(cluster_ids)
+                    )
+                    op_row = await cursor.fetchone()
+                    operator_status_split = {
+                        "active": int((op_row[0] if op_row and op_row[0] is not None else 0)),
+                        "inactive": int((op_row[1] if op_row and op_row[1] is not None else 0)),
+                    }
+                else:
+                    operator_status_split = {"active": 0, "inactive": 0}
+
+                charts["cluster_account_active_split"] = cluster_status_split
+                charts["operator_account_active_split"] = operator_status_split
+                kpis["my_total_clusters"] = int(cluster_status_split["active"] + cluster_status_split["inactive"])
+                kpis["my_total_operators"] = int(operator_status_split["active"] + operator_status_split["inactive"])
+
+            elif role == "cluster":
+                operator_status_split = await _get_user_status_split_by_role(db, "operator", user_id)
+                charts["operator_account_active_split"] = operator_status_split
+                kpis["my_total_operators"] = int(operator_status_split["active"] + operator_status_split["inactive"])
+
+            elif role == "operator":
+                is_active = int(user.get("status", "active") == "active")
+                charts["operator_account_active_split"] = {
+                    "active": is_active,
+                    "inactive": 0 if is_active else 1,
+                }
+
         return {
-            "kpis": {},
-            "charts": {},
-            "alerts": []
+            "kpis": kpis,
+            "charts": charts,
+            "alerts": [],
         }
 
     now = datetime.utcnow()
@@ -335,12 +441,53 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
         role_rows = await cursor.fetchall()
         role_counts = {str(r[0]): int(r[1]) for r in role_rows}
 
+        cursor = await db.execute(
+            """
+            SELECT
+                role,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_total,
+                SUM(CASE WHEN status != 'active' THEN 1 ELSE 0 END) AS inactive_total
+            FROM users
+            WHERE role IN ('sub_distributor', 'cluster', 'operator')
+            GROUP BY role
+            """
+        )
+        role_status_rows = await cursor.fetchall()
+        role_status_splits = {
+            str(row[0]): {
+                "active": int(row[1] or 0),
+                "inactive": int(row[2] or 0),
+            }
+            for row in role_status_rows
+        }
+
         # Device status distribution
         cursor = await db.execute(
             "SELECT status, COUNT(*) AS total FROM devices GROUP BY status"
         )
         device_rows = await cursor.fetchall()
         device_status_counts = {str(r[0]): int(r[1]) for r in device_rows}
+
+        cursor = await db.execute(
+            """
+            SELECT u.role, d.status, COUNT(*) AS total
+            FROM devices d
+            INNER JOIN users u ON u.id = CAST(d.current_holder_id AS INTEGER)
+            WHERE u.role IN ('sub_distributor', 'cluster', 'operator')
+            GROUP BY u.role, d.status
+            """
+        )
+        holder_rows = await cursor.fetchall()
+        holder_role_status_counts = {
+            "sub_distributor": {},
+            "cluster": {},
+            "operator": {},
+        }
+        for row in holder_rows:
+            holder_role = str(row[0])
+            status_name = str(row[1])
+            total = int(row[2])
+            holder_role_status_counts.setdefault(holder_role, {})[status_name] = total
 
         # Monthly defect trend (last 12 months)
         defect_trend = []
@@ -466,6 +613,23 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             "approved": int(return_stats.get("by_status", {}).get("approved", 0)),
             "received": int(return_stats.get("by_status", {}).get("received", 0)),
             "rejected": int(return_stats.get("by_status", {}).get("rejected", 0)),
+        },
+        "sub_distributor_account_active_split": role_status_splits.get("sub_distributor", {"active": 0, "inactive": 0}),
+        "cluster_account_active_split": role_status_splits.get("cluster", {"active": 0, "inactive": 0}),
+        "operator_account_active_split": role_status_splits.get("operator", {"active": 0, "inactive": 0}),
+        "sub_distributor_device_active_split": _active_inactive_from_status_counts(
+            holder_role_status_counts.get("sub_distributor", {})
+        ),
+        "cluster_device_active_split": _active_inactive_from_status_counts(
+            holder_role_status_counts.get("cluster", {})
+        ),
+        "operator_device_active_split": _active_inactive_from_status_counts(
+            holder_role_status_counts.get("operator", {})
+        ),
+        "pending_action_queue": {
+            "approvals": int(approval_stats.get("total_pending", 0)),
+            "receipts": int(dist_stats.get("pending_receipt", 0)),
+            "returns": int(return_stats.get("by_status", {}).get("pending", 0)),
         },
     }
 

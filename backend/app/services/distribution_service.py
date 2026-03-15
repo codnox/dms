@@ -201,9 +201,9 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         user_id=str(to_user["id"]),
         title="Action Required: Confirm Device Receipt",
         message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {from_user['name']}. "
-                f"Please confirm receipt in your Distributions page (Distribution ID: {dist_id}).",
+                f"Please confirm receipt on your Delivery Confirmations page (Distribution ID: {dist_id}).",
         notification_type="warning", category="distribution",
-        link=f"/distributions?distributionId={new_id}"
+        link="/delivery-confirmations"
     )
     
     return await get_distribution_by_id(new_id)
