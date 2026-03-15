@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -138,6 +138,17 @@ const UserHierarchy = () => {
   const [loadingParents, setLoadingParents] = useState(false);
 
   const creatableRoles = ALLOWED_ROLES_BY_CREATOR[currentUser?.role] || [];
+  const isManager = currentUser?.role === 'manager';
+
+  const visibleUsers = useMemo(() => {
+    if (!isManager) return allUsers;
+    return allUsers.filter((u) => u.role !== 'admin');
+  }, [allUsers, isManager]);
+
+  const visibleRoleEntries = useMemo(() => {
+    if (!isManager) return Object.entries(ROLE_LABELS);
+    return Object.entries(ROLE_LABELS).filter(([role]) => role !== 'admin');
+  }, [isManager]);
 
   // ─── fetch all users visible to the current user ───────────────────────────
   const fetchAll = useCallback(async () => {
@@ -170,16 +181,16 @@ const UserHierarchy = () => {
   const buildTree = useCallback(() => {
     const query = search.toLowerCase();
     const list = query
-      ? allUsers.filter(u =>
+      ? visibleUsers.filter(u =>
           u.name?.toLowerCase().includes(query) ||
           u.email?.toLowerCase().includes(query) ||
           (ROLE_LABELS[u.role] || u.role).toLowerCase().includes(query),
         )
-      : allUsers;
+      : visibleUsers;
 
     // index by id for quick lookup
     const byId = {};
-    for (const u of allUsers) byId[String(u.id)] = u;
+    for (const u of visibleUsers) byId[String(u.id)] = u;
 
     // collect matched ids + all their ancestors (so matched nodes always have context)
     const visibleIds = new Set(list.map(u => String(u.id)));
@@ -193,7 +204,7 @@ const UserHierarchy = () => {
       }
     }
 
-    const visible = query ? allUsers.filter(u => visibleIds.has(String(u.id))) : allUsers;
+    const visible = query ? visibleUsers.filter(u => visibleIds.has(String(u.id))) : visibleUsers;
 
     // group children by parent_id
     const childrenOf = {};
@@ -231,7 +242,7 @@ const UserHierarchy = () => {
     );
 
     return roots.map(r => renderUser(r, 0));
-  }, [allUsers, search, currentUser]);
+  }, [visibleUsers, search, currentUser]);
 
   // ─── parent options when creating cluster / operator ──────────────────────
   const loadParentOptions = useCallback(async (role) => {
@@ -250,7 +261,7 @@ const UserHierarchy = () => {
           setParentOptions([{ id: String(currentUser.id), name: currentUser.name, groupLabel: 'You (Cluster)' }]);
         } else if (currentUser?.role === 'sub_distributor') {
           // operators must go under one of this sub_dist's clusters
-          setParentOptions(allUsers.filter(u => u.role === 'cluster').map(u => ({ ...u, groupLabel: 'Cluster' })));
+          setParentOptions(visibleUsers.filter(u => u.role === 'cluster').map(u => ({ ...u, groupLabel: 'Cluster' })));
         } else {
           // admin / manager: show all clusters
           const r = await usersAPI.getUsers({ role: 'cluster', page_size: 500 });
@@ -262,7 +273,7 @@ const UserHierarchy = () => {
     } finally {
       setLoadingParents(false);
     }
-  }, [currentUser, allUsers]);
+  }, [currentUser, visibleUsers]);
 
   const handleRoleChange = (role) => {
     setFormData(prev => ({ ...prev, role, parentId: '' }));
@@ -332,7 +343,7 @@ const UserHierarchy = () => {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-2">
-        {Object.entries(ROLE_LABELS).map(([role, label]) => {
+        {visibleRoleEntries.map(([role, label]) => {
           const s = ROLE_STYLES[role];
           return (
             <span key={role} className={`px-3 py-1 rounded-full text-xs font-medium ${s.badge}`}>
@@ -441,7 +452,7 @@ const UserHierarchy = () => {
               {selectedUser.parent_id && (
                 <Row
                   label="Parent"
-                  value={allUsers.find(u => String(u.id) === String(selectedUser.parent_id))?.name || `ID ${selectedUser.parent_id}`}
+                    value={visibleUsers.find(u => String(u.id) === String(selectedUser.parent_id))?.name || `ID ${selectedUser.parent_id}`}
                 />
               )}
             </div>

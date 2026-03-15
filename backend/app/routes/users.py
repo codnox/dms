@@ -52,6 +52,22 @@ async def get_users(
     elif creator_role in ["admin", "manager"] and parent_id:
         parent_id_filter = parent_id
 
+    # Managers should never see admin accounts in list responses.
+    if creator_role == "manager" and role == "admin":
+        return {
+            "success": True,
+            "message": "Users retrieved successfully",
+            "data": [],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 0,
+                "has_next": False,
+                "has_prev": page > 1,
+            }
+        }
+
     try:
         result = await user_service.get_users(
             page=page,
@@ -63,10 +79,14 @@ async def get_users(
             parent_ids_in=parent_ids_in_filter,
         )
 
+        data = result["data"]
+        if creator_role == "manager":
+            data = [u for u in data if u.get("role") != "admin"]
+
         return {
             "success": True,
             "message": "Users retrieved successfully",
-            "data": result["data"],
+            "data": data,
             "pagination": result["pagination"]
         }
     except HTTPException:
@@ -98,6 +118,12 @@ async def get_user(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
+            )
+
+        if current_user.get("role") == "manager" and user.get("role") == "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Managers cannot view admin details"
             )
 
         return {
@@ -380,6 +406,12 @@ async def get_users_by_role(
 ):
     """Get all users by role"""
     try:
+        if current_user.get("role") == "manager" and role == "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Managers cannot view admin details"
+            )
+
         users = await user_service.get_users_by_role(role)
 
         return {

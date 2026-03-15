@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -20,9 +27,20 @@ import {
   Loader2
 } from 'lucide-react';
 
+ChartJS.register(ArcElement, Tooltip, Legend);
+
+const doughnutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'bottom' },
+  },
+};
+
 const SubDistributorDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({});
+  const [advanced, setAdvanced] = useState({ kpis: {}, charts: {}, alerts: [] });
   const [myDevices, setMyDevices] = useState([]);
   const [distributions, setDistributions] = useState([]);
   const [myOperators, setMyOperators] = useState([]);
@@ -34,8 +52,9 @@ const SubDistributorDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [statsRes, devRes, distRes, usersRes, defRes, retRes] = await Promise.all([
+        const [statsRes, advancedRes, devRes, distRes, usersRes, defRes, retRes] = await Promise.all([
           dashboardAPI.getStats().catch(() => ({ data: {} })),
+          dashboardAPI.getAdvancedMetrics().catch(() => ({ data: { kpis: {}, charts: {}, alerts: [] } })),
           devicesAPI.getDevices().catch(() => ({ data: [] })),
           distributionsAPI.getDistributions({ status: 'pending_receipt' }).catch(() => ({ data: [] })),
           usersAPI.getUsers({ role: 'operator' }).catch(() => ({ data: [] })),
@@ -43,6 +62,7 @@ const SubDistributorDashboard = () => {
           returnsAPI.getReturns().catch(() => ({ data: [] }))
         ]);
         setStats(statsRes.data || {});
+        setAdvanced(advancedRes.data || { kpis: {}, charts: {}, alerts: [] });
         setMyDevices(devRes.data || []);
         setDistributions(distRes.data || []);
         setMyOperators(usersRes.data || []);
@@ -56,6 +76,31 @@ const SubDistributorDashboard = () => {
     };
     fetchData();
   }, []);
+
+  const charts = advanced.charts || {};
+  const myDeviceSplitData = {
+    labels: ['Active', 'Inactive'],
+    datasets: [{
+      data: [
+        charts.my_device_active_split?.active || myDevices.filter((d) => ['active', 'available', 'distributed', 'in_use'].includes(d.status)).length,
+        charts.my_device_active_split?.inactive || myDevices.filter((d) => !['active', 'available', 'distributed', 'in_use'].includes(d.status)).length,
+      ],
+      backgroundColor: ['#10b981', '#ef4444'],
+      borderWidth: 1,
+    }],
+  };
+
+  const managedUserSplitData = {
+    labels: ['Active', 'Inactive'],
+    datasets: [{
+      data: [
+        charts.cluster_account_active_split?.active || charts.operator_account_active_split?.active || 0,
+        charts.cluster_account_active_split?.inactive || charts.operator_account_active_split?.inactive || 0,
+      ],
+      backgroundColor: ['#3b82f6', '#f59e0b'],
+      borderWidth: 1,
+    }],
+  };
 
   const pendingReceipts = distributions.filter(
     d => d.status === 'pending_receipt' && String(d.to_user_id) === String(user?.id)
@@ -80,6 +125,19 @@ const SubDistributorDashboard = () => {
         <StatCard title="Defect Reports" value={stats.defect_reports || defectReports.length} icon={AlertTriangle} color="red" />
         <StatCard title="Returns" value={stats.return_requests || returnRequests.length} icon={RotateCcw} color="indigo" />
         <StatCard title="Assigned" value={stats.assigned_to_operators || 0} icon={Package} color="green" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="My Device Active vs Inactive" icon={Box} padding={false}>
+          <div className="h-72 p-4"><Doughnut data={myDeviceSplitData} options={doughnutOptions} /></div>
+        </Card>
+        <Card
+          title={user?.role === 'cluster' ? 'Operator Account Active vs Inactive' : 'Cluster/Operator Account Active vs Inactive'}
+          icon={Users}
+          padding={false}
+        >
+          <div className="h-72 p-4"><Doughnut data={managedUserSplitData} options={doughnutOptions} /></div>
+        </Card>
       </div>
 
       {/* Pending Receipt Confirmations Banner */}

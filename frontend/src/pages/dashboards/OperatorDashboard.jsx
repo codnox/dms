@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -16,8 +23,19 @@ import {
   Loader2
 } from 'lucide-react';
 
+ChartJS.register(ArcElement, Tooltip, Legend);
+
+const doughnutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'bottom' },
+  },
+};
+
 const OperatorDashboard = () => {
   const [stats, setStats] = useState({});
+  const [advanced, setAdvanced] = useState({ kpis: {}, charts: {}, alerts: [] });
   const [myDevices, setMyDevices] = useState([]);
   const [myDefects, setMyDefects] = useState([]);
   const [myReturns, setMyReturns] = useState([]);
@@ -27,13 +45,15 @@ const OperatorDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [statsRes, devRes, defRes, retRes] = await Promise.all([
+        const [statsRes, advancedRes, devRes, defRes, retRes] = await Promise.all([
           dashboardAPI.getStats().catch(() => ({ data: {} })),
+          dashboardAPI.getAdvancedMetrics().catch(() => ({ data: { kpis: {}, charts: {}, alerts: [] } })),
           devicesAPI.getDevices().catch(() => ({ data: [] })),
           defectsAPI.getDefects().catch(() => ({ data: [] })),
           returnsAPI.getReturns().catch(() => ({ data: [] }))
         ]);
         setStats(statsRes.data || {});
+        setAdvanced(advancedRes.data || { kpis: {}, charts: {}, alerts: [] });
         setMyDevices(devRes.data || []);
         setMyDefects(defRes.data || []);
         setMyReturns(retRes.data || []);
@@ -45,6 +65,19 @@ const OperatorDashboard = () => {
     };
     fetchData();
   }, []);
+
+  const charts = advanced.charts || {};
+  const myDeviceSplitData = {
+    labels: ['Active', 'Inactive'],
+    datasets: [{
+      data: [
+        charts.my_device_active_split?.active || myDevices.filter((d) => ['active', 'available', 'distributed', 'in_use'].includes(d.status)).length,
+        charts.my_device_active_split?.inactive || myDevices.filter((d) => !['active', 'available', 'distributed', 'in_use'].includes(d.status)).length,
+      ],
+      backgroundColor: ['#10b981', '#ef4444'],
+      borderWidth: 1,
+    }],
+  };
 
   return (
     <div className="space-y-6">
@@ -70,6 +103,10 @@ const OperatorDashboard = () => {
         <StatCard title="My Defect Reports" value={stats.defect_reports || myDefects.length} icon={AlertTriangle} color="red" />
         <StatCard title="Pending Returns" value={stats.pending_returns || myReturns.filter(r => r.status === 'pending').length} icon={RotateCcw} color="yellow" />
       </div>
+
+      <Card title="My Device Active vs Inactive" icon={Cpu} padding={false}>
+        <div className="h-72 p-4"><Doughnut data={myDeviceSplitData} options={doughnutOptions} /></div>
+      </Card>
 
       {/* My Devices */}
       <Card

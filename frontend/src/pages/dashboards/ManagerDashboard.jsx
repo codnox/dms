@@ -185,6 +185,69 @@ const ManagerDashboard = () => {
     }],
   }), [charts.returns_by_status]);
 
+  const workforceAccountSplitData = useMemo(() => ({
+    labels: ['Sub Distributors', 'Clusters', 'Operators'],
+    datasets: [
+      {
+        label: 'Active Accounts',
+        data: [
+          charts.sub_distributor_account_active_split?.active || 0,
+          charts.cluster_account_active_split?.active || 0,
+          charts.operator_account_active_split?.active || 0,
+        ],
+        backgroundColor: '#10b981',
+      },
+      {
+        label: 'Inactive Accounts',
+        data: [
+          charts.sub_distributor_account_active_split?.inactive || 0,
+          charts.cluster_account_active_split?.inactive || 0,
+          charts.operator_account_active_split?.inactive || 0,
+        ],
+        backgroundColor: '#ef4444',
+      },
+    ],
+  }), [charts]);
+
+  const workforceDeviceSplitData = useMemo(() => ({
+    labels: ['Sub Distributor Devices', 'Cluster Devices', 'Operator Devices'],
+    datasets: [
+      {
+        label: 'Active Devices',
+        data: [
+          charts.sub_distributor_device_active_split?.active || 0,
+          charts.cluster_device_active_split?.active || 0,
+          charts.operator_device_active_split?.active || 0,
+        ],
+        backgroundColor: '#3b82f6',
+      },
+      {
+        label: 'Inactive Devices',
+        data: [
+          charts.sub_distributor_device_active_split?.inactive || 0,
+          charts.cluster_device_active_split?.inactive || 0,
+          charts.operator_device_active_split?.inactive || 0,
+        ],
+        backgroundColor: '#f59e0b',
+      },
+    ],
+  }), [charts]);
+
+  const pendingActionQueueData = useMemo(() => ({
+    labels: ['Approvals', 'Receipts', 'Returns'],
+    datasets: [{
+      label: 'Pending',
+      data: [
+        charts.pending_action_queue?.approvals || kpis.pending_approvals || 0,
+        charts.pending_action_queue?.receipts || kpis.pending_receipts || 0,
+        charts.pending_action_queue?.returns || 0,
+      ],
+      backgroundColor: ['#6366f1', '#f59e0b', '#ef4444'],
+      borderColor: '#111827',
+      borderWidth: 1,
+    }],
+  }), [charts.pending_action_queue, kpis.pending_approvals, kpis.pending_receipts]);
+
   return (
     <div className="space-y-6">
       <div className="industrial-hero relative overflow-hidden rounded-2xl p-5 sm:p-6 animate-fadeIn">
@@ -214,6 +277,15 @@ const ManagerDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slideUp">
+        <Card title="Sub Distribution, Cluster and Operator Account Health" icon={HardHat} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={workforceAccountSplitData} options={chartOptions} /></div>
+        </Card>
+        <Card title="Sub Distribution, Cluster and Operator Device Health" icon={Boxes} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={workforceDeviceSplitData} options={chartOptions} /></div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slideUp">
         <Card title="Defect Trend (12 Months)" icon={Activity} className="industrial-chart-card" padding={false}>
           <div className="h-80 p-4"><Line data={defectTrendData} options={chartOptions} /></div>
         </Card>
@@ -227,6 +299,13 @@ const ManagerDashboard = () => {
           <div className="h-80 p-4"><Bar data={returnStatusData} options={chartOptions} /></div>
         </Card>
 
+        <Card title="Pending Action Queue" icon={CheckSquare} className="industrial-chart-card" padding={false}>
+          <div className="h-80 p-4"><Bar data={pendingActionQueueData} options={chartOptions} /></div>
+        </Card>
+
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6 animate-slideUp">
         <Card title="Operational Alerts" icon={Clock}>
           <div className="space-y-3">
             {alerts.length === 0 ? (
