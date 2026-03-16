@@ -45,6 +45,35 @@ async def get_replacement_defects(
         )
 
 
+@router.get("/replacements/pending")
+async def get_pending_replacement_defects(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=300),
+    current_user: dict = Depends(require_any_role)
+):
+    """Get defective devices waiting for replacement assignment."""
+    try:
+        result = await defect_service.get_pending_replacement_defects(
+            current_user=current_user,
+            page=page,
+            page_size=page_size
+        )
+
+        return {
+            "success": True,
+            "message": "Pending replacement defects retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending replacement defects: {str(e)}"
+        )
+
+
 @router.get("")
 async def get_defects(
     page: int = Query(1, ge=1),

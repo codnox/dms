@@ -16,7 +16,8 @@ import {
   Box,
   AlertTriangle,
   Clock,
-  Eye
+  Eye,
+  Download
 } from 'lucide-react';
 
 const DeliveryConfirmations = () => {
@@ -31,6 +32,35 @@ const DeliveryConfirmations = () => {
   const [receiptSubmitting, setReceiptSubmitting] = useState(false);
   const [distributionDevices, setDistributionDevices] = useState([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
+  const [downloadingManifestId, setDownloadingManifestId] = useState(null);
+
+  const handleDownloadManifest = async (dist) => {
+    const distributionKey = dist?._id || dist?.id;
+    if (!distributionKey) return;
+
+    setDownloadingManifestId(String(distributionKey));
+    try {
+      const { blob, contentDisposition } = await distributionsAPI.downloadManifest(distributionKey);
+      const fallbackName = `${dist.distribution_id || 'distribution'}-devices.xlsx`;
+      const match = /filename="?([^\";]+)"?/i.exec(contentDisposition || '');
+      const fileName = (match && match[1]) || fallbackName;
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      showToast('Device manifest downloaded successfully', 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to download manifest', 'error');
+    } finally {
+      setDownloadingManifestId(null);
+    }
+  };
 
   const fetchDistributions = async () => {
     try {
@@ -243,6 +273,16 @@ const DeliveryConfirmations = () => {
                 {/* Right: Action Buttons */}
                 <div className="flex sm:flex-col gap-2 p-5 sm:border-l border-t sm:border-t-0 border-gray-100 bg-gray-50 sm:w-48 justify-center items-center">
                   <Button
+                    icon={Download}
+                    onClick={() => handleDownloadManifest(dist)}
+                    variant="outline"
+                    className="w-full"
+                    size="sm"
+                    disabled={downloadingManifestId === String(dist._id || dist.id)}
+                  >
+                    {downloadingManifestId === String(dist._id || dist.id) ? 'Downloading...' : 'Download Excel'}
+                  </Button>
+                  <Button
                     icon={CheckCircle}
                     onClick={() => openConfirmModal(dist)}
                     className="bg-green-600 hover:bg-green-700 text-white w-full"
@@ -344,6 +384,22 @@ const DeliveryConfirmations = () => {
                 <p className="text-gray-800 mt-1">{selectedDist.notes}</p>
               </div>
             )}
+
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider">Device Manifest</label>
+              <div className="mt-2">
+                <Button
+                  icon={Download}
+                  variant="outline"
+                  onClick={() => handleDownloadManifest(selectedDist)}
+                  disabled={downloadingManifestId === String(selectedDist._id || selectedDist.id)}
+                >
+                  {downloadingManifestId === String(selectedDist._id || selectedDist.id)
+                    ? 'Downloading Excel...'
+                    : 'Download Device List (Excel)'}
+                </Button>
+              </div>
+            </div>
 
             {/* Devices */}
             <div>

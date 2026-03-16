@@ -595,9 +595,10 @@ async def replace_defect_device(
             user_id=recipient_id,
             title="Replacement Device Ready - Confirmation Required",
             message=(
-                f"Hello {holder_user_name}, replacement device {new_device.get('device_id')} "
-                f"(Serial: {new_device.get('serial_number')}) is ready for defect {defect['report_id']}. "
-                f"Please open Replacement Confirmation and confirm receipt to activate it in your account."
+                f"Operator update for {holder_user_name}: replacement device {new_device.get('device_id')} "
+                f"(Serial: {new_device.get('serial_number')}) is prepared for defect {defect['report_id']}. "
+                "Confirm only after you physically receive the replacement device. "
+                "Do not confirm before receiving it."
             ),
             notification_type="warning",
             category="defect",
@@ -818,7 +819,7 @@ async def resend_replacement_confirmation(
             title="Replacement Confirmation Reminder",
             message=(
                 f"{sender_name} resent the confirmation reminder for defect {defect.get('report_id')}. "
-                f"Please confirm receipt of replacement device {replacement_device.get('device_id')}"
+                f"Please confirm only after receiving replacement device {replacement_device.get('device_id')} physically."
             ),
             notification_type="warning",
             category="defect",
@@ -925,6 +926,50 @@ async def get_replacement_defects(
         rows = await cursor.fetchall()
         data = rows_to_list(rows)
         data = await _enrich_defect_rows(db, data)
+
+        return {
+            "data": data,
+            "pagination": get_pagination(page, page_size, total)
+        }
+
+
+async def get_pending_replacement_defects(
+    current_user: Dict[str, Any],
+    page: int = 1,
+    page_size: int = 100
+) -> Dict[str, Any]:
+    """Return defective devices awaiting replacement assignment."""
+    async with get_db() as db:
+        conditions = [
+            "status = 'approved'",
+            "replacement_device_id IS NULL",
+        ]
+        params: List[Any] = []
+
+        scoped_user_ids = await _get_report_scope_user_ids(db, current_user)
+        if scoped_user_ids is not None:
+            placeholders = ",".join(["?"] * len(scoped_user_ids))
+            conditions.append(f"CAST(reported_by AS TEXT) IN ({placeholders})")
+            params.extend(list(scoped_user_ids))
+
+        where = " AND ".join(conditions)
+
+        cursor = await db.execute(f"SELECT COUNT(*) FROM defects WHERE {where}", params)
+        total = (await cursor.fetchone())[0]
+
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM defects WHERE {where} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
+        rows = await cursor.fetchall()
+        data = rows_to_list(rows)
+        data = await _enrich_defect_rows(db, data)
+
+        # Annotate whether defect is ready for immediate replacement assignment.
+        for defect in data:
+            auto_return_status = defect.get("auto_return_status")
+            defect["replacement_ready"] = auto_return_status in [None, "received"]
 
         return {
             "data": data,

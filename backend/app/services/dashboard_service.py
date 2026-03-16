@@ -318,7 +318,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
     user_id = str(user.get("_id", user.get("id", "")))
 
     if role not in ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"]:
-        return {"kpis": {}, "charts": {}, "alerts": []}
+        return {"kpis": {}, "charts": {}, "alerts": [], "reliability": {"summary": {}, "trend": []}}
 
     # Role-scoped advanced payload for non-management dashboards.
     if role in ["sub_distributor", "cluster", "operator"]:
@@ -386,6 +386,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             "kpis": kpis,
             "charts": charts,
             "alerts": [],
+            "reliability": {"summary": {}, "trend": []},
         }
 
     now = datetime.utcnow()
@@ -543,6 +544,32 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
                 "delivered": delivered
             })
 
+        # Reliability analytics used by Defect Incidence cards
+        sixty_days_ago = (now - timedelta(days=60)).isoformat()
+
+        cursor = await db.execute("SELECT COUNT(*) FROM defects WHERE created_at >= ?", (sixty_days_ago,))
+        defects_last_60_days = int((await cursor.fetchone())[0])
+
+        cursor = await db.execute(
+            """SELECT COUNT(*) FROM defects
+               WHERE resolved_at IS NOT NULL
+               AND julianday(resolved_at) - julianday(created_at) <= 60"""
+        )
+        repaired_within_sla_devices = int((await cursor.fetchone())[0])
+
+        cursor = await db.execute("SELECT COUNT(*) FROM defects WHERE resolved_at IS NOT NULL")
+        total_resolved_defects = int((await cursor.fetchone())[0])
+
+        total_devices_for_reliability = int(device_stats.get("total", 0))
+        defect_incidence_percentage = (
+            round((defects_last_60_days / total_devices_for_reliability) * 100, 2)
+            if total_devices_for_reliability > 0 else 0.0
+        )
+        repaired_within_sla_percentage = (
+            round((repaired_within_sla_devices / total_resolved_defects) * 100, 2)
+            if total_resolved_defects > 0 else 0.0
+        )
+
     active_devices = (
         device_stats.get("available", 0) +
         device_stats.get("distributed", 0) +
@@ -642,4 +669,14 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
         "kpis": management_kpis,
         "charts": charts,
         "alerts": alerts,
+        "reliability": {
+            "summary": {
+                "defect_incidence_percentage": defect_incidence_percentage,
+                "repaired_within_sla_devices": repaired_within_sla_devices,
+                "repaired_within_sla_percentage": repaired_within_sla_percentage,
+                "defects_last_60_days": defects_last_60_days,
+                "total_resolved_defects": total_resolved_defects,
+            },
+            "trend": defect_trend,
+        },
     }

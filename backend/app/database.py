@@ -37,6 +37,7 @@ async def init_db():
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by TEXT",
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by_name TEXT",
             "ALTER TABLE returns ADD COLUMN mac_address TEXT",
+            "ALTER TABLE distributions ADD COLUMN manifest_file TEXT",
         ]:
             try:
                 await db.execute(stmt)
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS distributions (
     approval_date TEXT,
     delivery_date TEXT,
     notes TEXT,
+    manifest_file TEXT,
     approved_by TEXT,
     approved_by_name TEXT,
     created_by TEXT NOT NULL,

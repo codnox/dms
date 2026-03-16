@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.responses import FileResponse
 from typing import Optional
 from pydantic import BaseModel
 from app.models.distribution import DistributionCreate, DistributionStatusUpdate
@@ -89,6 +90,39 @@ async def get_pending_distributions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve pending distributions: {str(e)}"
+        )
+
+
+@router.get("/{distribution_id}/manifest")
+async def download_distribution_manifest(
+    distribution_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Download generated Excel manifest for a distribution."""
+    try:
+        manifest = await distribution_service.get_distribution_manifest_file(distribution_id, current_user)
+        if not manifest:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Distribution manifest not found"
+            )
+
+        return FileResponse(
+            path=manifest["path"],
+            filename=manifest["filename"],
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download manifest for distribution '{distribution_id}': {str(e)}"
         )
 
 

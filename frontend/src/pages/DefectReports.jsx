@@ -148,6 +148,20 @@ const DefectReports = () => {
         String(d?.defective_device?.current_holder_id) === String(user?.id))
   );
 
+  const urgentDefects = defectReports.filter(
+    (d) => d.status === 'reported' && ['critical', 'high'].includes(String(d.severity || '').toLowerCase())
+  );
+
+  const reviewQueue = defectReports.filter((d) => d.status === 'reported');
+
+  const pendingDefectiveReturnReceipts = defectReports.filter(
+    (d) => d.status === 'approved' && d.auto_return_id && d.auto_return_status !== 'received'
+  );
+
+  const pendingReplacementAssignment = defectReports.filter(
+    (d) => d.status === 'approved' && !d.replacement_device_id
+  );
+
   const openReplaceModal = async (row) => {
     setSelectedDefect(row);
     setReplacementMode('existing');
@@ -484,6 +498,81 @@ const DefectReports = () => {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {(canReview || canReplace) && (
+        <div className="space-y-3">
+          {(urgentDefects.length > 0 || reviewQueue.length > 0) && (
+            <div className="p-4 rounded-xl border border-red-300 bg-red-50">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <p className="font-semibold text-red-900">Defect Attention Center</p>
+              </div>
+              <p className="text-sm text-red-800">
+                {urgentDefects.length} urgent defects and {reviewQueue.length} total reports need review.
+              </p>
+              <div className="mt-3 space-y-2">
+                {urgentDefects.slice(0, 4).map((item) => (
+                  <div key={item._id || item.id} className="flex items-center justify-between p-2 rounded bg-white border border-red-200">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{item.report_id} • {item.device_name || item.device_type || 'Device'}</p>
+                      <p className="text-xs text-gray-500">{item.reported_by_name || 'Unknown'} • {item.defect_type || 'Defect'}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedDefect(item);
+                        setShowReviewModal(true);
+                      }}
+                      className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                    >
+                      Review Now
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pendingDefectiveReturnReceipts.length > 0 && (
+            <div className="p-4 rounded-xl border border-amber-300 bg-amber-50">
+              <div className="flex items-center gap-2 mb-2">
+                <Bell className="w-5 h-5 text-amber-600" />
+                <p className="font-semibold text-amber-900">Defective Device Return Pending</p>
+              </div>
+              <p className="text-sm text-amber-800">
+                {pendingDefectiveReturnReceipts.length} approved defects are waiting for defective-device return receipt at PDIC.
+              </p>
+              <div className="mt-3 space-y-2">
+                {pendingDefectiveReturnReceipts.slice(0, 4).map((item) => (
+                  <div key={item._id || item.id} className="p-2 rounded bg-white border border-amber-200">
+                    <p className="text-sm font-medium text-gray-800">{item.report_id} • Return {item.auto_return_id}</p>
+                    <p className="text-xs text-gray-500">Status: {item.auto_return_status || 'pending'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pendingReplacementAssignment.length > 0 && (
+            <div className="p-4 rounded-xl border border-purple-300 bg-purple-50">
+              <div className="flex items-center gap-2 mb-2">
+                <RefreshCw className="w-5 h-5 text-purple-600" />
+                <p className="font-semibold text-purple-900">Replacement Assignment Queue</p>
+              </div>
+              <p className="text-sm text-purple-800">
+                {pendingReplacementAssignment.length} defective devices are approved and waiting for replacement assignment.
+              </p>
+              <div className="mt-3">
+                <Link
+                  to="/replacements/pending"
+                  className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded bg-purple-700 text-white hover:bg-purple-800"
+                >
+                  Open Pending Replacement Page
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

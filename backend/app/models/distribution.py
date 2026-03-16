@@ -54,6 +54,7 @@ class Distribution(BaseModel):
     approval_date: Optional[datetime] = None
     delivery_date: Optional[datetime] = None
     notes: Optional[str] = None
+    manifest_file: Optional[str] = None
     approved_by: Optional[str] = None
     approved_by_name: Optional[str] = None
     created_by: str
@@ -81,6 +82,7 @@ class DistributionResponse(BaseModel):
     approval_date: Optional[datetime] = None
     delivery_date: Optional[datetime] = None
     notes: Optional[str] = None
+    manifest_file: Optional[str] = None
     approved_by: Optional[str] = None
     approved_by_name: Optional[str] = None
     created_at: datetime

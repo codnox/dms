@@ -29,6 +29,7 @@ import ChangeRequests from './pages/ChangeRequests';
 import DeliveryConfirmations from './pages/DeliveryConfirmations';
 import ReplacementConfirmation from './pages/ReplacementConfirmation';
 import Replacements from './pages/Replacements';
+import PendingReplacements from './pages/PendingReplacements';
 
 import BulkImportDevices from './pages/BulkImportDevices';
 
@@ -145,6 +146,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
               <Replacements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="replacements/pending"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+              <PendingReplacements />
             </ProtectedRoute>
           }
         />

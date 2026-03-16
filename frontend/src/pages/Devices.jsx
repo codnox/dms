@@ -593,6 +593,38 @@ const Devices = () => {
                 )}
               </div>
             )}
+
+            {/* Full payload details */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">All Device Fields</label>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                  {Object.entries(selectedDevice)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => {
+                      let formattedValue = 'N/A';
+                      if (value !== null && value !== undefined && value !== '') {
+                        if (typeof value === 'object') {
+                          try {
+                            formattedValue = JSON.stringify(value);
+                          } catch {
+                            formattedValue = String(value);
+                          }
+                        } else {
+                          formattedValue = String(value);
+                        }
+                      }
+
+                      return (
+                        <div key={key} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs">
+                          <p className="col-span-4 sm:col-span-3 font-semibold text-gray-600 break-all">{key}</p>
+                          <p className="col-span-8 sm:col-span-9 text-gray-800 break-all">{formattedValue}</p>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </Modal>

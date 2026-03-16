@@ -9,7 +9,7 @@ import Timeline from '../components/ui/Timeline';
 import { returnsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2, PackageCheck } from 'lucide-react';
+import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
 
 const Returns = () => {
   const { user } = useAuth();
@@ -42,6 +42,9 @@ const Returns = () => {
   const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
   const canApprove = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
   const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role);
+
+  const pendingReviewReturns = returnRequests.filter((r) => r.status === 'pending');
+  const pendingReceiptReturns = returnRequests.filter((r) => r.status === 'approved');
 
   const columns = [
     {
@@ -194,6 +197,34 @@ const Returns = () => {
 
   return (
     <div className="space-y-6">
+      {(canApprove || canConfirmReceipt) && (pendingReviewReturns.length > 0 || pendingReceiptReturns.length > 0) && (
+        <div className="space-y-3">
+          {pendingReviewReturns.length > 0 && (
+            <div className="p-4 rounded-xl border border-red-300 bg-red-50">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <p className="font-semibold text-red-900">Return Review Attention</p>
+              </div>
+              <p className="text-sm text-red-800">
+                {pendingReviewReturns.length} defective-device return requests are pending review.
+              </p>
+            </div>
+          )}
+
+          {pendingReceiptReturns.length > 0 && (
+            <div className="p-4 rounded-xl border border-amber-300 bg-amber-50">
+              <div className="flex items-center gap-2 mb-2">
+                <PackageCheck className="w-5 h-5 text-amber-600" />
+                <p className="font-semibold text-amber-900">PDIC Receipt Confirmation Pending</p>
+              </div>
+              <p className="text-sm text-amber-800">
+                {pendingReceiptReturns.length} approved return requests are waiting for physical receipt confirmation at PDIC.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Return Requests</h1>
