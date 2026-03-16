@@ -362,6 +362,34 @@ export const distributionsAPI = {
     return response;
   },
 
+  downloadManifest: async (distributionId) => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/distributions/${distributionId}/manifest`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to download distribution manifest';
+      try {
+        const text = await response.text();
+        const parsed = text ? JSON.parse(text) : {};
+        errorMessage = parsed?.message || parsed?.detail || errorMessage;
+      } catch {
+        // Keep default message when response is not JSON.
+      }
+      throw new Error(errorMessage);
+    }
+
+    return {
+      blob: await response.blob(),
+      contentDisposition: response.headers.get('content-disposition') || '',
+    };
+  },
+
   updateDistributionStatus: async (distributionId, status, notes) => {
     const response = await apiRequest(`/distributions/${distributionId}/status`, {
       method: 'PATCH',
@@ -465,6 +493,12 @@ export const defectsAPI = {
   getReplacements: async (params = {}) => {
     const queryString = new URLSearchParams(params).toString();
     const response = await apiRequest(`/defects/replacements?${queryString}`);
+    return response;
+  },
+
+  getPendingReplacements: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/defects/replacements/pending?${queryString}`);
     return response;
   },
 

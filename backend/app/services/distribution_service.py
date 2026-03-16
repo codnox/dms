@@ -1,12 +1,69 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import json
+from pathlib import Path
+
+from openpyxl import Workbook
 
 from app.database import get_db, row_to_dict, rows_to_list
 from app.models.distribution import DistributionCreate, DistributionStatus
 from app.models.device import DeviceStatus
 from app.services import device_service, notification_service
 from app.utils.helpers import get_pagination, generate_distribution_id
+
+
+def _distribution_manifest_dir() -> Path:
+    """Directory for generated distribution Excel manifests."""
+    manifests_dir = Path(__file__).resolve().parents[2] / "distribution_manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    return manifests_dir
+
+
+def _build_distribution_manifest(
+    distribution_id: str,
+    devices: List[Dict[str, Any]],
+    from_user_name: str,
+    to_user_name: str,
+    created_at_iso: str,
+) -> str:
+    """Create an Excel manifest listing all devices in the distribution."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Device Manifest"
+
+    sheet.append(["Distribution ID", distribution_id])
+    sheet.append(["From", from_user_name])
+    sheet.append(["To", to_user_name])
+    sheet.append(["Created At", created_at_iso])
+    sheet.append(["Total Devices", len(devices)])
+    sheet.append([])
+    sheet.append([
+        "#",
+        "Device ID",
+        "Serial Number",
+        "MAC Address",
+        "Manufacturer",
+        "Model",
+        "Device Type",
+        "Status",
+    ])
+
+    for idx, device in enumerate(devices, start=1):
+        sheet.append([
+            idx,
+            device.get("device_id") or "",
+            device.get("serial_number") or "",
+            device.get("mac_address") or "",
+            device.get("manufacturer") or "",
+            device.get("model") or "",
+            device.get("device_type") or "",
+            device.get("status") or "",
+        ])
+
+    file_name = f"{distribution_id}-devices.xlsx"
+    file_path = _distribution_manifest_dir() / file_name
+    workbook.save(file_path)
+    return file_name
 
 
 async def get_distributions(
@@ -133,6 +190,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         # ─── End hierarchy validation ─────────────────────────────────────────
 
         # Validate devices
+        validated_devices: List[Dict[str, Any]] = []
         for dev_id in dist_data.device_ids:
             cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(dev_id),))
             device = await cursor.fetchone()
@@ -163,6 +221,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
                             f"Device {device['device_id']} is awaiting your receipt confirmation. "
                             f"Please confirm receipt of the incoming transfer before redistributing."
                         )
+            validated_devices.append(device)
         
         role_to_type = {
             "admin": "noc", "manager": "noc", "staff": "staff",
@@ -190,6 +249,24 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             )
         )
         new_id = str(cursor.lastrowid)
+
+        manifest_file = None
+        try:
+            manifest_file = _build_distribution_manifest(
+                distribution_id=dist_id,
+                devices=validated_devices,
+                from_user_name=from_user.get("name", "Unknown"),
+                to_user_name=to_user.get("name", "Unknown"),
+                created_at_iso=now,
+            )
+            await db.execute(
+                "UPDATE distributions SET manifest_file = ? WHERE id = ?",
+                (manifest_file, int(new_id))
+            )
+        except Exception:
+            # Distribution should still succeed even if manifest generation fails.
+            manifest_file = None
+
         await db.commit()
     
     # NOTE: Device holders are NOT moved here. They move only when the recipient
@@ -201,6 +278,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         user_id=str(to_user["id"]),
         title="Action Required: Confirm Device Receipt",
         message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {from_user['name']}. "
+            f"An Excel manifest is available in Delivery Confirmations. "
                 f"Please confirm receipt on your Delivery Confirmations page (Distribution ID: {dist_id}).",
         notification_type="warning", category="distribution",
         link="/delivery-confirmations"
@@ -418,6 +496,32 @@ async def cancel_distribution(distribution_id: str, user: dict) -> bool:
     # Devices were never moved (hold is deferred until receipt confirmation),
     # so no device holder reset is needed on cancel.
     return True
+
+
+async def get_distribution_manifest_file(distribution_id: str, user: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """Get manifest file metadata if requester is permitted to access distribution."""
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
+        return None
+
+    role = user.get("role")
+    user_id = str(user.get("id", user.get("_id", "")))
+    if role not in ["admin", "manager", "staff"]:
+        if user_id not in [str(dist.get("from_user_id", "")), str(dist.get("to_user_id", ""))]:
+            raise ValueError("You are not allowed to access this distribution manifest")
+
+    manifest_file = dist.get("manifest_file")
+    if not manifest_file:
+        return None
+
+    file_path = _distribution_manifest_dir() / str(manifest_file)
+    if not file_path.exists():
+        return None
+
+    return {
+        "path": str(file_path),
+        "filename": str(manifest_file),
+    }
 
 
 async def get_pending_distributions() -> List[Dict[str, Any]]:

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { devicesAPI, distributionsAPI, defectsAPI, returnsAPI, changeRequestsAPI } from '../services/api';
+import { devicesAPI, reportsAPI, changeRequestsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { 
@@ -10,15 +10,73 @@ import {
   UserCog, Send, Clock
 } from 'lucide-react';
 
+const LOCATION_LABELS = {
+  noc: 'PDIC / NOC',
+  staff: 'Staff',
+  sub_distributor: 'Sub-Distributors',
+  cluster: 'Clusters',
+  operator: 'Operators',
+};
+
+const CONDITION_STYLES = [
+  { label: 'Available', key: 'available', color: 'bg-emerald-500', stroke: '#10b981' },
+  { label: 'Distributed', key: 'distributed', color: 'bg-blue-500', stroke: '#3b82f6' },
+  { label: 'In Use', key: 'in_use', color: 'bg-cyan-500', stroke: '#06b6d4' },
+  { label: 'Defective', key: 'defective', color: 'bg-red-500', stroke: '#ef4444' },
+  { label: 'Returned', key: 'returned', color: 'bg-amber-500', stroke: '#f59e0b' },
+  { label: 'Maintenance', key: 'maintenance', color: 'bg-violet-500', stroke: '#8b5cf6' },
+];
+
+const toMonthDate = (monthValue) => {
+  if (!monthValue) return null;
+  const parsed = new Date(monthValue);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const buildRangeStart = (range) => {
+  const now = new Date();
+  const start = new Date(now);
+
+  if (range === 'today') {
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  if (range === 'last7') {
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  if (range === 'last30') {
+    start.setDate(start.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  if (range === 'last90') {
+    start.setDate(start.getDate() - 89);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  if (range === 'thisYear') {
+    return new Date(now.getFullYear(), 0, 1);
+  }
+  return null;
+};
+
+const safePct = (num, den) => {
+  if (!den || den <= 0) return 0;
+  return Math.round((num / den) * 100);
+};
+
 const Reports = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
   const [dateRange, setDateRange] = useState('last30');
   const [reportType, setReportType] = useState('overview');
-  const [devices, setDevices] = useState([]);
-  const [distributions, setDistributions] = useState([]);
-  const [defectReports, setDefectReports] = useState([]);
-  const [returnRequests, setReturnRequests] = useState([]);
+  const [deviceReportRows, setDeviceReportRows] = useState([]);
+  const [inventoryReport, setInventoryReport] = useState(null);
+  const [distributionSummary, setDistributionSummary] = useState(null);
+  const [defectSummary, setDefectSummary] = useState(null);
+  const [returnSummary, setReturnSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitForm, setSubmitForm] = useState({ request_type: 'password_reset', new_email: '', new_password: '', reason: '' });
   const [submitting, setSubmitting] = useState(false);
@@ -27,16 +85,18 @@ const Reports = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [devRes, distRes, defRes, retRes] = await Promise.all([
-          devicesAPI.getDevices().catch(() => ({ data: [] })),
-          distributionsAPI.getDistributions().catch(() => ({ data: [] })),
-          defectsAPI.getDefects().catch(() => ({ data: [] })),
-          returnsAPI.getReturns().catch(() => ({ data: [] }))
+        const [devRes, invRes, distRes, defRes, retRes] = await Promise.all([
+          devicesAPI.getDevices({ page: 1, page_size: 2000 }).catch(() => ({ data: [] })),
+          reportsAPI.getInventoryReport().catch(() => ({ data: null })),
+          reportsAPI.getDistributionSummary().catch(() => ({ data: null })),
+          reportsAPI.getDefectSummary().catch(() => ({ data: null })),
+          reportsAPI.getReturnSummary().catch(() => ({ data: null }))
         ]);
-        setDevices(devRes.data || []);
-        setDistributions(distRes.data || []);
-        setDefectReports(defRes.data || []);
-        setReturnRequests(retRes.data || []);
+        setDeviceReportRows(devRes.data || []);
+        setInventoryReport(invRes.data || null);
+        setDistributionSummary(distRes.data || null);
+        setDefectSummary(defRes.data || null);
+        setReturnSummary(retRes.data || null);
       } catch (error) {
         console.error('Failed to load report data:', error);
       } finally {
@@ -46,46 +106,97 @@ const Reports = () => {
     fetchData();
   }, []);
 
+  const monthlyActivity = useMemo(() => {
+    const distByMonth = distributionSummary?.by_month || [];
+    const retByMonth = returnSummary?.by_month || [];
+    const defByMonth = defectSummary?.by_month || [];
+
+    const monthMap = {};
+    [...distByMonth, ...retByMonth, ...defByMonth].forEach((entry) => {
+      if (entry?.month) {
+        monthMap[entry.month] = monthMap[entry.month] || {
+          month: entry.month,
+          distributions: 0,
+          returns: 0,
+          defects: 0,
+        };
+      }
+    });
+
+    distByMonth.forEach((entry) => {
+      if (entry?.month && monthMap[entry.month]) {
+        monthMap[entry.month].distributions = Number(entry.count || 0);
+      }
+    });
+    retByMonth.forEach((entry) => {
+      if (entry?.month && monthMap[entry.month]) {
+        monthMap[entry.month].returns = Number(entry.count || 0);
+      }
+    });
+    defByMonth.forEach((entry) => {
+      if (entry?.month && monthMap[entry.month]) {
+        monthMap[entry.month].defects = Number(entry.count || 0);
+      }
+    });
+
+    const allMonths = Object.values(monthMap).sort((a, b) => {
+      const da = toMonthDate(a.month);
+      const db = toMonthDate(b.month);
+      if (!da || !db) return 0;
+      return da.getTime() - db.getTime();
+    });
+
+    const start = buildRangeStart(dateRange);
+    if (!start || dateRange === 'all') return allMonths;
+
+    return allMonths.filter((entry) => {
+      const d = toMonthDate(entry.month);
+      if (!d) return false;
+      return d >= start;
+    });
+  }, [distributionSummary, returnSummary, defectSummary, dateRange]);
+
+  const devicesByLocation = useMemo(() => {
+    const byLocation = inventoryReport?.by_location || {};
+    const total = Number(inventoryReport?.total_devices || 0);
+    const rows = Object.entries(byLocation).map(([key, value]) => {
+      const count = Number(value || 0);
+      return {
+        location: LOCATION_LABELS[key] || key.replace(/_/g, ' '),
+        count,
+        percentage: safePct(count, total),
+      };
+    });
+    return rows.sort((a, b) => b.count - a.count);
+  }, [inventoryReport]);
+
+  const devicesByCondition = useMemo(() => {
+    const byStatus = inventoryReport?.by_status || {};
+    return CONDITION_STYLES
+      .map((item) => ({
+        condition: item.label,
+        count: Number(byStatus[item.key] || 0),
+        color: item.color,
+        stroke: item.stroke,
+      }))
+      .filter((item) => item.count > 0);
+  }, [inventoryReport]);
+
   // Calculate statistics
   const stats = {
-    totalDevices: devices.length,
-    activeDevices: devices.filter(d => d.status === 'active' || d.status === 'available').length,
-    inStockDevices: devices.filter(d => d.status === 'available').length,
-    distributedDevices: devices.filter(d => d.status === 'distributed').length,
-    defectiveDevices: devices.filter(d => d.status === 'defective').length,
-    totalDistributions: distributions.length,
-    pendingDistributions: distributions.filter(d => d.status === 'pending').length,
-    completedDistributions: distributions.filter(d => d.status === 'delivered' || d.status === 'approved').length,
-    totalDefects: defectReports.length,
-    pendingDefects: defectReports.filter(d => d.status === 'pending' || d.status === 'open').length,
-    totalReturns: returnRequests.length,
-    pendingReturns: returnRequests.filter(r => r.status === 'pending').length
+    totalDevices: Number(inventoryReport?.total_devices || 0),
+    activeDevices: Number((inventoryReport?.by_status?.available || 0) + (inventoryReport?.by_status?.distributed || 0) + (inventoryReport?.by_status?.in_use || 0)),
+    inStockDevices: Number(inventoryReport?.by_status?.available || 0),
+    distributedDevices: Number((inventoryReport?.by_status?.distributed || 0) + (inventoryReport?.by_status?.in_use || 0)),
+    defectiveDevices: Number(inventoryReport?.by_status?.defective || 0),
+    totalDistributions: Number(distributionSummary?.total || 0),
+    pendingDistributions: Number((distributionSummary?.by_status?.pending || 0) + (distributionSummary?.by_status?.in_transit || 0)),
+    completedDistributions: Number((distributionSummary?.by_status?.approved || 0) + (distributionSummary?.by_status?.delivered || 0)),
+    totalDefects: Number(defectSummary?.total || 0),
+    pendingDefects: Number((defectSummary?.by_status?.reported || 0) + (defectSummary?.by_status?.under_review || 0)),
+    totalReturns: Number(returnSummary?.total || 0),
+    pendingReturns: Number((returnSummary?.by_status?.pending || 0) + (returnSummary?.by_status?.in_transit || 0))
   };
-
-  const deviceReportRows = devices;
-
-  const devicesByLocation = [
-    { location: 'NOC Warehouse', count: 45, percentage: 25 },
-    { location: 'Main Distributor', count: 90, percentage: 50 },
-    { location: 'Sub-Distributors', count: 27, percentage: 15 },
-    { location: 'Operators', count: 18, percentage: 10 }
-  ];
-
-  const devicesByCondition = [
-    { condition: 'New', count: 120, color: 'bg-green-500' },
-    { condition: 'Good', count: 45, color: 'bg-blue-500' },
-    { condition: 'Fair', count: 12, color: 'bg-yellow-500' },
-    { condition: 'Defective', count: 3, color: 'bg-red-500' }
-  ];
-
-  const monthlyActivity = [
-    { month: 'Jan', distributions: 45, returns: 5, defects: 3 },
-    { month: 'Feb', distributions: 52, returns: 8, defects: 2 },
-    { month: 'Mar', distributions: 61, returns: 4, defects: 5 },
-    { month: 'Apr', distributions: 48, returns: 6, defects: 4 },
-    { month: 'May', distributions: 55, returns: 7, defects: 3 },
-    { month: 'Jun', distributions: 70, returns: 9, defects: 6 }
-  ];
 
   const reportTypes = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
@@ -274,20 +385,24 @@ const Reports = () => {
         {/* Devices by Location */}
         <Card title="Devices by Location">
           <div className="space-y-4">
-            {devicesByLocation.map((item, index) => (
-              <div key={index}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-700">{item.location}</span>
-                  <span className="font-medium text-gray-800">{item.count} ({item.percentage}%)</span>
+            {devicesByLocation.length === 0 ? (
+              <p className="text-sm text-gray-500">No location data available yet.</p>
+            ) : (
+              devicesByLocation.map((item, index) => (
+                <div key={`${item.location}-${index}`}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700">{item.location}</span>
+                    <span className="font-medium text-gray-800">{item.count} ({item.percentage}%)</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 to-cyan-500"
+                      style={{ width: `${item.percentage}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${item.percentage}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
 
@@ -296,30 +411,32 @@ const Reports = () => {
           <div className="flex items-center justify-center gap-8 py-4">
             <div className="relative w-32 h-32">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                {devicesByCondition.reduce((acc, item, index) => {
-                  const total = devicesByCondition.reduce((sum, i) => sum + i.count, 0);
-                  const percentage = (item.count / total) * 100;
-                  const previousPercentage = devicesByCondition
-                    .slice(0, index)
-                    .reduce((sum, i) => sum + (i.count / total) * 100, 0);
-                  
-                  const colors = ['#22c55e', '#3b82f6', '#eab308', '#ef4444'];
-                  
-                  acc.push(
-                    <circle
-                      key={index}
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      fill="none"
-                      stroke={colors[index]}
-                      strokeWidth="20"
-                      strokeDasharray={`${percentage * 2.51} ${251 - percentage * 2.51}`}
-                      strokeDashoffset={`${-previousPercentage * 2.51}`}
-                    />
-                  );
-                  return acc;
-                }, [])}
+                {devicesByCondition.length === 0 ? (
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" strokeWidth="20" />
+                ) : (
+                  devicesByCondition.reduce((acc, item, index) => {
+                    const total = devicesByCondition.reduce((sum, i) => sum + i.count, 0);
+                    const percentage = total > 0 ? (item.count / total) * 100 : 0;
+                    const previousPercentage = devicesByCondition
+                      .slice(0, index)
+                      .reduce((sum, i) => sum + (total > 0 ? (i.count / total) * 100 : 0), 0);
+
+                    acc.push(
+                      <circle
+                        key={index}
+                        cx="50"
+                        cy="50"
+                        r="40"
+                        fill="none"
+                        stroke={item.stroke}
+                        strokeWidth="20"
+                        strokeDasharray={`${percentage * 2.51} ${251 - percentage * 2.51}`}
+                        strokeDashoffset={`${-previousPercentage * 2.51}`}
+                      />
+                    );
+                    return acc;
+                  }, [])
+                )}
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
@@ -331,13 +448,17 @@ const Reports = () => {
               </div>
             </div>
             <div className="space-y-3">
-              {devicesByCondition.map((item, index) => (
-                <div key={index} className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${item.color}`} />
-                  <span className="text-sm text-gray-700">{item.condition}</span>
-                  <span className="text-sm font-medium text-gray-800">{item.count}</span>
-                </div>
-              ))}
+              {devicesByCondition.length === 0 ? (
+                <p className="text-sm text-gray-500">No condition data available yet.</p>
+              ) : (
+                devicesByCondition.map((item, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full ${item.color}`} />
+                    <span className="text-sm text-gray-700">{item.condition}</span>
+                    <span className="text-sm font-medium text-gray-800">{item.count}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </Card>
@@ -345,28 +466,40 @@ const Reports = () => {
         {/* Monthly Activity */}
         <Card title="Monthly Activity" className="lg:col-span-2">
           <div className="h-64 flex items-end gap-2 pt-4">
-            {monthlyActivity.map((month, index) => (
-              <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex gap-1 h-48">
-                  <div 
-                    className="flex-1 bg-blue-500 rounded-t"
-                    style={{ height: `${(month.distributions / 80) * 100}%` }}
-                    title={`Distributions: ${month.distributions}`}
-                  />
-                  <div 
-                    className="flex-1 bg-orange-500 rounded-t"
-                    style={{ height: `${(month.returns / 80) * 100}%` }}
-                    title={`Returns: ${month.returns}`}
-                  />
-                  <div 
-                    className="flex-1 bg-red-500 rounded-t"
-                    style={{ height: `${(month.defects / 80) * 100}%` }}
-                    title={`Defects: ${month.defects}`}
-                  />
-                </div>
-                <span className="text-xs text-gray-500">{month.month}</span>
+            {monthlyActivity.length === 0 ? (
+              <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
+                No activity data available for the selected range.
               </div>
-            ))}
+            ) : (
+              monthlyActivity.map((month, index) => {
+                const peak = Math.max(
+                  ...monthlyActivity.map((m) => Math.max(m.distributions, m.returns, m.defects)),
+                  1
+                );
+                return (
+                  <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full flex gap-1 h-48">
+                      <div
+                        className="flex-1 bg-blue-500 rounded-t"
+                        style={{ height: `${(month.distributions / peak) * 100}%` }}
+                        title={`Distributions: ${month.distributions}`}
+                      />
+                      <div
+                        className="flex-1 bg-orange-500 rounded-t"
+                        style={{ height: `${(month.returns / peak) * 100}%` }}
+                        title={`Returns: ${month.returns}`}
+                      />
+                      <div
+                        className="flex-1 bg-red-500 rounded-t"
+                        style={{ height: `${(month.defects / peak) * 100}%` }}
+                        title={`Defects: ${month.defects}`}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500">{month.month.slice(0, 3)}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
           <div className="flex justify-center gap-6 mt-4 pt-4 border-t">
             <div className="flex items-center gap-2">
@@ -446,7 +579,7 @@ const Reports = () => {
                 <td className="text-right py-3 px-4 text-gray-600">{stats.distributedDevices}</td>
                 <td className="text-right py-3 px-4">
                   <span className="text-green-600">
-                    {Math.round((stats.distributedDevices / stats.totalDevices) * 100)}%
+                    {safePct(stats.distributedDevices, stats.totalDevices)}%
                   </span>
                 </td>
               </tr>
@@ -462,7 +595,7 @@ const Reports = () => {
                 <td className="text-right py-3 px-4 text-gray-600">{stats.completedDistributions}</td>
                 <td className="text-right py-3 px-4">
                   <span className="text-green-600">
-                    {Math.round((stats.completedDistributions / stats.totalDistributions) * 100)}%
+                    {safePct(stats.completedDistributions, stats.totalDistributions)}%
                   </span>
                 </td>
               </tr>
@@ -478,7 +611,7 @@ const Reports = () => {
                 <td className="text-right py-3 px-4 text-gray-600">{stats.totalDefects - stats.pendingDefects}</td>
                 <td className="text-right py-3 px-4">
                   <span className="text-yellow-600">
-                    {Math.round(((stats.totalDefects - stats.pendingDefects) / stats.totalDefects) * 100)}%
+                    {safePct(stats.totalDefects - stats.pendingDefects, stats.totalDefects)}%
                   </span>
                 </td>
               </tr>
@@ -494,7 +627,7 @@ const Reports = () => {
                 <td className="text-right py-3 px-4 text-gray-600">{stats.totalReturns - stats.pendingReturns}</td>
                 <td className="text-right py-3 px-4">
                   <span className="text-green-600">
-                    {Math.round(((stats.totalReturns - stats.pendingReturns) / stats.totalReturns) * 100)}%
+                    {safePct(stats.totalReturns - stats.pendingReturns, stats.totalReturns)}%
                   </span>
                 </td>
               </tr>
