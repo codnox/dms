@@ -156,6 +156,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
@@ -170,6 +171,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },
         { path: '/distributions/create', icon: Truck, label: 'Distribute Devices' },
@@ -181,6 +183,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       operator: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/delivery-confirmations', icon: PackageCheck, label: 'Delivery Confirmations' },
         { path: '/replacement-confirmation', icon: PackageCheck, label: 'Replacement Confirmation' },
         { path: '/distributions', icon: Truck, label: 'My Distributions' },

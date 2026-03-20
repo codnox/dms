@@ -37,12 +37,32 @@ async def init_db():
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by TEXT",
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by_name TEXT",
             "ALTER TABLE returns ADD COLUMN mac_address TEXT",
-            "ALTER TABLE distributions ADD COLUMN manifest_file TEXT",
+            "ALTER TABLE external_inventory_items ADD COLUMN item_id TEXT",
+            "ALTER TABLE external_inventory_items ADD COLUMN serial_number TEXT",
+            "ALTER TABLE external_inventory_items ADD COLUMN mac_id TEXT",
+            "ALTER TABLE external_inventory_items ADD COLUMN device_type TEXT",
+            "ALTER TABLE external_inventory_items ADD COLUMN price REAL DEFAULT 0",
+            "ALTER TABLE external_inventory_items ADD COLUMN image_url TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_item_id ON external_inventory_items(item_id)",
+            "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_serial_number ON external_inventory_items(serial_number)",
+            "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_mac_id ON external_inventory_items(mac_id)",
+            "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_device_type ON external_inventory_items(device_type)",
         ]:
             try:
                 await db.execute(stmt)
             except Exception:
                 pass  # Column already exists
+        for stmt in [
+            "UPDATE external_inventory_items SET item_id = inventory_id WHERE item_id IS NULL OR item_id = ''",
+            "UPDATE external_inventory_items SET serial_number = '' WHERE serial_number IS NULL",
+            "UPDATE external_inventory_items SET mac_id = '' WHERE mac_id IS NULL",
+            "UPDATE external_inventory_items SET device_type = COALESCE(category, 'device') WHERE device_type IS NULL OR device_type = ''",
+            "UPDATE external_inventory_items SET price = COALESCE(price, unit_cost, 0)",
+            "UPDATE external_inventory_items SET sku = COALESCE(NULLIF(item_id, ''), sku)",
+            "UPDATE external_inventory_items SET category = COALESCE(NULLIF(device_type, ''), category)",
+            "UPDATE external_inventory_items SET unit_cost = COALESCE(price, unit_cost, 0)",
+        ]:
+            await db.execute(stmt)
         # Data migration: fix existing devices that still have old NOC values
         await db.execute(
             "UPDATE devices SET current_location = 'PDIC' WHERE current_location = 'NOC' OR current_location IS NULL"
@@ -270,9 +290,14 @@ CREATE TABLE IF NOT EXISTS change_requests (
 CREATE TABLE IF NOT EXISTS external_inventory_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     inventory_id TEXT UNIQUE NOT NULL,
-    sku TEXT UNIQUE NOT NULL,
+    item_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    category TEXT NOT NULL,
+    serial_number TEXT,
+    mac_id TEXT,
+    device_type TEXT NOT NULL,
+    price REAL DEFAULT 0,
+    sku TEXT,
+    category TEXT,
     unit TEXT DEFAULT 'pcs',
     quantity_on_hand INTEGER DEFAULT 0,
     reorder_level INTEGER DEFAULT 0,
@@ -281,6 +306,7 @@ CREATE TABLE IF NOT EXISTS external_inventory_items (
     location TEXT,
     status TEXT DEFAULT 'active',
     notes TEXT,
+    image_url TEXT,
     created_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

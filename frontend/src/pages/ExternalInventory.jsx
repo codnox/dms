@@ -1,36 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import DataTable from '../components/ui/DataTable';
 import { externalInventoryAPI } from '../services/api';
 import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import {
   AlertTriangle,
   Boxes,
   ClipboardCheck,
   DollarSign,
   Factory,
+  Eye,
   PackagePlus,
   RefreshCw,
   TrendingUp,
+  Upload,
 } from 'lucide-react';
 
 const initialItemForm = {
-  sku: '',
+  item_id: '',
   name: '',
-  category: '',
+  serial_number: '',
+  mac_id: '',
+  device_type: '',
+  price: 0,
   unit: 'pcs',
   quantity_on_hand: 0,
   reorder_level: 0,
-  unit_cost: 0,
   supplier_name: '',
   location: '',
   notes: '',
 };
 
+const defaultPOLine = { item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 };
+
 const ExternalInventory = () => {
+  const { user } = useAuth();
   const { showToast } = useNotifications();
+  const canManage = ['admin', 'manager', 'staff'].includes(user?.role);
 
   const [dashboard, setDashboard] = useState(null);
   const [items, setItems] = useState([]);
@@ -42,6 +51,11 @@ const ExternalInventory = () => {
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showCreatePOModal, setShowCreatePOModal] = useState(false);
   const [receivingPO, setReceivingPO] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [itemImageFile, setItemImageFile] = useState(null);
+  const [itemImagePreview, setItemImagePreview] = useState('');
+  const [importingItems, setImportingItems] = useState(false);
+  const importInputRef = useRef(null);
 
   const [itemForm, setItemForm] = useState(initialItemForm);
 
@@ -49,7 +63,7 @@ const ExternalInventory = () => {
     supplier_name: '',
     expected_date: '',
     notes: '',
-    lines: [{ item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 }],
+    lines: [{ ...defaultPOLine }],
   });
 
   const [receiptForm, setReceiptForm] = useState({
@@ -57,20 +71,66 @@ const ExternalInventory = () => {
     lines: [],
   });
 
+  const apiBaseUrl = useMemo(
+    () => (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/$/, ''),
+    []
+  );
+
+  const toAssetUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    const backendBase = apiBaseUrl.replace(/\/api$/, '');
+    return `${backendBase}${path.startsWith('/') ? path : `/${path}`}`;
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const parts = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+
+    const get = (type) => parts.find((p) => p.type === type)?.value || '';
+    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}:${get('second')} IST`;
+  };
+
+  const formatCurrency = (value) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+
   const loadData = async () => {
     try {
       setLoading(true);
-      const [dashboardRes, itemsRes, poRes, movementRes] = await Promise.all([
-        externalInventoryAPI.getDashboard(),
-        externalInventoryAPI.getItems({ page_size: 100 }),
-        externalInventoryAPI.getPurchaseOrders({ page_size: 50 }),
-        externalInventoryAPI.getMovements({ page_size: 50 }),
-      ]);
+      if (canManage) {
+        const [dashboardRes, itemsRes, poRes, movementRes] = await Promise.all([
+          externalInventoryAPI.getDashboard(),
+          externalInventoryAPI.getItems({ page_size: 100 }),
+          externalInventoryAPI.getPurchaseOrders({ page_size: 50 }),
+          externalInventoryAPI.getMovements({ page_size: 50 }),
+        ]);
 
-      setDashboard(dashboardRes.data || null);
-      setItems(itemsRes.data || []);
-      setPurchaseOrders(poRes.data || []);
-      setMovements(movementRes.data || []);
+        setDashboard(dashboardRes.data || null);
+        setItems(itemsRes.data || []);
+        setPurchaseOrders(poRes.data || []);
+        setMovements(movementRes.data || []);
+      } else {
+        const itemsRes = await externalInventoryAPI.getItems({ page_size: 100, status: 'active' });
+        setDashboard(null);
+        setItems(itemsRes.data || []);
+        setPurchaseOrders([]);
+        setMovements([]);
+      }
     } catch (error) {
       showToast(error.message || 'Failed to load external inventory data', 'error');
     } finally {
@@ -80,7 +140,7 @@ const ExternalInventory = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [canManage]);
 
   const lowStockItems = useMemo(
     () => items.filter((item) => Number(item.quantity_on_hand) <= Number(item.reorder_level)),
@@ -92,27 +152,41 @@ const ExternalInventory = () => {
       supplier_name: '',
       expected_date: '',
       notes: '',
-      lines: [{ item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 }],
+      lines: [{ ...defaultPOLine }],
     });
   };
 
   const handleCreateItem = async () => {
-    if (!itemForm.sku.trim() || !itemForm.name.trim() || !itemForm.category.trim()) {
-      showToast('SKU, name, and category are required', 'error');
+    if (
+      !itemForm.item_id.trim() ||
+      !itemForm.name.trim() ||
+      !itemForm.serial_number.trim() ||
+      !itemForm.mac_id.trim() ||
+      !itemForm.device_type.trim()
+    ) {
+      showToast('Item ID, name, serial number, MAC ID and type are required', 'error');
       return;
     }
 
     try {
       setSubmitting(true);
-      await externalInventoryAPI.createItem({
+      const created = await externalInventoryAPI.createItem({
         ...itemForm,
+        price: Number(itemForm.price),
         quantity_on_hand: Number(itemForm.quantity_on_hand),
         reorder_level: Number(itemForm.reorder_level),
-        unit_cost: Number(itemForm.unit_cost),
       });
-      showToast('Inventory item created', 'success');
+
+      const createdInventoryId = created?.data?.inventory_id;
+      if (itemImageFile && createdInventoryId) {
+        await externalInventoryAPI.uploadItemImage(createdInventoryId, itemImageFile);
+      }
+
+      showToast('Inventory device item created', 'success');
       setShowAddItemModal(false);
       setItemForm(initialItemForm);
+      setItemImageFile(null);
+      setItemImagePreview('');
       await loadData();
     } catch (error) {
       showToast(error.message || 'Failed to create item', 'error');
@@ -124,14 +198,23 @@ const ExternalInventory = () => {
   const addPOLine = () => {
     setPoForm((prev) => ({
       ...prev,
-      lines: [...prev.lines, { item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 }],
+      lines: [...prev.lines, { ...defaultPOLine }],
     }));
   };
 
   const updatePOLine = (index, key, value) => {
     setPoForm((prev) => {
       const next = [...prev.lines];
-      next[index] = { ...next[index], [key]: value };
+      const updatedLine = { ...next[index], [key]: value };
+
+      if (key === 'item_inventory_id') {
+        const selectedItem = items.find((item) => item.inventory_id === value);
+        if (selectedItem) {
+          updatedLine.unit_cost = Number(selectedItem.price ?? selectedItem.unit_cost ?? 0);
+        }
+      }
+
+      next[index] = updatedLine;
       return { ...prev, lines: next };
     });
   };
@@ -139,7 +222,7 @@ const ExternalInventory = () => {
   const removePOLine = (index) => {
     setPoForm((prev) => {
       const next = prev.lines.filter((_, i) => i !== index);
-      return { ...prev, lines: next.length ? next : [{ item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 }] };
+      return { ...prev, lines: next.length ? next : [{ ...defaultPOLine }] };
     });
   };
 
@@ -150,7 +233,7 @@ const ExternalInventory = () => {
     }
 
     if (poForm.lines.some((line) => !line.item_inventory_id || Number(line.quantity_ordered) <= 0)) {
-      showToast('Each PO line needs an item and quantity', 'error');
+      showToast('Each PO line needs a selected item and quantity', 'error');
       return;
     }
 
@@ -179,6 +262,28 @@ const ExternalInventory = () => {
     }
   };
 
+  const handleImportItems = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      showToast('Please upload a CSV file (.csv)', 'error');
+      return;
+    }
+
+    try {
+      setImportingItems(true);
+      const result = await externalInventoryAPI.bulkUploadItems(file);
+      showToast(result.message || 'Import completed', 'success');
+      await loadData();
+    } catch (error) {
+      showToast(error.message || 'Failed to import items', 'error');
+    } finally {
+      setImportingItems(false);
+    }
+  };
+
   const openReceiveModal = (po) => {
     setReceivingPO(po);
     setReceiptForm({
@@ -195,7 +300,7 @@ const ExternalInventory = () => {
     if (!receivingPO) return;
 
     if (receiptForm.lines.some((line) => Number(line.quantity_received) <= 0)) {
-      showToast('Receipt line quantities must be greater than zero', 'error');
+      showToast('Submit line quantities must be greater than zero', 'error');
       return;
     }
 
@@ -209,31 +314,63 @@ const ExternalInventory = () => {
           unit_cost: Number(line.unit_cost),
         })),
       });
-      showToast('Stock receipt recorded', 'success');
+      showToast('Purchase order submitted and stock updated', 'success');
       setReceivingPO(null);
       setReceiptForm({ notes: '', lines: [] });
       await loadData();
     } catch (error) {
-      showToast(error.message || 'Failed to receive purchase order', 'error');
+      showToast(error.message || 'Failed to submit purchase order', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
   const itemColumns = [
-    { key: 'inventory_id', label: 'Item ID' },
-    { key: 'sku', label: 'SKU' },
+    {
+      key: 'image_url',
+      label: 'Image',
+      sortable: false,
+      render: (value, row) => (
+        value ? (
+          <img
+            src={toAssetUrl(value)}
+            alt={row.name}
+            className="h-10 w-10 rounded-lg border border-gray-200 object-cover"
+          />
+        ) : (
+          <span className="text-xs text-gray-400">No image</span>
+        )
+      ),
+    },
+    { key: 'inventory_id', label: 'Inventory ID' },
+    { key: 'item_id', label: 'Item ID' },
     { key: 'name', label: 'Name' },
-    { key: 'category', label: 'Category' },
+    { key: 'serial_number', label: 'Serial Number' },
+    { key: 'mac_id', label: 'MAC ID' },
+    { key: 'device_type', label: 'Type' },
+    {
+      key: 'price',
+      label: 'Price',
+      render: (value) => formatCurrency(value),
+    },
     { key: 'quantity_on_hand', label: 'On Hand' },
     { key: 'reorder_level', label: 'Reorder Level' },
+    {
+      key: 'created_at',
+      label: 'Added At',
+      render: (value) => formatDateTime(value),
+    },
     {
       key: 'stock_status',
       label: 'Stock Health',
       render: (_, row) => {
         const low = Number(row.quantity_on_hand) <= Number(row.reorder_level);
         return (
-          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${low ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+              low ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+            }`}
+          >
             {low ? 'Low Stock' : 'Healthy'}
           </span>
         );
@@ -247,9 +384,23 @@ const ExternalInventory = () => {
     { key: 'status', label: 'Status' },
     { key: 'line_count', label: 'Lines' },
     {
+      key: 'total_quantity',
+      label: 'Quantity',
+      render: (value, row) =>
+        Number(
+          value ??
+            (row.lines || []).reduce((sum, line) => sum + Number(line.quantity_ordered || 0), 0)
+        ),
+    },
+    {
       key: 'total_amount',
       label: 'Total',
-      render: (value) => `$${Number(value || 0).toLocaleString()}`,
+      render: (value) => formatCurrency(value),
+    },
+    {
+      key: 'created_at',
+      label: 'Created At',
+      render: (value) => formatDateTime(value),
     },
     {
       key: 'actions',
@@ -262,7 +413,7 @@ const ExternalInventory = () => {
           onClick={() => openReceiveModal(row)}
           disabled={['received', 'cancelled'].includes(row.status)}
         >
-          Receive
+          Submit
         </Button>
       ),
     },
@@ -270,12 +421,17 @@ const ExternalInventory = () => {
 
   const movementColumns = [
     { key: 'movement_id', label: 'Movement ID' },
-    { key: 'item_sku', label: 'SKU' },
+    { key: 'item_sku', label: 'Item ID' },
     { key: 'item_name', label: 'Item' },
     { key: 'movement_type', label: 'Type' },
     { key: 'quantity', label: 'Qty' },
     { key: 'reference_type', label: 'Reference' },
     { key: 'reference_id', label: 'Ref ID' },
+    {
+      key: 'created_at',
+      label: 'Timestamp',
+      render: (value) => formatDateTime(value),
+    },
   ];
 
   return (
@@ -287,25 +443,34 @@ const ExternalInventory = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">External Inventory Hub</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Manage third-party spare parts, purchase flow, and stock movement from one control deck.
+              {canManage
+                ? 'Standalone external inventory for devices, purchasing, and stock movement.'
+                : 'Browse available external inventory items.'}
             </p>
           </div>
-          <div className="flex gap-2">
+          {canManage ? (
+            <div className="flex gap-2">
+              <Button variant="outline" icon={RefreshCw} onClick={loadData}>
+                Refresh
+              </Button>
+              <Button icon={PackagePlus} onClick={() => setShowAddItemModal(true)}>
+                Add Device Item
+              </Button>
+              <Button variant="secondary" icon={Factory} onClick={() => setShowCreatePOModal(true)}>
+                New PO
+              </Button>
+            </div>
+          ) : (
             <Button variant="outline" icon={RefreshCw} onClick={loadData}>
               Refresh
             </Button>
-            <Button icon={PackagePlus} onClick={() => setShowAddItemModal(true)}>
-              Add Item
-            </Button>
-            <Button variant="secondary" icon={Factory} onClick={() => setShowCreatePOModal(true)}>
-              New PO
-            </Button>
-          </div>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Card title="SKUs" icon={Boxes}>
+      {canManage && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card title="Items" icon={Boxes}>
           <p className="text-2xl font-bold text-gray-900">{dashboard?.total_skus ?? 0}</p>
         </Card>
         <Card title="Units" icon={TrendingUp}>
@@ -318,54 +483,76 @@ const ExternalInventory = () => {
           <p className="text-2xl font-bold text-amber-600">{dashboard?.pending_purchase_orders ?? 0}</p>
         </Card>
         <Card title="Inventory Value" icon={DollarSign}>
-          <p className="text-2xl font-bold text-emerald-600">${Number(dashboard?.inventory_value || 0).toLocaleString()}</p>
+          <p className="text-2xl font-bold text-emerald-600">{formatCurrency(dashboard?.inventory_value || 0)}</p>
         </Card>
-      </div>
+        </div>
+      )}
 
-      {lowStockItems.length > 0 && (
+      {canManage && lowStockItems.length > 0 && (
         <Card title="Low Stock Attention" subtitle="These items are at or below reorder level">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
             {lowStockItems.slice(0, 6).map((item) => (
-              <div key={item.id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <div key={item.inventory_id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                 <p className="text-sm font-semibold text-red-800">{item.name}</p>
-                <p className="text-xs text-red-700">{item.sku} • {item.quantity_on_hand} / reorder {item.reorder_level}</p>
+                <p className="text-xs text-red-700">
+                  {item.item_id} | {item.serial_number} | {item.quantity_on_hand} / reorder {item.reorder_level}
+                </p>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      <Card title="Inventory Items" subtitle="Current external stock" padding={false}>
+      <Card title="Inventory Items" subtitle="Standalone external device inventory" padding={false}>
         <DataTable
           columns={itemColumns}
           data={items}
           loading={loading}
           emptyMessage="No external inventory items yet"
+          onRowClick={(row) => setSelectedItem(row)}
+          actions={canManage ? (
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleImportItems}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                icon={Upload}
+                loading={importingItems}
+                onClick={() => importInputRef.current?.click()}
+              >
+                Import
+              </Button>
+            </>
+          ) : null}
         />
       </Card>
 
-      <Card title="Purchase Orders" subtitle="Order and receiving status" padding={false}>
-        <DataTable
-          columns={poColumns}
-          data={purchaseOrders}
-          loading={loading}
-          emptyMessage="No purchase orders yet"
-        />
-      </Card>
+      {canManage && (
+        <Card title="Purchase Orders" subtitle="Order and receiving status" padding={false}>
+          <DataTable columns={poColumns} data={purchaseOrders} loading={loading} emptyMessage="No purchase orders yet" />
+        </Card>
+      )}
 
-      <Card title="Stock Movements" subtitle="Latest material flow" padding={false}>
-        <DataTable
-          columns={movementColumns}
-          data={movements}
-          loading={loading}
-          emptyMessage="No stock movements yet"
-        />
-      </Card>
+      {canManage && (
+        <Card title="Stock Movements" subtitle="Latest material flow" padding={false}>
+          <DataTable columns={movementColumns} data={movements} loading={loading} emptyMessage="No stock movements yet" />
+        </Card>
+      )}
 
-      <Modal
+      {canManage && <Modal
         isOpen={showAddItemModal}
-        onClose={() => setShowAddItemModal(false)}
-        title="Add External Inventory Item"
+        onClose={() => {
+          setShowAddItemModal(false);
+          setItemImageFile(null);
+          setItemImagePreview('');
+        }}
+        title="Add External Inventory Device Item"
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowAddItemModal(false)}>Cancel</Button>
@@ -375,45 +562,182 @@ const ExternalInventory = () => {
       >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">SKU</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.sku} onChange={(e) => setItemForm((p) => ({ ...p, sku: e.target.value }))} />
+            <span className="text-sm font-medium text-gray-700">Item ID</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.item_id}
+              onChange={(e) => setItemForm((p) => ({ ...p, item_id: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Name</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.name} onChange={(e) => setItemForm((p) => ({ ...p, name: e.target.value }))} />
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.name}
+              onChange={(e) => setItemForm((p) => ({ ...p, name: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Category</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.category} onChange={(e) => setItemForm((p) => ({ ...p, category: e.target.value }))} />
+            <span className="text-sm font-medium text-gray-700">Serial Number</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.serial_number}
+              onChange={(e) => setItemForm((p) => ({ ...p, serial_number: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Unit</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.unit} onChange={(e) => setItemForm((p) => ({ ...p, unit: e.target.value }))} />
+            <span className="text-sm font-medium text-gray-700">MAC ID</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.mac_id}
+              onChange={(e) => setItemForm((p) => ({ ...p, mac_id: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">Type</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.device_type}
+              onChange={(e) => setItemForm((p) => ({ ...p, device_type: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">Price</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.price}
+              onChange={(e) => setItemForm((p) => ({ ...p, price: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Opening Qty</span>
-            <input type="number" min="0" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.quantity_on_hand} onChange={(e) => setItemForm((p) => ({ ...p, quantity_on_hand: e.target.value }))} />
+            <input
+              type="number"
+              min="0"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.quantity_on_hand}
+              onChange={(e) => setItemForm((p) => ({ ...p, quantity_on_hand: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Reorder Level</span>
-            <input type="number" min="0" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.reorder_level} onChange={(e) => setItemForm((p) => ({ ...p, reorder_level: e.target.value }))} />
+            <input
+              type="number"
+              min="0"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.reorder_level}
+              onChange={(e) => setItemForm((p) => ({ ...p, reorder_level: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Unit Cost</span>
-            <input type="number" min="0" step="0.01" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.unit_cost} onChange={(e) => setItemForm((p) => ({ ...p, unit_cost: e.target.value }))} />
+            <span className="text-sm font-medium text-gray-700">Unit</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.unit}
+              onChange={(e) => setItemForm((p) => ({ ...p, unit: e.target.value }))}
+            />
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Supplier</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.supplier_name} onChange={(e) => setItemForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.supplier_name}
+              onChange={(e) => setItemForm((p) => ({ ...p, supplier_name: e.target.value }))}
+            />
           </label>
           <label className="space-y-1 md:col-span-2">
             <span className="text-sm font-medium text-gray-700">Location</span>
-            <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={itemForm.location} onChange={(e) => setItemForm((p) => ({ ...p, location: e.target.value }))} />
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.location}
+              onChange={(e) => setItemForm((p) => ({ ...p, location: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium text-gray-700">Notes</span>
+            <textarea
+              rows={3}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              value={itemForm.notes}
+              onChange={(e) => setItemForm((p) => ({ ...p, notes: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium text-gray-700">Item Picture (Optional)</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setItemImageFile(file);
+                setItemImagePreview(file ? URL.createObjectURL(file) : '');
+              }}
+            />
+            {itemImagePreview && (
+              <img
+                src={itemImagePreview}
+                alt="Item preview"
+                className="mt-2 h-32 w-32 rounded-lg border border-gray-200 object-cover"
+              />
+            )}
           </label>
         </div>
-      </Modal>
+      </Modal>}
 
       <Modal
+        isOpen={!!selectedItem}
+        onClose={() => setSelectedItem(null)}
+        title={`Item Details ${selectedItem?.item_id ? `- ${selectedItem.item_id}` : ''}`}
+        size="lg"
+        footer={<Button onClick={() => setSelectedItem(null)}>Close</Button>}
+      >
+        {selectedItem && (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 md:flex-row">
+              <div className="md:w-1/3">
+                {selectedItem.image_url ? (
+                  <img
+                    src={toAssetUrl(selectedItem.image_url)}
+                    alt={selectedItem.name}
+                    className="h-44 w-full rounded-lg border border-gray-200 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-44 w-full items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-gray-500">
+                    <Eye className="mr-2 h-4 w-4" />
+                    No picture
+                  </div>
+                )}
+              </div>
+              <div className="grid flex-1 grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                <p><span className="font-semibold text-gray-700">Inventory ID:</span> {selectedItem.inventory_id}</p>
+                <p><span className="font-semibold text-gray-700">Item ID:</span> {selectedItem.item_id}</p>
+                <p><span className="font-semibold text-gray-700">Name:</span> {selectedItem.name}</p>
+                <p><span className="font-semibold text-gray-700">Type:</span> {selectedItem.device_type}</p>
+                <p><span className="font-semibold text-gray-700">Serial:</span> {selectedItem.serial_number || '-'}</p>
+                <p><span className="font-semibold text-gray-700">MAC:</span> {selectedItem.mac_id || '-'}</p>
+                <p><span className="font-semibold text-gray-700">Price:</span> {formatCurrency(selectedItem.price || 0)}</p>
+                <p><span className="font-semibold text-gray-700">On Hand:</span> {selectedItem.quantity_on_hand}</p>
+                <p><span className="font-semibold text-gray-700">Reorder Level:</span> {selectedItem.reorder_level}</p>
+                <p><span className="font-semibold text-gray-700">Supplier:</span> {selectedItem.supplier_name || '-'}</p>
+                <p><span className="font-semibold text-gray-700">Location:</span> {selectedItem.location || '-'}</p>
+                <p><span className="font-semibold text-gray-700">Unit:</span> {selectedItem.unit || '-'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Notes</p>
+              <p className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                {selectedItem.notes || 'No notes provided'}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {canManage && <Modal
         isOpen={showCreatePOModal}
         onClose={() => setShowCreatePOModal(false)}
         title="Create Purchase Order"
@@ -429,11 +753,22 @@ const ExternalInventory = () => {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Supplier Name</span>
-              <input className="w-full rounded-lg border border-gray-300 px-3 py-2" value={poForm.supplier_name} onChange={(e) => setPoForm((p) => ({ ...p, supplier_name: e.target.value }))} />
+              <input
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                value={poForm.supplier_name}
+                onChange={(e) => setPoForm((p) => ({ ...p, supplier_name: e.target.value }))}
+                placeholder="e.g. Netlink Supplier Ltd"
+              />
             </label>
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Expected Date</span>
-              <input type="date" className="w-full rounded-lg border border-gray-300 px-3 py-2" value={poForm.expected_date} onChange={(e) => setPoForm((p) => ({ ...p, expected_date: e.target.value }))} />
+              <input
+                type="date"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                value={poForm.expected_date}
+                onChange={(e) => setPoForm((p) => ({ ...p, expected_date: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500">Format shown as dd-mm-yyyy in UI locale.</p>
             </label>
           </div>
 
@@ -442,6 +777,12 @@ const ExternalInventory = () => {
               <h4 className="text-sm font-semibold text-gray-800">PO Lines</h4>
               <Button size="sm" variant="outline" onClick={addPOLine}>Add Line</Button>
             </div>
+            <div className="hidden rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs font-semibold text-gray-600 md:grid md:grid-cols-12">
+              <p className="md:col-span-5">Device Item</p>
+              <p className="md:col-span-2">Quantity</p>
+              <p className="md:col-span-3">Amount Per Unit</p>
+              <p className="md:col-span-2">Action</p>
+            </div>
             {poForm.lines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 md:grid-cols-12">
                 <select
@@ -449,10 +790,10 @@ const ExternalInventory = () => {
                   value={line.item_inventory_id}
                   onChange={(e) => updatePOLine(idx, 'item_inventory_id', e.target.value)}
                 >
-                  <option value="">Select item</option>
+                  <option value="">Select device item</option>
                   {items.map((item) => (
                     <option key={item.inventory_id} value={item.inventory_id}>
-                      {item.sku} - {item.name}
+                      {item.item_id} | {item.name} | SN {item.serial_number} | MAC {item.mac_id}
                     </option>
                   ))}
                 </select>
@@ -462,6 +803,7 @@ const ExternalInventory = () => {
                   className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-2"
                   value={line.quantity_ordered}
                   onChange={(e) => updatePOLine(idx, 'quantity_ordered', e.target.value)}
+                  placeholder="Qty"
                 />
                 <input
                   type="number"
@@ -470,6 +812,7 @@ const ExternalInventory = () => {
                   className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-3"
                   value={line.unit_cost}
                   onChange={(e) => updatePOLine(idx, 'unit_cost', e.target.value)}
+                  placeholder="Amount per unit"
                 />
                 <Button size="sm" variant="danger" className="md:col-span-2" onClick={() => removePOLine(idx)}>
                   Remove
@@ -478,17 +821,17 @@ const ExternalInventory = () => {
             ))}
           </div>
         </div>
-      </Modal>
+      </Modal>}
 
-      <Modal
+      {canManage && <Modal
         isOpen={!!receivingPO}
         onClose={() => setReceivingPO(null)}
-        title={`Receive Purchase Order ${receivingPO?.po_id || ''}`}
+        title={`Submit Purchase Order ${receivingPO?.po_id || ''}`}
         size="lg"
         footer={
           <>
             <Button variant="ghost" onClick={() => setReceivingPO(null)}>Cancel</Button>
-            <Button loading={submitting} onClick={handleReceivePO}>Confirm Receipt</Button>
+            <Button loading={submitting} onClick={handleReceivePO}>Submit</Button>
           </>
         }
       >
@@ -545,7 +888,7 @@ const ExternalInventory = () => {
             </div>
           ))}
         </div>
-      </Modal>
+      </Modal>}
     </div>
   );
 };

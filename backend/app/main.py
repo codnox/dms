@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from app.config import settings
 from app.database import init_db
@@ -37,6 +39,10 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+uploads_root = Path(__file__).resolve().parents[1] / "uploads"
+uploads_root.mkdir(parents=True, exist_ok=True)
+app.mount(f"{settings.API_V1_PREFIX}/uploads", StaticFiles(directory=str(uploads_root)), name="uploads")
 
 # Add CORS middleware
 app.add_middleware(

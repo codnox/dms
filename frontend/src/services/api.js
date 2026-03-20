@@ -730,12 +730,48 @@ export const externalInventoryAPI = {
     return response;
   },
 
+  bulkUploadItems: async (file) => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/external-inventory/items/bulk-upload`, {
+      method: 'POST',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || data?.detail || 'Import failed');
+    }
+    return data;
+  },
+
   updateItem: async (inventoryId, payload) => {
     const response = await apiRequest(`/external-inventory/items/${inventoryId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
     return response;
+  },
+
+  uploadItemImage: async (inventoryId, file) => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const response = await fetch(`${API_BASE_URL}/external-inventory/items/${inventoryId}/image`, {
+      method: 'POST',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || data?.detail || 'Failed to upload item image');
+    }
+    return data;
   },
 
   createAdjustment: async (payload) => {

@@ -223,7 +223,7 @@ function AppRoutes() {
         <Route
           path="external-inventory"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
               <ExternalInventory />
             </ProtectedRoute>
           }

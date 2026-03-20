@@ -1,8 +1,13 @@
+import csv
+import io
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
-from app.middleware.auth_middleware import require_management
+from app.middleware.auth_middleware import require_any_role, require_management
 from app.models.inventory import (
     InventoryItemCreate,
     InventoryItemUpdate,
@@ -13,6 +18,10 @@ from app.models.inventory import (
 from app.services import inventory_service
 
 router = APIRouter()
+
+
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "external_inventory"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.get("/dashboard")
@@ -40,17 +49,17 @@ async def get_external_inventory_items(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
-    category: Optional[str] = None,
+    device_type: Optional[str] = Query(None, alias="type"),
     status_filter: Optional[str] = Query(None, alias="status"),
     low_stock_only: bool = False,
-    current_user: dict = Depends(require_management),
+    current_user: dict = Depends(require_any_role),
 ):
     try:
         result = await inventory_service.get_items(
             page=page,
             page_size=page_size,
             search=search,
-            category=category,
+            device_type=device_type,
             status_filter=status_filter,
             low_stock_only=low_stock_only,
         )
@@ -90,6 +99,103 @@ async def create_external_inventory_item(
         )
 
 
+@router.post("/items/bulk-upload", status_code=status.HTTP_201_CREATED)
+async def bulk_upload_external_inventory_items(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_management),
+):
+    """Bulk upload external inventory items from CSV.
+
+    Required columns: item_id, name, serial_number, mac_id, device_type
+    Optional columns: price, unit, quantity_on_hand, reorder_level, supplier_name, location, notes
+    """
+    filename_lower = (file.filename or "").lower()
+    if not filename_lower.endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only CSV (.csv) files are supported",
+        )
+
+    try:
+        contents = await file.read()
+        decoded = contents.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(decoded))
+        all_rows = list(reader)
+        if not all_rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CSV file is empty",
+            )
+
+        headers = [h.strip().lower() for h in all_rows[0]]
+        data_rows = all_rows[1:]
+
+        required = {"item_id", "name", "serial_number", "mac_id", "device_type"}
+        missing = required - set(headers)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing required columns: {', '.join(sorted(missing))}",
+            )
+
+        created = []
+        errors = []
+
+        for row_idx, row in enumerate(data_rows, start=2):
+            padded = row + [""] * (len(headers) - len(row))
+            row_data = {
+                headers[i]: (str(padded[i]).strip() if padded[i] is not None else "")
+                for i in range(len(headers))
+            }
+
+            if not any(row_data.values()):
+                continue
+
+            try:
+                item_payload = InventoryItemCreate(
+                    item_id=row_data.get("item_id", ""),
+                    name=row_data.get("name", ""),
+                    serial_number=row_data.get("serial_number", ""),
+                    mac_id=row_data.get("mac_id", ""),
+                    device_type=row_data.get("device_type", ""),
+                    price=float(row_data.get("price", "0") or 0),
+                    unit=row_data.get("unit", "pcs") or "pcs",
+                    quantity_on_hand=int(float(row_data.get("quantity_on_hand", "0") or 0)),
+                    reorder_level=int(float(row_data.get("reorder_level", "0") or 0)),
+                    supplier_name=row_data.get("supplier_name") or None,
+                    location=row_data.get("location") or None,
+                    notes=row_data.get("notes") or None,
+                )
+                created_item = await inventory_service.create_item(item_data=item_payload, user=current_user)
+                created.append(created_item.get("inventory_id"))
+            except Exception as e:
+                errors.append(
+                    {
+                        "row": row_idx,
+                        "item_id": row_data.get("item_id", ""),
+                        "error": str(e),
+                    }
+                )
+
+        return {
+            "success": True,
+            "message": f"Import complete: {len(created)} created, {len(errors)} errors",
+            "data": {
+                "created_count": len(created),
+                "error_count": len(errors),
+                "created": created,
+                "errors": errors,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process import file: {str(e)}",
+        )
+
+
 @router.put("/items/{inventory_id}")
 async def update_external_inventory_item(
     inventory_id: str,
@@ -119,6 +225,57 @@ async def update_external_inventory_item(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update external inventory item '{inventory_id}': {str(e)}",
+        )
+
+
+@router.post("/items/{inventory_id}/image")
+async def upload_external_inventory_item_image(
+    inventory_id: str,
+    image: UploadFile = File(...),
+    current_user: dict = Depends(require_management),
+):
+    try:
+        item = await inventory_service.get_item_by_inventory_id(inventory_id)
+        if not item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="External inventory item not found",
+            )
+
+        if not image.content_type or not image.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only image uploads are allowed",
+            )
+
+        suffix = Path(image.filename or "").suffix.lower() or ".jpg"
+        file_name = f"{inventory_id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}{suffix}"
+        file_path = UPLOAD_DIR / file_name
+
+        content = await image.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image size must be 5MB or less",
+            )
+
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        image_url = f"/api/uploads/external_inventory/{file_name}"
+        updated = await inventory_service.update_item_image(inventory_id, image_url)
+
+        return {
+            "success": True,
+            "message": "Item image uploaded successfully",
+            "data": updated,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload item image: {str(e)}",
         )
 
 
@@ -211,7 +368,7 @@ async def receive_external_inventory_purchase_order(
         )
         return {
             "success": True,
-            "message": "Purchase order receipt recorded successfully",
+            "message": "Purchase order submitted successfully",
             "data": po,
         }
     except HTTPException:
