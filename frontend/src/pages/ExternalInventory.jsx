@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -17,6 +18,7 @@ import {
   RefreshCw,
   TrendingUp,
   Upload,
+  Download,
 } from 'lucide-react';
 
 const initialItemForm = {
@@ -55,6 +57,7 @@ const ExternalInventory = () => {
   const [itemImageFile, setItemImageFile] = useState(null);
   const [itemImagePreview, setItemImagePreview] = useState('');
   const [importingItems, setImportingItems] = useState(false);
+  const [downloadingReceiptPoId, setDownloadingReceiptPoId] = useState('');
   const importInputRef = useRef(null);
 
   const [itemForm, setItemForm] = useState(initialItemForm);
@@ -306,7 +309,7 @@ const ExternalInventory = () => {
 
     try {
       setSubmitting(true);
-      await externalInventoryAPI.receivePurchaseOrder(receivingPO.po_id, {
+      const response = await externalInventoryAPI.receivePurchaseOrder(receivingPO.po_id, {
         notes: receiptForm.notes || null,
         lines: receiptForm.lines.map((line) => ({
           item_inventory_id: line.item_inventory_id,
@@ -314,6 +317,13 @@ const ExternalInventory = () => {
           unit_cost: Number(line.unit_cost),
         })),
       });
+
+      const updatedPo = response?.data;
+      const latestReceipt = updatedPo?.receipts?.[0] || null;
+      if (updatedPo && latestReceipt) {
+        downloadReceiptPdf(updatedPo, latestReceipt);
+      }
+
       showToast('Purchase order submitted and stock updated', 'success');
       setReceivingPO(null);
       setReceiptForm({ notes: '', lines: [] });
@@ -322,6 +332,84 @@ const ExternalInventory = () => {
       showToast(error.message || 'Failed to submit purchase order', 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const downloadReceiptPdf = (po, receipt) => {
+    const doc = new jsPDF();
+    const lines = receipt?.lines || [];
+    const total = lines.reduce((sum, line) => sum + Number(line.line_total || 0), 0);
+
+    let y = 16;
+    doc.setFontSize(16);
+    doc.text('External Inventory Receipt', 14, y);
+
+    y += 10;
+    doc.setFontSize(11);
+    doc.text(`Receipt ID: ${receipt?.receipt_id || '-'}`, 14, y);
+    y += 7;
+    doc.text(`PO ID: ${po?.po_id || '-'}`, 14, y);
+    y += 7;
+    doc.text(`Supplier: ${po?.supplier_name || receipt?.supplier_name || '-'}`, 14, y);
+    y += 7;
+    doc.text(`Date: ${formatDateTime(receipt?.created_at)}`, 14, y);
+    y += 7;
+    doc.text(`Submitted By: ${receipt?.received_by_name || '-'}`, 14, y);
+    y += 10;
+
+    doc.setFontSize(12);
+    doc.text('Items', 14, y);
+    y += 7;
+
+    doc.setFontSize(10);
+    doc.text('Item', 14, y);
+    doc.text('Qty', 116, y, { align: 'right' });
+    doc.text('Unit Cost', 156, y, { align: 'right' });
+    doc.text('Line Total', 196, y, { align: 'right' });
+    y += 2;
+    doc.line(14, y, 196, y);
+
+    y += 6;
+    lines.forEach((line) => {
+      if (y > 276) {
+        doc.addPage();
+        y = 20;
+      }
+      const itemLabel = `${line.item_sku || '-'} ${line.item_name || ''}`.trim();
+      doc.text(itemLabel.slice(0, 46), 14, y);
+      doc.text(String(line.quantity_received || 0), 116, y, { align: 'right' });
+      doc.text(formatCurrency(line.unit_cost || 0).replace('₹', 'Rs '), 156, y, { align: 'right' });
+      doc.text(formatCurrency(line.line_total || 0).replace('₹', 'Rs '), 196, y, { align: 'right' });
+      y += 7;
+    });
+
+    y += 4;
+    doc.line(14, y, 196, y);
+    y += 8;
+    doc.setFontSize(12);
+    doc.text(`Total: ${formatCurrency(total).replace('₹', 'Rs ')}`, 196, y, { align: 'right' });
+
+    const fileName = `${receipt?.receipt_id || po?.po_id || 'receipt'}.pdf`;
+    doc.save(fileName);
+  };
+
+  const handleDownloadLatestReceipt = async (po) => {
+    try {
+      setDownloadingReceiptPoId(po.po_id);
+      const response = await externalInventoryAPI.getReceipts({ po_id: po.po_id, page_size: 1 });
+      const latestReceipt = response?.data?.[0];
+
+      if (!latestReceipt) {
+        showToast('No receipt found for this purchase order', 'error');
+        return;
+      }
+
+      downloadReceiptPdf(po, latestReceipt);
+      showToast('Receipt downloaded', 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to download receipt', 'error');
+    } finally {
+      setDownloadingReceiptPoId('');
     }
   };
 
@@ -407,14 +495,27 @@ const ExternalInventory = () => {
       label: 'Actions',
       sortable: false,
       render: (_, row) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openReceiveModal(row)}
-          disabled={['received', 'cancelled'].includes(row.status)}
-        >
-          Submit
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openReceiveModal(row)}
+            disabled={['received', 'cancelled'].includes(row.status)}
+          >
+            Submit
+          </Button>
+          {['partially_received', 'received'].includes(row.status) && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Download}
+              loading={downloadingReceiptPoId === row.po_id}
+              onClick={() => handleDownloadLatestReceipt(row)}
+            >
+              Download Receipt
+            </Button>
+          )}
+        </div>
       ),
     },
   ];
