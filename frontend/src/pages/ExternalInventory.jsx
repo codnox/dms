@@ -436,7 +436,7 @@ const ExternalInventory = () => {
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-lime-50 p-6">
+      <div className="external-inventory-hero relative overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-lime-50 p-6">
         <div className="absolute -top-8 -right-8 h-32 w-32 rounded-full bg-orange-200/40 blur-2xl" />
         <div className="absolute -bottom-10 left-20 h-28 w-28 rounded-full bg-lime-200/40 blur-2xl" />
         <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -450,7 +450,7 @@ const ExternalInventory = () => {
           </div>
           {canManage ? (
             <div className="flex gap-2">
-              <Button variant="outline" icon={RefreshCw} onClick={loadData}>
+              <Button variant="secondary" icon={RefreshCw} onClick={loadData}>
                 Refresh
               </Button>
               <Button icon={PackagePlus} onClick={() => setShowAddItemModal(true)}>
@@ -461,7 +461,7 @@ const ExternalInventory = () => {
               </Button>
             </div>
           ) : (
-            <Button variant="outline" icon={RefreshCw} onClick={loadData}>
+            <Button variant="secondary" icon={RefreshCw} onClick={loadData}>
               Refresh
             </Button>
           )}
