@@ -85,9 +85,14 @@ async def create_external_inventory_item(
 ):
     try:
         item = await inventory_service.create_item(item_data=item_data, user=current_user)
+        merged_duplicate = bool(item.get("_merged_duplicate"))
         return {
             "success": True,
-            "message": "External inventory item created successfully",
+            "message": (
+                "Existing inventory item quantity incremented successfully"
+                if merged_duplicate
+                else "External inventory item created successfully"
+            ),
             "data": item,
         }
     except HTTPException:
@@ -139,6 +144,7 @@ async def bulk_upload_external_inventory_items(
             )
 
         created = []
+        merged = []
         errors = []
 
         for row_idx, row in enumerate(data_rows, start=2):
@@ -167,7 +173,10 @@ async def bulk_upload_external_inventory_items(
                     notes=row_data.get("notes") or None,
                 )
                 created_item = await inventory_service.create_item(item_data=item_payload, user=current_user)
-                created.append(created_item.get("inventory_id"))
+                if created_item.get("_merged_duplicate"):
+                    merged.append(created_item.get("inventory_id"))
+                else:
+                    created.append(created_item.get("inventory_id"))
             except Exception as e:
                 errors.append(
                     {
@@ -179,11 +188,15 @@ async def bulk_upload_external_inventory_items(
 
         return {
             "success": True,
-            "message": f"Import complete: {len(created)} created, {len(errors)} errors",
+            "message": (
+                f"Import complete: {len(created)} created, {len(merged)} merged, {len(errors)} errors"
+            ),
             "data": {
                 "created_count": len(created),
+                "merged_count": len(merged),
                 "error_count": len(errors),
                 "created": created,
+                "merged": merged,
                 "errors": errors,
             },
         }

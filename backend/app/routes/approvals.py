@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status as http_status, Depends, Query
 from typing import Optional
-from app.models.approval import ApprovalAction
+from app.models.approval import ApprovalAction, RoleRoutingUpdateRequest
 from app.services import approval_service
-from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
+from app.middleware.auth_middleware import get_current_user, require_admin, require_management
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ async def get_approvals(
     status: Optional[str] = None,
     approval_type: Optional[str] = None,
     search: Optional[str] = None,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Get all pending approvals with pagination"""
     try:
@@ -23,7 +23,8 @@ async def get_approvals(
             page_size=page_size,
             status=status,
             approval_type=approval_type,
-            search=search
+            search=search,
+            viewer_role=current_user.get("role")
         )
 
         return {
@@ -36,15 +37,58 @@ async def get_approvals(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve approvals: {str(e)}"
+        )
+
+
+@router.get("/role-routing/config")
+async def get_approval_role_routing_config(
+    current_user: dict = Depends(require_management)
+):
+    """Get admin/manager approval-role routing configuration."""
+    try:
+        config = await approval_service.get_role_routing_config()
+        return {
+            "success": True,
+            "message": "Approval role routing config retrieved successfully",
+            "data": config,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve approval routing config: {str(e)}"
+        )
+
+
+@router.put("/role-routing/config")
+async def update_approval_role_routing_config(
+    payload: RoleRoutingUpdateRequest,
+    current_user: dict = Depends(require_admin)
+):
+    """Update admin/manager approval-role routing configuration (admin only)."""
+    try:
+        incoming = payload.model_dump(by_alias=True)
+        updated = await approval_service.update_role_routing_config(
+            config=incoming,
+            actor=current_user,
+        )
+        return {
+            "success": True,
+            "message": "Approval role routing config updated successfully",
+            "data": updated,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update approval routing config: {str(e)}"
         )
 
 
 @router.get("/{approval_id}")
 async def get_approval(
     approval_id: str,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Get approval by ID with entity details"""
     try:
@@ -52,7 +96,7 @@ async def get_approval(
 
         if not approval:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Approval not found"
             )
 
@@ -65,7 +109,7 @@ async def get_approval(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve approval '{approval_id}': {str(e)}"
         )
 
@@ -74,7 +118,7 @@ async def get_approval(
 async def approve_request(
     approval_id: str,
     action: Optional[ApprovalAction] = None,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Approve a pending request"""
     try:
@@ -88,7 +132,7 @@ async def approve_request(
 
         if not approval:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Approval not found"
             )
 
@@ -101,12 +145,17 @@ async def approve_request(
         raise
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail=str(e)
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to approve request '{approval_id}': {str(e)}"
         )
 
@@ -115,7 +164,7 @@ async def approve_request(
 async def reject_request(
     approval_id: str,
     action: ApprovalAction,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Reject a pending request - Admin and Manager only"""
     try:
@@ -128,7 +177,7 @@ async def reject_request(
 
         if not approval:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Approval not found"
             )
 
@@ -141,11 +190,18 @@ async def reject_request(
         raise
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail=str(e)
         )
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reject request '{approval_id}': {str(e)}"
         )
+
+

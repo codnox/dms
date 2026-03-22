@@ -11,8 +11,14 @@ import { useNotifications } from '../context/NotificationContext';
 import { approvalsAPI, distributionsAPI, returnsAPI, defectsAPI } from '../services/api';
 import { 
   Check, X, Eye, Filter, Clock, CheckCircle, 
-  XCircle, Package, RotateCcw, AlertTriangle, ShieldAlert, Loader2 
+  XCircle, Package, RotateCcw, AlertTriangle, ShieldAlert, Loader2, Settings
 } from 'lucide-react';
+
+const defaultRoutingConfig = {
+  distribution: { admin: true, manager: true, staff: true },
+  return: { admin: true, manager: true, staff: true },
+  defect: { admin: true, manager: true, staff: true },
+};
 
 const Approvals = () => {
   const { user, hasRole } = useAuth();
@@ -26,22 +32,108 @@ const Approvals = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [allPendingItems, setAllPendingItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [routingConfig, setRoutingConfig] = useState(defaultRoutingConfig);
+  const [loadingRoutingConfig, setLoadingRoutingConfig] = useState(true);
+  const [savingRoutingConfig, setSavingRoutingConfig] = useState(false);
+  const [selectedRoutingRole, setSelectedRoutingRole] = useState('manager');
 
-  // Only admin and manager can access approvals
-  const canAccessApprovals = hasRole(['admin', 'manager']);
+  // Admin, manager, and staff can access approvals.
+  const canAccessApprovals = hasRole(['admin', 'manager', 'staff']);
 
   if (!canAccessApprovals) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
         <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
         <h1 className="text-xl font-bold text-gray-800 text-center">Access Denied</h1>
-        <p className="text-gray-500 mt-2 text-center">Only Admins and Managers can access approvals.</p>
+        <p className="text-gray-500 mt-2 text-center">Only Admins, Managers, and Staff can access approvals.</p>
         <Button className="mt-4" onClick={() => navigate('/')}>
           Back to Dashboard
         </Button>
       </div>
     );
   }
+
+  const currentRoleKey = ['admin', 'manager', 'staff'].includes(user?.role) ? user.role : null;
+
+  const isTypeEnabledForCurrentRole = (type) => {
+    if (!currentRoleKey) return true;
+    return Boolean(routingConfig?.[type]?.[currentRoleKey]);
+  };
+
+  const applyRoleRoutingFilter = (items) => {
+    if (!currentRoleKey) return items;
+    return items.filter((item) => isTypeEnabledForCurrentRole(item.type));
+  };
+
+  const loadRoleRoutingConfig = async () => {
+    try {
+      setLoadingRoutingConfig(true);
+      const response = await approvalsAPI.getRoleRoutingConfig();
+      const incoming = response?.data || {};
+      setRoutingConfig({
+        distribution: {
+          admin: incoming?.distribution?.admin ?? true,
+          manager: incoming?.distribution?.manager ?? true,
+          staff: incoming?.distribution?.staff ?? true,
+        },
+        return: {
+          admin: incoming?.return?.admin ?? true,
+          manager: incoming?.return?.manager ?? true,
+          staff: incoming?.return?.staff ?? true,
+        },
+        defect: {
+          admin: incoming?.defect?.admin ?? true,
+          manager: incoming?.defect?.manager ?? true,
+          staff: incoming?.defect?.staff ?? true,
+        },
+      });
+    } catch (error) {
+      showToast(error.message || 'Failed to load approval routing config', 'error');
+      setRoutingConfig(defaultRoutingConfig);
+    } finally {
+      setLoadingRoutingConfig(false);
+    }
+  };
+
+  const toggleRoutingCheckbox = (approvalType) => {
+    setRoutingConfig((prev) => ({
+      ...prev,
+      [approvalType]: {
+        ...prev[approvalType],
+        [selectedRoutingRole]: !prev[approvalType]?.[selectedRoutingRole],
+      },
+    }));
+  };
+
+  const saveRoutingConfig = async () => {
+    try {
+      setSavingRoutingConfig(true);
+      await approvalsAPI.updateRoleRoutingConfig({
+        distribution: {
+          admin: Boolean(routingConfig?.distribution?.admin),
+          manager: Boolean(routingConfig?.distribution?.manager),
+          staff: Boolean(routingConfig?.distribution?.staff),
+        },
+        return: {
+          admin: Boolean(routingConfig?.return?.admin),
+          manager: Boolean(routingConfig?.return?.manager),
+          staff: Boolean(routingConfig?.return?.staff),
+        },
+        defect: {
+          admin: Boolean(routingConfig?.defect?.admin),
+          manager: Boolean(routingConfig?.defect?.manager),
+          staff: Boolean(routingConfig?.defect?.staff),
+        },
+      });
+      showToast('Approval routing updated successfully', 'success');
+      await loadRoleRoutingConfig();
+      await fetchPendingItems();
+    } catch (error) {
+      showToast(error.message || 'Failed to update approval routing', 'error');
+    } finally {
+      setSavingRoutingConfig(false);
+    }
+  };
 
   const fetchPendingItems = async () => {
     try {
@@ -81,7 +173,7 @@ const Approvals = () => {
       } catch (e) { console.error('Failed to fetch returns:', e); }
 
       try {
-        const defResponse = await defectsAPI.getDefects({ status: 'open' });
+        const defResponse = await defectsAPI.getDefects({ status: 'reported' });
         (defResponse.data || []).forEach(d => {
           items.push({
             ...d,
@@ -97,7 +189,7 @@ const Approvals = () => {
       } catch (e) { console.error('Failed to fetch defects:', e); }
 
       items.sort((a, b) => new Date(b.requestDate || 0) - new Date(a.requestDate || 0));
-      setAllPendingItems(items);
+      setAllPendingItems(applyRoleRoutingFilter(items));
     } catch (error) {
       console.error('Failed to fetch approvals:', error);
     } finally {
@@ -107,9 +199,15 @@ const Approvals = () => {
 
   useEffect(() => {
     if (canAccessApprovals) {
-      fetchPendingItems();
+      loadRoleRoutingConfig();
     }
   }, [canAccessApprovals]);
+
+  useEffect(() => {
+    if (canAccessApprovals && !loadingRoutingConfig) {
+      fetchPendingItems();
+    }
+  }, [canAccessApprovals, loadingRoutingConfig, routingConfig]);
 
   const filteredItems = useMemo(() => {
     if (activeTab === 'all') return allPendingItems;
@@ -125,6 +223,10 @@ const Approvals = () => {
 
   const handleApprove = async () => {
     try {
+      if (!isTypeEnabledForCurrentRole(selectedItem.type)) {
+        showToast(`Your role cannot approve ${selectedItem.type} requests`, 'error');
+        return;
+      }
       if (selectedItem.type === 'distribution') {
         await distributionsAPI.updateDistributionStatus(selectedItem.id, 'approved');
       } else if (selectedItem.type === 'return') {
@@ -147,6 +249,10 @@ const Approvals = () => {
       return;
     }
     try {
+      if (!isTypeEnabledForCurrentRole(selectedItem.type)) {
+        showToast(`Your role cannot reject ${selectedItem.type} requests`, 'error');
+        return;
+      }
       if (selectedItem.type === 'distribution') {
         await distributionsAPI.updateDistributionStatus(selectedItem.id, 'rejected', rejectionReason);
       } else if (selectedItem.type === 'return') {
@@ -226,7 +332,7 @@ const Approvals = () => {
           >
             <Eye className="w-4 h-4 text-gray-500" />
           </button>
-          {hasRole(['admin', 'manager', 'staff']) && (
+          {hasRole(['admin', 'manager', 'staff']) && isTypeEnabledForCurrentRole(row.type) && (
             <>
               <button
                 onClick={() => { setSelectedItem(row); setShowApproveModal(true); }}
@@ -262,6 +368,58 @@ const Approvals = () => {
         <h1 className="text-2xl font-bold text-gray-800">Pending Approvals</h1>
         <p className="text-gray-500 mt-1">Review and manage pending requests</p>
       </div>
+
+      {hasRole(['admin']) && (
+        <Card title="Role Assignment" subtitle="Assign which request categories are handled by Manager and Admin">
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {['manager', 'admin', 'staff'].map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setSelectedRoutingRole(role)}
+                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    selectedRoutingRole === role
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                { key: 'distribution', label: 'Distribution Approvals' },
+                { key: 'return', label: 'Return Approvals' },
+                { key: 'defect', label: 'Defect Reports' },
+              ].map((item) => (
+                <label
+                  key={item.key}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(routingConfig?.[item.key]?.[selectedRoutingRole])}
+                    onChange={() => toggleRoutingCheckbox(item.key)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                  />
+                  <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                Select a role above, then check the categories that role should handle.
+              </p>
+              <Button icon={Settings} loading={savingRoutingConfig} onClick={saveRoutingConfig}>
+                Save Role Mapping
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -402,7 +560,7 @@ const Approvals = () => {
               </div>
             )}
 
-            {hasRole(['admin', 'manager', 'staff']) && (
+            {hasRole(['admin', 'manager', 'staff']) && isTypeEnabledForCurrentRole(selectedItem.type) && (
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button 
                   variant="danger" 

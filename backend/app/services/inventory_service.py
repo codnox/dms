@@ -35,6 +35,10 @@ def _resolve_actor(user: Dict[str, Any]) -> Dict[str, str]:
     return {"id": str(actor_id), "name": str(actor_name)}
 
 
+def _normalize_item_name(name: Optional[str]) -> str:
+    return " ".join(str(name or "").strip().lower().split())
+
+
 async def get_dashboard_summary() -> Dict[str, Any]:
     async with get_db() as db:
         cursor = await db.execute(
@@ -147,8 +151,65 @@ async def get_item_by_inventory_id(inventory_id: str) -> Optional[Dict[str, Any]
 
 async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> Dict[str, Any]:
     actor = _resolve_actor(user)
+    normalized_name = _normalize_item_name(item_data.name)
 
     async with get_db() as db:
+        if normalized_name:
+            existing_cursor = await db.execute(
+                """SELECT * FROM external_inventory_items
+                   WHERE status = 'active' AND lower(trim(name)) = ?
+                   ORDER BY updated_at DESC, id DESC""",
+                (normalized_name,),
+            )
+            existing_rows = await existing_cursor.fetchall()
+            if existing_rows:
+                existing = row_to_dict(existing_rows[0])
+                old_qty = int(existing.get("quantity_on_hand") or 0)
+                new_qty = old_qty + int(item_data.quantity_on_hand or 0)
+                now = datetime.utcnow().isoformat()
+
+                await db.execute(
+                    """UPDATE external_inventory_items
+                       SET quantity_on_hand = ?, updated_at = ?
+                       WHERE inventory_id = ?""",
+                    (new_qty, now, existing["inventory_id"]),
+                )
+
+                if int(item_data.quantity_on_hand or 0) > 0:
+                    await db.execute(
+                        """INSERT INTO inventory_stock_movements (
+                               movement_id, item_inventory_id, item_sku, item_name,
+                               movement_type, quantity, reference_type, reference_id,
+                               notes, performed_by, performed_by_name, created_at
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            generate_inventory_movement_id(),
+                            existing["inventory_id"],
+                            existing.get("item_id") or existing.get("sku"),
+                            existing.get("name"),
+                            MovementType.ADJUSTMENT_IN.value,
+                            int(item_data.quantity_on_hand or 0),
+                            "duplicate_increment",
+                            existing["inventory_id"],
+                            f"Merged duplicate device name '{item_data.name}' and incremented quantity",
+                            actor["id"],
+                            actor["name"],
+                            now,
+                        ),
+                    )
+
+                await db.commit()
+                merged_item = await get_item_by_inventory_id(existing["inventory_id"])
+                if not merged_item:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Merged inventory item could not be retrieved",
+                    )
+                merged_item["_merged_duplicate"] = True
+                merged_item["_merged_by_name"] = item_data.name
+                merged_item["_merge_source_count"] = len(existing_rows)
+                return merged_item
+
         now = datetime.utcnow().isoformat()
         inventory_id = generate_inventory_item_id()
 
@@ -213,7 +274,9 @@ async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> D
             "SELECT * FROM external_inventory_items WHERE id = ?",
             (cursor.lastrowid,),
         )
-        return row_to_dict(await cursor.fetchone())
+        created_item = row_to_dict(await cursor.fetchone())
+        created_item["_merged_duplicate"] = False
+        return created_item
 
 
 async def update_item(

@@ -7,6 +7,169 @@ from app.services import notification_service
 from app.utils.helpers import get_pagination
 
 
+APPROVAL_TYPES = ("distribution", "return", "defect")
+
+
+def _normalize_role(role: Optional[str]) -> str:
+    return str(role or "").strip().lower()
+
+
+async def _ensure_default_routing_rows(db) -> None:
+    for approval_type in APPROVAL_TYPES:
+        await db.execute(
+            """INSERT OR IGNORE INTO approval_role_routing
+               (approval_type, admin_enabled, manager_enabled, staff_enabled, updated_by, updated_at)
+               VALUES (?, 1, 1, 1, 'system', ?)""",
+            (approval_type, datetime.utcnow().isoformat()),
+        )
+
+
+def _routing_rows_to_payload(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    payload = {
+        "distribution": {"admin": True, "manager": True, "staff": True},
+        "return": {"admin": True, "manager": True, "staff": True},
+        "defect": {"admin": True, "manager": True, "staff": True},
+        "updated_at": None,
+    }
+    last_updated = None
+    for row in rows:
+        approval_type = row.get("approval_type")
+        if approval_type not in APPROVAL_TYPES:
+            continue
+        payload[approval_type] = {
+            "admin": bool(row.get("admin_enabled", 1)),
+            "manager": bool(row.get("manager_enabled", 1)),
+            "staff": bool(row.get("staff_enabled", 1)),
+        }
+        updated_at = row.get("updated_at")
+        if updated_at and (last_updated is None or updated_at > last_updated):
+            last_updated = updated_at
+    payload["updated_at"] = last_updated
+    return payload
+
+
+async def get_role_routing_config() -> Dict[str, Any]:
+    async with get_db() as db:
+        await _ensure_default_routing_rows(db)
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT id, approval_type, admin_enabled, manager_enabled, staff_enabled, updated_at FROM approval_role_routing"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+    return _routing_rows_to_payload(rows)
+
+
+async def update_role_routing_config(config: Dict[str, Any], actor: Dict[str, Any]) -> Dict[str, Any]:
+    actor_id = actor.get("id") or actor.get("_id")
+    actor_name = actor.get("name") or "admin"
+    updated_by = f"{actor_name} ({actor_id})" if actor_id else str(actor_name)
+    now = datetime.utcnow().isoformat()
+
+    async with get_db() as db:
+        await _ensure_default_routing_rows(db)
+
+        for approval_type in APPROVAL_TYPES:
+            role_config = config.get(approval_type) or {}
+            admin_enabled = 1 if bool(role_config.get("admin", True)) else 0
+            manager_enabled = 1 if bool(role_config.get("manager", True)) else 0
+            staff_enabled = 1 if bool(role_config.get("staff", True)) else 0
+            await db.execute(
+                """UPDATE approval_role_routing
+                   SET admin_enabled = ?, manager_enabled = ?, staff_enabled = ?, updated_by = ?, updated_at = ?
+                   WHERE approval_type = ?""",
+                (admin_enabled, manager_enabled, staff_enabled, updated_by, now, approval_type),
+            )
+
+        await db.commit()
+
+    return await get_role_routing_config()
+
+
+async def is_role_allowed_for_approval_type(role: str, approval_type: str) -> bool:
+    normalized_role = _normalize_role(role)
+    if normalized_role not in {"admin", "manager", "staff"}:
+        return True
+
+    if approval_type not in APPROVAL_TYPES:
+        return True
+
+    async with get_db() as db:
+        await _ensure_default_routing_rows(db)
+        cursor = await db.execute(
+            """SELECT admin_enabled, manager_enabled, staff_enabled
+               FROM approval_role_routing
+               WHERE approval_type = ?""",
+            (approval_type,),
+        )
+        row = await cursor.fetchone()
+        await db.commit()
+
+    if not row:
+        return True
+
+    row_dict = dict(row)
+    if normalized_role == "admin":
+        return bool(row_dict.get("admin_enabled", 1))
+    if normalized_role == "manager":
+        return bool(row_dict.get("manager_enabled", 1))
+    if normalized_role == "staff":
+        return bool(row_dict.get("staff_enabled", 1))
+    return True
+
+
+async def get_enabled_approval_types_for_role(role: str) -> List[str]:
+    normalized_role = _normalize_role(role)
+    if normalized_role not in {"admin", "manager", "staff"}:
+        return list(APPROVAL_TYPES)
+
+    async with get_db() as db:
+        await _ensure_default_routing_rows(db)
+        cursor = await db.execute(
+            "SELECT id, approval_type, admin_enabled, manager_enabled, staff_enabled FROM approval_role_routing"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+        await db.commit()
+
+    enabled_types: List[str] = []
+    for row in rows:
+        approval_type = row.get("approval_type")
+        if approval_type not in APPROVAL_TYPES:
+            continue
+        if normalized_role == "admin" and bool(row.get("admin_enabled", 1)):
+            enabled_types.append(approval_type)
+        if normalized_role == "manager" and bool(row.get("manager_enabled", 1)):
+            enabled_types.append(approval_type)
+        if normalized_role == "staff" and bool(row.get("staff_enabled", 1)):
+            enabled_types.append(approval_type)
+    return enabled_types
+
+
+async def get_routing_enabled_roles_for_approval_type(approval_type: str) -> List[str]:
+    if approval_type not in APPROVAL_TYPES:
+        return ["admin", "manager", "staff"]
+    async with get_db() as db:
+        await _ensure_default_routing_rows(db)
+        cursor = await db.execute(
+            """SELECT admin_enabled, manager_enabled, staff_enabled
+               FROM approval_role_routing
+               WHERE approval_type = ?""",
+            (approval_type,),
+        )
+        row = await cursor.fetchone()
+        await db.commit()
+    if not row:
+        return ["admin", "manager", "staff"]
+    row_dict = dict(row)
+    roles: List[str] = []
+    if bool(row_dict.get("admin_enabled", 1)):
+        roles.append("admin")
+    if bool(row_dict.get("manager_enabled", 1)):
+        roles.append("manager")
+    if bool(row_dict.get("staff_enabled", 1)):
+        roles.append("staff")
+    return roles
+
+
 async def _get_entity_details(db, approval_type: str, entity_id: str) -> Optional[Dict[str, Any]]:
     """Get entity details for an approval"""
     table_map = {"distribution": "distributions", "return": "returns", "defect": "defects"}
@@ -48,7 +211,8 @@ async def get_approvals(
     page_size: int = 20,
     status: Optional[str] = None,
     approval_type: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    viewer_role: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get all pending approvals with pagination"""
     async with get_db() as db:
@@ -67,6 +231,14 @@ async def get_approvals(
         if search:
             conditions.append("requested_by_name LIKE ?")
             params.append(f"%{search}%")
+
+        enabled_types = await get_enabled_approval_types_for_role(viewer_role or "")
+        if enabled_types:
+            placeholders = ", ".join(["?"] * len(enabled_types))
+            conditions.append(f"approval_type IN ({placeholders})")
+            params.extend(enabled_types)
+        else:
+            conditions.append("1 = 0")
 
         where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -132,6 +304,14 @@ async def approve_request(
         if approval["status"] != ApprovalStatus.PENDING.value:
             raise ValueError("This request has already been processed")
 
+        approver_role = _normalize_role(approver.get("role"))
+        if approver_role in {"admin", "manager"}:
+            allowed = await is_role_allowed_for_approval_type(approver_role, approval.get("approval_type"))
+            if not allowed:
+                raise PermissionError(
+                    f"{approver_role.capitalize()} role is not allowed to process {approval.get('approval_type')} requests"
+                )
+
         now = datetime.utcnow().isoformat()
 
         await db.execute(
@@ -190,6 +370,14 @@ async def reject_request(
 
         if approval["status"] != ApprovalStatus.PENDING.value:
             raise ValueError("This request has already been processed")
+
+        approver_role = _normalize_role(approver.get("role"))
+        if approver_role in {"admin", "manager"}:
+            allowed = await is_role_allowed_for_approval_type(approver_role, approval.get("approval_type"))
+            if not allowed:
+                raise PermissionError(
+                    f"{approver_role.capitalize()} role is not allowed to process {approval.get('approval_type')} requests"
+                )
 
         now = datetime.utcnow().isoformat()
 

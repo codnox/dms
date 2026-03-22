@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from app.database import get_db, row_to_dict, rows_to_list
 from app.models.distribution import DistributionCreate, DistributionStatus
 from app.models.device import DeviceStatus
-from app.services import device_service, notification_service
+from app.services import approval_service, device_service, notification_service
 from app.utils.helpers import get_pagination, generate_distribution_id
 
 
@@ -297,6 +297,12 @@ async def update_distribution_status(
     
     now = datetime.utcnow().isoformat()
     user_id = str(user.get("id", user.get("_id", "")))
+    user_role = str(user.get("role", "")).lower()
+
+    if status in {DistributionStatus.APPROVED.value, DistributionStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+        allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "distribution")
+        if not allowed:
+            raise PermissionError(f"{user_role.capitalize()} role is not allowed to process distribution approvals")
     
     async with get_db() as db:
         update_fields = ["status = ?", "updated_at = ?"]
