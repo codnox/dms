@@ -43,10 +43,12 @@ async def init_db():
             "ALTER TABLE external_inventory_items ADD COLUMN device_type TEXT",
             "ALTER TABLE external_inventory_items ADD COLUMN price REAL DEFAULT 0",
             "ALTER TABLE external_inventory_items ADD COLUMN image_url TEXT",
+            "ALTER TABLE approval_role_routing ADD COLUMN staff_enabled INTEGER DEFAULT 1",
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_item_id ON external_inventory_items(item_id)",
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_serial_number ON external_inventory_items(serial_number)",
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_mac_id ON external_inventory_items(mac_id)",
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_device_type ON external_inventory_items(device_type)",
+            "CREATE TABLE IF NOT EXISTS approval_role_routing (id INTEGER PRIMARY KEY AUTOINCREMENT, approval_type TEXT UNIQUE NOT NULL, admin_enabled INTEGER DEFAULT 1, manager_enabled INTEGER DEFAULT 1, staff_enabled INTEGER DEFAULT 1, updated_by TEXT, updated_at TEXT NOT NULL)",
         ]:
             try:
                 await db.execute(stmt)
@@ -63,6 +65,23 @@ async def init_db():
             "UPDATE external_inventory_items SET unit_cost = COALESCE(price, unit_cost, 0)",
         ]:
             await db.execute(stmt)
+
+        await db.execute(
+            """INSERT OR IGNORE INTO approval_role_routing
+             (approval_type, admin_enabled, manager_enabled, staff_enabled, updated_by, updated_at)
+             VALUES ('distribution', 1, 1, 1, 'system', datetime('now'))"""
+        )
+        await db.execute(
+            """INSERT OR IGNORE INTO approval_role_routing
+             (approval_type, admin_enabled, manager_enabled, staff_enabled, updated_by, updated_at)
+             VALUES ('return', 1, 1, 1, 'system', datetime('now'))"""
+        )
+        await db.execute(
+            """INSERT OR IGNORE INTO approval_role_routing
+             (approval_type, admin_enabled, manager_enabled, staff_enabled, updated_by, updated_at)
+             VALUES ('defect', 1, 1, 1, 'system', datetime('now'))"""
+        )
+        await db.execute("UPDATE approval_role_routing SET staff_enabled = COALESCE(staff_enabled, 1)")
         # Data migration: fix existing devices that still have old NOC values
         await db.execute(
             "UPDATE devices SET current_location = 'PDIC' WHERE current_location = 'NOC' OR current_location IS NULL"
@@ -376,6 +395,16 @@ CREATE TABLE IF NOT EXISTS inventory_stock_movements (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS approval_role_routing (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    approval_type TEXT UNIQUE NOT NULL,
+    admin_enabled INTEGER DEFAULT 1,
+    manager_enabled INTEGER DEFAULT 1,
+    staff_enabled INTEGER DEFAULT 1,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_external_inventory_items_status ON external_inventory_items(status);
 CREATE INDEX IF NOT EXISTS idx_external_inventory_items_sku ON external_inventory_items(sku);
 CREATE INDEX IF NOT EXISTS idx_inventory_purchase_orders_status ON inventory_purchase_orders(status);
@@ -384,6 +413,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_receipts_po_id ON inventory_receipts(po
 CREATE INDEX IF NOT EXISTS idx_inventory_receipt_lines_receipt_id ON inventory_receipt_lines(receipt_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_item_id ON inventory_stock_movements(item_inventory_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_created_at ON inventory_stock_movements(created_at);
+CREATE INDEX IF NOT EXISTS idx_approval_role_routing_type ON approval_role_routing(approval_type);
 """
 
 

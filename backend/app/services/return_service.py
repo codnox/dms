@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from app.database import get_db, row_to_dict, rows_to_list
 from app.models.return_device import ReturnCreate, ReturnUpdate, ReturnStatus, ReturnReason
 from app.models.device import DeviceStatus
-from app.services import device_service, notification_service
+from app.services import approval_service, device_service, notification_service
 from app.utils.helpers import get_pagination, generate_return_id
 
 
@@ -117,9 +117,16 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
         )
         await db.commit()
 
-    # Notify ALL admin/manager/staff so anyone can confirm receipt
+    # Notify only enabled approval roles for return requests.
+    enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
+    if not enabled_roles:
+        enabled_roles = ["admin"]
+    role_placeholders = ", ".join(["?"] * len(enabled_roles))
     async with get_db() as db:
-        cursor = await db.execute("SELECT id, name FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        cursor = await db.execute(
+            f"SELECT id, name FROM users WHERE role IN ({role_placeholders})",
+            enabled_roles,
+        )
         staff_rows = await cursor.fetchall()
     for staff in staff_rows:
         staff = dict(staff)
@@ -145,6 +152,12 @@ async def update_return_status(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update return request status"""
+    user_role = str(user.get("role", "")).lower()
+    if status in {ReturnStatus.APPROVED.value, ReturnStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+        allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "return")
+        if not allowed:
+            raise PermissionError(f"{user_role.capitalize()} role is not allowed to process return approvals")
+
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM returns WHERE id = ?", (int(return_id),))
         return_req = await cursor.fetchone()
@@ -226,10 +239,15 @@ async def update_return_status(
 
     # When approved, remind all other staff to watch for the incoming device
     if status == ReturnStatus.APPROVED.value:
+        enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
+        if not enabled_roles:
+            enabled_roles = ["admin"]
+        role_placeholders = ", ".join(["?"] * len(enabled_roles))
+        acting_user_id = str(user.get("_id") or user.get("id"))
         async with get_db() as db:
             cursor = await db.execute(
-                "SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff') AND CAST(id AS TEXT) != ?",
-                (str(user.get("_id") or user.get("id")),)
+                f"SELECT id FROM users WHERE role IN ({role_placeholders}) AND CAST(id AS TEXT) != ?",
+                enabled_roles + [acting_user_id],
             )
             staff_rows = await cursor.fetchall()
         for row in staff_rows:
@@ -384,18 +402,31 @@ async def auto_create_defect_return(
         )
         await db.commit()
 
-    # Notify the manager/admin to approve the return
-    await notification_service.create_notification(
-        user_id=str(return_to_user["id"]),
-        title="Return Request Created — Defective Device",
-        message=(
-            f"A return request has been auto-created for defective device "
-            f"{device['device_id']} (Defect: {defect_report_id}). Please approve receipt."
-        ),
-        notification_type="warning",
-        category="return",
-        link=f"/returns?returnId={return_row_id}"
-    )
+    # Notify only enabled approval roles for return requests.
+    enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
+    if not enabled_roles:
+        enabled_roles = ["admin"]
+    role_placeholders = ", ".join(["?"] * len(enabled_roles))
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT id FROM users WHERE role IN ({role_placeholders})",
+            enabled_roles,
+        )
+        approver_rows = await cursor.fetchall()
+
+    for approver in approver_rows:
+        approver = dict(approver)
+        await notification_service.create_notification(
+            user_id=str(approver["id"]),
+            title="Return Request Created — Defective Device",
+            message=(
+                f"A return request has been auto-created for defective device "
+                f"{device['device_id']} (Defect: {defect_report_id}). Please approve receipt."
+            ),
+            notification_type="warning",
+            category="return",
+            link=f"/returns?returnId={return_row_id}"
+        )
 
     # Alert the operator (requester) to physically return the device
     async with get_db() as db:

@@ -87,3 +87,34 @@ class ApprovalResponse(BaseModel):
 class ApprovalAction(BaseModel):
     rejection_reason: Optional[str] = None
     notes: Optional[str] = None
+
+
+class RoleRoutingItemUpdate(BaseModel):
+    admin: bool
+    manager: bool
+    staff: bool
+
+
+class RoleRoutingUpdateRequest(BaseModel):
+    distribution: RoleRoutingItemUpdate
+    return_: RoleRoutingItemUpdate = Field(..., alias="return")
+    defect: RoleRoutingItemUpdate
+
+    class Config:
+        populate_by_name = True
+
+
+class RoleRoutingItemResponse(BaseModel):
+    admin: bool
+    manager: bool
+    staff: bool
+
+
+class RoleRoutingResponse(BaseModel):
+    distribution: RoleRoutingItemResponse
+    return_: RoleRoutingItemResponse = Field(..., alias="return")
+    defect: RoleRoutingItemResponse
+    updated_at: Optional[str] = None
+
+    class Config:
+        populate_by_name = True

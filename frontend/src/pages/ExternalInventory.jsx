@@ -61,6 +61,8 @@ const ExternalInventory = () => {
   const importInputRef = useRef(null);
 
   const [itemForm, setItemForm] = useState(initialItemForm);
+  const [editingInventoryId, setEditingInventoryId] = useState('');
+  const [editQuantityToAdd, setEditQuantityToAdd] = useState(0);
 
   const [poForm, setPoForm] = useState({
     supplier_name: '',
@@ -173,21 +175,29 @@ const ExternalInventory = () => {
 
     try {
       setSubmitting(true);
-      const created = await externalInventoryAPI.createItem({
+      const payload = {
         ...itemForm,
         price: Number(itemForm.price),
-        quantity_on_hand: Number(itemForm.quantity_on_hand),
+        quantity_on_hand: editingInventoryId
+          ? Number(itemForm.quantity_on_hand) + Number(editQuantityToAdd || 0)
+          : Number(itemForm.quantity_on_hand),
         reorder_level: Number(itemForm.reorder_level),
-      });
+      };
 
-      const createdInventoryId = created?.data?.inventory_id;
+      const created = editingInventoryId
+        ? await externalInventoryAPI.updateItem(editingInventoryId, payload)
+        : await externalInventoryAPI.createItem(payload);
+
+      const createdInventoryId = created?.data?.inventory_id || editingInventoryId;
       if (itemImageFile && createdInventoryId) {
         await externalInventoryAPI.uploadItemImage(createdInventoryId, itemImageFile);
       }
 
-      showToast('Inventory device item created', 'success');
+      showToast(editingInventoryId ? 'Inventory item updated' : 'Inventory device item created', 'success');
       setShowAddItemModal(false);
       setItemForm(initialItemForm);
+      setEditingInventoryId('');
+      setEditQuantityToAdd(0);
       setItemImageFile(null);
       setItemImagePreview('');
       await loadData();
@@ -554,7 +564,17 @@ const ExternalInventory = () => {
               <Button variant="secondary" icon={RefreshCw} onClick={loadData}>
                 Refresh
               </Button>
-              <Button icon={PackagePlus} onClick={() => setShowAddItemModal(true)}>
+              <Button
+                icon={PackagePlus}
+                onClick={() => {
+                  setEditingInventoryId('');
+                  setEditQuantityToAdd(0);
+                  setItemForm(initialItemForm);
+                  setItemImageFile(null);
+                  setItemImagePreview('');
+                  setShowAddItemModal(true);
+                }}
+              >
                 Add Device Item
               </Button>
               <Button variant="secondary" icon={Factory} onClick={() => setShowCreatePOModal(true)}>
@@ -650,14 +670,31 @@ const ExternalInventory = () => {
         isOpen={showAddItemModal}
         onClose={() => {
           setShowAddItemModal(false);
+          setEditingInventoryId('');
+          setEditQuantityToAdd(0);
+          setItemForm(initialItemForm);
           setItemImageFile(null);
           setItemImagePreview('');
         }}
-        title="Add External Inventory Device Item"
+        title={editingInventoryId ? 'Edit External Inventory Device Item' : 'Add External Inventory Device Item'}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setShowAddItemModal(false)}>Cancel</Button>
-            <Button loading={submitting} onClick={handleCreateItem}>Create Item</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowAddItemModal(false);
+                setEditingInventoryId('');
+                setEditQuantityToAdd(0);
+                setItemForm(initialItemForm);
+                setItemImageFile(null);
+                setItemImagePreview('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button loading={submitting} onClick={handleCreateItem}>
+              {editingInventoryId ? 'Save Changes' : 'Create Item'}
+            </Button>
           </>
         }
       >
@@ -713,16 +750,43 @@ const ExternalInventory = () => {
               onChange={(e) => setItemForm((p) => ({ ...p, price: e.target.value }))}
             />
           </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Opening Qty</span>
-            <input
-              type="number"
-              min="0"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
-              value={itemForm.quantity_on_hand}
-              onChange={(e) => setItemForm((p) => ({ ...p, quantity_on_hand: e.target.value }))}
-            />
-          </label>
+          {!editingInventoryId ? (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">Opening Qty</span>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                value={itemForm.quantity_on_hand}
+                onChange={(e) => setItemForm((p) => ({ ...p, quantity_on_hand: e.target.value }))}
+              />
+            </label>
+          ) : (
+            <>
+              <label className="space-y-1">
+                <span className="text-sm font-medium text-gray-700">Current On Hand</span>
+                <input
+                  type="number"
+                  className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2"
+                  value={itemForm.quantity_on_hand}
+                  disabled
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm font-medium text-gray-700">New Devices To Add</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  value={editQuantityToAdd}
+                  onChange={(e) => setEditQuantityToAdd(Math.max(0, Number(e.target.value || 0)))}
+                />
+                <p className="text-xs text-gray-500">
+                  Final on hand will be {Number(itemForm.quantity_on_hand || 0) + Number(editQuantityToAdd || 0)}.
+                </p>
+              </label>
+            </>
+          )}
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Reorder Level</span>
             <input
@@ -794,7 +858,41 @@ const ExternalInventory = () => {
         onClose={() => setSelectedItem(null)}
         title={`Item Details ${selectedItem?.item_id ? `- ${selectedItem.item_id}` : ''}`}
         size="lg"
-        footer={<Button onClick={() => setSelectedItem(null)}>Close</Button>}
+        footer={
+          <div className="flex gap-2">
+            {canManage && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (!selectedItem) return;
+                  setEditingInventoryId(selectedItem.inventory_id || '');
+                  setItemForm({
+                    item_id: selectedItem.item_id || '',
+                    name: selectedItem.name || '',
+                    serial_number: selectedItem.serial_number || '',
+                    mac_id: selectedItem.mac_id || '',
+                    device_type: selectedItem.device_type || '',
+                    price: Number(selectedItem.price ?? 0),
+                    unit: selectedItem.unit || 'pcs',
+                    quantity_on_hand: Number(selectedItem.quantity_on_hand ?? 0),
+                    reorder_level: Number(selectedItem.reorder_level ?? 0),
+                    supplier_name: selectedItem.supplier_name || '',
+                    location: selectedItem.location || '',
+                    notes: selectedItem.notes || '',
+                  });
+                  setEditQuantityToAdd(0);
+                  setItemImageFile(null);
+                  setItemImagePreview(selectedItem.image_url ? toAssetUrl(selectedItem.image_url) : '');
+                  setSelectedItem(null);
+                  setShowAddItemModal(true);
+                }}
+              >
+                Edit Item
+              </Button>
+            )}
+            <Button onClick={() => setSelectedItem(null)}>Close</Button>
+          </div>
+        }
       >
         {selectedItem && (
           <div className="space-y-4">

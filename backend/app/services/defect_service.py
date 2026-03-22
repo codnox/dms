@@ -5,7 +5,7 @@ import json
 from app.database import get_db, row_to_dict, rows_to_list
 from app.models.defect import DefectCreate, DefectUpdate, DefectStatus, DefectSeverity
 from app.models.device import DeviceStatus, DeviceCreate
-from app.services import device_service, notification_service, return_service
+from app.services import approval_service, device_service, notification_service, return_service
 from app.utils.helpers import get_pagination, generate_defect_id
 
 
@@ -260,9 +260,16 @@ async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> 
         notes=f"Defect reported: {defect_data.defect_type.value} - {defect_data.severity.value}"
     )
 
-    # Notify admins/managers/staff
+    # Notify only enabled approval roles for defect reports.
+    enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("defect")
+    if not enabled_roles:
+        enabled_roles = ["admin"]
+    role_placeholders = ", ".join(["?"] * len(enabled_roles))
     async with get_db() as db:
-        cursor = await db.execute("SELECT * FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        cursor = await db.execute(
+            f"SELECT * FROM users WHERE role IN ({role_placeholders})",
+            enabled_roles,
+        )
         admins = await cursor.fetchall()
         for admin in admins:
             admin = dict(admin)
@@ -320,6 +327,12 @@ async def update_defect_status(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Update defect status. When approved, automatically creates a return request."""
+    user_role = str(user.get("role", "")).lower()
+    if status in {DefectStatus.APPROVED.value, DefectStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+        allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "defect")
+        if not allowed:
+            raise PermissionError(f"{user_role.capitalize()} role is not allowed to process defect approvals")
+
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
         defect = await cursor.fetchone()
@@ -372,10 +385,17 @@ async def update_defect_status(
             link=f"/defects?defectId={defect_id}"
         )
 
-        # Notify all admins/managers/staff when approved so they can confirm receipt
+        # Notify only enabled return approval roles when approved so they can confirm receipt.
         if status == DefectStatus.APPROVED.value:
+            enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
+            if not enabled_roles:
+                enabled_roles = ["admin"]
+            role_placeholders = ", ".join(["?"] * len(enabled_roles))
             async with get_db() as db:
-                cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+                cursor = await db.execute(
+                    f"SELECT id FROM users WHERE role IN ({role_placeholders})",
+                    enabled_roles,
+                )
                 staff_rows = await cursor.fetchall()
             for row in staff_rows:
                 row = dict(row)

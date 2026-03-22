@@ -583,6 +583,19 @@ export const approvalsAPI = {
     });
     return response;
   },
+
+  getRoleRoutingConfig: async () => {
+    const response = await apiRequest('/approvals/role-routing/config');
+    return response;
+  },
+
+  updateRoleRoutingConfig: async (payload) => {
+    const response = await apiRequest('/approvals/role-routing/config', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
 };
 
 // Operators API
