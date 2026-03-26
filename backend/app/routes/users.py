@@ -20,11 +20,19 @@ async def get_users(
     """Get users - admins/managers see all; sub_distributor/cluster see their children"""
     creator_role = current_user["role"]
 
+    # Staff can only access recipient lists used in distribution flows.
     if creator_role == "staff":
-        raise HTTPException(
-            status_code=403,
-            detail="Staff cannot view the user list"
-        )
+        allowed_staff_roles = {"sub_distributor", "cluster", "operator"}
+        if role is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Staff must filter by role"
+            )
+        if role not in allowed_staff_roles:
+            raise HTTPException(
+                status_code=403,
+                detail="Staff can only view sub distributors, clusters, and operators"
+            )
 
     # sub_distributor and cluster only see their own children
     # admin/manager may optionally pass parent_id to filter by a specific parent

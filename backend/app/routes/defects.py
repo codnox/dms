@@ -258,7 +258,7 @@ async def delete_defect(
 async def update_defect_status(
     defect_id: str,
     status_update: DefectStatusUpdate,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Update defect status"""
     try:

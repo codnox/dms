@@ -70,6 +70,9 @@ async def get_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
 async def create_device(device_data: DeviceCreate, created_by: str, created_by_name: str) -> Dict[str, Any]:
     """Create a new device"""
     async with get_db() as db:
+        if device_data.device_type.value == "Setup Box" and not (device_data.nuid and device_data.nuid.strip()):
+            raise ValueError("NUID is required for Setup Box devices")
+
         # Check if serial number exists
         cursor = await db.execute("SELECT id FROM devices WHERE serial_number = ?", (device_data.serial_number,))
         if await cursor.fetchone():
@@ -88,13 +91,16 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
         
         cursor = await db.execute(
             """INSERT INTO devices (device_id, device_type, model, serial_number, mac_address,
-                manufacturer, status, current_location, current_holder_id, current_holder_name,
+                manufacturer, band_type, nuid, status, current_location, current_holder_id, current_holder_name,
                 current_holder_type, registered_by_name, purchase_date, warranty_expiry, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 dev_id, device_data.device_type.value, device_data.model,
                 device_data.serial_number, device_data.mac_address,
-                device_data.manufacturer, DeviceStatus.AVAILABLE.value,
+                device_data.manufacturer,
+                device_data.band_type.value if hasattr(device_data.band_type, "value") else device_data.band_type,
+                device_data.nuid,
+                DeviceStatus.AVAILABLE.value,
                 "PDIC", None, "PDIC (Distribution)", HolderType.NOC.value,
                 created_by_name,
                 purchase_date, warranty_expiry, metadata_json, now, now
@@ -115,12 +121,51 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
 async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[Dict[str, Any]]:
     """Update device"""
     async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
+        current_row = await cursor.fetchone()
+        if not current_row:
+            return None
+        current_device = row_to_dict(current_row)
+
         update_fields = []
         params = []
         
         data = device_data.model_dump(exclude_unset=True)
+
+        next_device_type = data.get("device_type", current_device.get("device_type"))
+        if hasattr(next_device_type, "value"):
+            next_device_type = next_device_type.value
+        next_nuid = data.get("nuid", current_device.get("nuid"))
+        if next_device_type == "Setup Box" and not (next_nuid and str(next_nuid).strip()):
+            raise ValueError("NUID is required for Setup Box devices")
+
+        if "serial_number" in data and data["serial_number"] is not None:
+            serial_number = str(data["serial_number"]).strip()
+            if not serial_number:
+                raise ValueError("Serial number cannot be empty")
+            cursor = await db.execute(
+                "SELECT id FROM devices WHERE serial_number = ? AND id != ?",
+                (serial_number, int(device_id))
+            )
+            if await cursor.fetchone():
+                raise ValueError("Serial number already exists")
+            update_fields.append("serial_number = ?")
+            params.append(serial_number)
+
+        if "mac_address" in data and data["mac_address"] is not None:
+            mac_address = str(data["mac_address"]).strip()
+            if not mac_address:
+                raise ValueError("MAC address cannot be empty")
+            cursor = await db.execute(
+                "SELECT id FROM devices WHERE mac_address = ? AND id != ?",
+                (mac_address, int(device_id))
+            )
+            if await cursor.fetchone():
+                raise ValueError("MAC address already exists")
+            update_fields.append("mac_address = ?")
+            params.append(mac_address)
         
-        for field in ["model", "manufacturer", "current_location"]:
+        for field in ["model", "manufacturer", "current_location", "nuid"]:
             if field in data and data[field] is not None:
                 update_fields.append(f"{field} = ?")
                 params.append(data[field])
@@ -131,6 +176,9 @@ async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[D
         if "device_type" in data and data["device_type"] is not None:
             update_fields.append("device_type = ?")
             params.append(data["device_type"].value if hasattr(data["device_type"], "value") else data["device_type"])
+        if "band_type" in data and data["band_type"] is not None:
+            update_fields.append("band_type = ?")
+            params.append(data["band_type"].value if hasattr(data["band_type"], "value") else data["band_type"])
         if "warranty_expiry" in data and data["warranty_expiry"] is not None:
             update_fields.append("warranty_expiry = ?")
             params.append(data["warranty_expiry"].isoformat() if hasattr(data["warranty_expiry"], "isoformat") else data["warranty_expiry"])

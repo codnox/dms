@@ -22,7 +22,7 @@ PERMISSIONS = {
     
     # Device management
     "devices:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "devices:create": [UserRole.ADMIN, UserRole.MANAGER],
+    "devices:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF],
     "devices:update": [UserRole.ADMIN, UserRole.MANAGER],
     "devices:delete": [UserRole.ADMIN],
     

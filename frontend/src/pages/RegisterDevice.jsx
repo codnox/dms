@@ -19,6 +19,8 @@ const RegisterDevice = () => {
     serialNumber: '',
     model: '',
     manufacturer: '',
+    bandType: 'single_band',
+    nuid: '',
     hardwareVersion: '',
     firmwareVersion: '',
     deviceType: 'ONT',
@@ -174,6 +176,16 @@ const RegisterDevice = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const requiresNuid = formData.deviceType === 'Setup Box';
+    if (!formData.model.trim() || !formData.manufacturer.trim() || !formData.macAddress.trim() || !formData.bandType) {
+      showToast('Model, Manufacturer, MAC Address and Band Type are required.', 'error');
+      return;
+    }
+    if (requiresNuid && !formData.nuid.trim()) {
+      showToast('NUID is required for Setup Box devices.', 'error');
+      return;
+    }
+
     setLoading(true);
     
     console.log('[RegisterDevice] Submitting device registration');
@@ -182,15 +194,17 @@ const RegisterDevice = () => {
     try {
       const deviceData = {
         device_type: formData.deviceType,
-        model: formData.model,
-        serial_number: formData.serialNumber,
-        mac_address: formData.macAddress,
-        manufacturer: formData.manufacturer,
+        model: formData.model.trim(),
+        serial_number: formData.serialNumber.trim(),
+        mac_address: formData.macAddress.trim(),
+        manufacturer: formData.manufacturer.trim(),
+        band_type: formData.bandType,
+        nuid: formData.nuid.trim() || null,
         metadata: {
-          hardware_version: formData.hardwareVersion,
-          firmware_version: formData.firmwareVersion,
+          hardware_version: formData.hardwareVersion.trim(),
+          firmware_version: formData.firmwareVersion.trim(),
           condition: formData.condition,
-          notes: formData.notes
+          notes: formData.notes.trim()
         }
       };
 
@@ -297,6 +311,23 @@ const RegisterDevice = () => {
                   <option value="Switch">Switch</option>
                   <option value="Modem">Modem</option>
                   <option value="Access Point">Access Point</option>
+                  <option value="Setup Box">Setup Box</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Band Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="bandType"
+                  value={formData.bandType}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="single_band">Single Band</option>
+                  <option value="dual_band">Dual Band</option>
                 </select>
               </div>
 
@@ -359,6 +390,23 @@ const RegisterDevice = () => {
                   required
                 />
               </div>
+
+              {formData.deviceType === 'Setup Box' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    NUID <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="nuid"
+                    value={formData.nuid}
+                    onChange={handleChange}
+                    placeholder="Enter Setup Box NUID"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -23,8 +23,23 @@ const Devices = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
 
+  const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'Setup Box', 'Other'];
+  const bandTypeOptions = [
+    { value: 'single_band', label: 'Single Band' },
+    { value: 'dual_band', label: 'Dual Band' },
+  ];
+
   // Edit form state
-  const [editForm, setEditForm] = useState({ model: '', manufacturer: '', current_location: '' });
+  const [editForm, setEditForm] = useState({
+    model: '',
+    manufacturer: '',
+    serial_number: '',
+    mac_address: '',
+    device_type: 'ONT',
+    band_type: 'single_band',
+    nuid: '',
+    current_location: '',
+  });
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const isManagement = ['admin', 'manager', 'staff'].includes(user?.role);
@@ -122,25 +137,67 @@ const Devices = () => {
     setEditForm({
       model: device.model || '',
       manufacturer: device.manufacturer || '',
+      serial_number: device.serial_number || '',
+      mac_address: device.mac_address || '',
+      device_type: device.device_type || 'ONT',
+      band_type: device.band_type || 'single_band',
+      nuid: device.nuid || '',
       current_location: device.current_location || '',
     });
     setShowEditModal(true);
   };
 
   const handleEditSubmit = async () => {
-    if (!editForm.model && !editForm.manufacturer && !editForm.current_location) {
-      showToast('At least one field must be filled in.', 'error');
+    const trimmedForm = {
+      ...editForm,
+      model: editForm.model?.trim() || '',
+      manufacturer: editForm.manufacturer?.trim() || '',
+      serial_number: editForm.serial_number?.trim() || '',
+      mac_address: editForm.mac_address?.trim() || '',
+      nuid: editForm.nuid?.trim() || '',
+      current_location: editForm.current_location?.trim() || '',
+    };
+
+    if (!trimmedForm.model || !trimmedForm.manufacturer || !trimmedForm.serial_number || !trimmedForm.mac_address || !trimmedForm.band_type) {
+      showToast('Model, Manufacturer, Serial Number, MAC Address, and Band Type are required.', 'error');
       return;
     }
+
+    if (trimmedForm.device_type === 'Setup Box' && !trimmedForm.nuid) {
+      showToast('NUID is required for Setup Box devices.', 'error');
+      return;
+    }
+
+    const updatePayload = {
+      model: trimmedForm.model,
+      manufacturer: trimmedForm.manufacturer,
+      serial_number: trimmedForm.serial_number,
+      mac_address: trimmedForm.mac_address,
+      device_type: trimmedForm.device_type,
+      band_type: trimmedForm.band_type,
+      nuid: trimmedForm.device_type === 'Setup Box' ? trimmedForm.nuid : null,
+      current_location: trimmedForm.current_location,
+    };
+
+    const hasChanges = Object.entries(updatePayload).some(([key, value]) => {
+      const currentValue = selectedDevice?.[key] ?? null;
+      return String(currentValue ?? '') !== String(value ?? '');
+    });
+
+    if (!hasChanges) {
+      showToast('No changes detected.', 'info');
+      return;
+    }
+
     try {
       setEditSubmitting(true);
       if (isStaff) {
         // Staff must request approval — send notification to admins/managers
-        await devicesAPI.requestDeviceEdit(selectedDevice.id, editForm);
+        await devicesAPI.requestDeviceEdit(selectedDevice.id, updatePayload);
         showToast('Edit request submitted. A manager or admin will review your proposed changes.', 'info');
       } else {
         // Admin/manager: apply directly
-        await devicesAPI.updateDevice(selectedDevice.id, editForm);
+        await devicesAPI.updateDevice(selectedDevice.id, updatePayload);
         showToast('Device updated successfully.', 'success');
       }
       setShowEditModal(false);
@@ -502,6 +559,14 @@ const Devices = () => {
                 <p className="font-medium text-gray-800">{selectedDevice.device_type}</p>
               </div>
               <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">Band Type</label>
+                <p className="font-medium text-gray-800">{selectedDevice.band_type ? selectedDevice.band_type.replace('_', ' ') : 'N/A'}</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">NUID</label>
+                <p className="font-medium text-gray-800">{selectedDevice.nuid || 'N/A'}</p>
+              </div>
+              <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Device ID</label>
                 <p className="font-medium text-gray-800">{selectedDevice.device_id}</p>
               </div>
@@ -677,6 +742,62 @@ const Devices = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Device Type
+              </label>
+              <select
+                value={editForm.device_type}
+                onChange={(e) => setEditForm(prev => ({ ...prev, device_type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                {deviceTypeOptions.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Band Type
+              </label>
+              <select
+                value={editForm.band_type}
+                onChange={(e) => setEditForm(prev => ({ ...prev, band_type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                {bandTypeOptions.map((band) => (
+                  <option key={band.value} value={band.value}>{band.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Serial Number
+              </label>
+              <input
+                type="text"
+                value={editForm.serial_number}
+                onChange={(e) => setEditForm(prev => ({ ...prev, serial_number: e.target.value }))}
+                placeholder={selectedDevice.serial_number || 'e.g. SN-2024-001'}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                MAC Address
+              </label>
+              <input
+                type="text"
+                value={editForm.mac_address}
+                onChange={(e) => setEditForm(prev => ({ ...prev, mac_address: e.target.value }))}
+                placeholder={selectedDevice.mac_address || 'AA:BB:CC:DD:EE:FF'}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Model
               </label>
               <input
@@ -687,6 +808,21 @@ const Devices = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {editForm.device_type === 'Setup Box' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  NUID
+                </label>
+                <input
+                  type="text"
+                  value={editForm.nuid}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, nuid: e.target.value }))}
+                  placeholder={selectedDevice.nuid || 'Enter Setup Box NUID'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -6,7 +6,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
 import Timeline from '../components/ui/Timeline';
-import { returnsAPI } from '../services/api';
+import { returnsAPI, approvalsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
@@ -21,6 +21,9 @@ const Returns = () => {
   const [showActionModal, setShowActionModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [actionComment, setActionComment] = useState('');
+  const [routingConfig, setRoutingConfig] = useState({
+    return: { admin: true, manager: true, staff: true }
+  });
 
   const fetchReturns = async () => {
     try {
@@ -39,9 +42,34 @@ const Returns = () => {
     fetchReturns();
   }, []);
 
+  useEffect(() => {
+    const loadRoleRoutingConfig = async () => {
+      try {
+        const response = await approvalsAPI.getRoleRoutingConfig();
+        const incoming = response?.data || {};
+        setRoutingConfig({
+          return: {
+            admin: incoming?.return?.admin ?? true,
+            manager: incoming?.return?.manager ?? true,
+            staff: incoming?.return?.staff ?? true,
+          }
+        });
+      } catch {
+        setRoutingConfig({ return: { admin: true, manager: true, staff: true } });
+      }
+    };
+
+    if (['admin', 'manager', 'staff'].includes(user?.role)) {
+      loadRoleRoutingConfig();
+    }
+  }, [user?.role]);
+
   const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
-  const canApprove = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
-  const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role);
+  const reviewRole = ['admin', 'manager', 'staff'].includes(user?.role) ? user.role : null;
+  const isReturnApprovalEnabledForRole =
+    !reviewRole || Boolean(routingConfig?.return?.[reviewRole]);
+  const canApprove = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
+  const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
 
   const pendingReviewReturns = returnRequests.filter((r) => r.status === 'pending');
   const pendingReceiptReturns = returnRequests.filter((r) => r.status === 'approved');
