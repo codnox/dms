@@ -11,7 +11,13 @@ class DeviceType(str, Enum):
     SWITCH = "Switch"
     MODEM = "Modem"
     ACCESS_POINT = "Access Point"
+    SETUP_BOX = "Setup Box"
     OTHER = "Other"
+
+
+class DeviceBand(str, Enum):
+    SINGLE_BAND = "single_band"
+    DUAL_BAND = "dual_band"
 
 
 class DeviceStatus(str, Enum):
@@ -38,6 +44,8 @@ class DeviceBase(BaseModel):
     serial_number: str = Field(..., min_length=1, max_length=100)
     mac_address: str = Field(..., min_length=1, max_length=50)
     manufacturer: str = Field(..., min_length=1, max_length=100)
+    band_type: DeviceBand
+    nuid: Optional[str] = Field(default=None, max_length=100)
 
 
 class DeviceCreate(DeviceBase):
@@ -48,8 +56,12 @@ class DeviceCreate(DeviceBase):
 
 class DeviceUpdate(BaseModel):
     device_type: Optional[DeviceType] = None
+    serial_number: Optional[str] = None
+    mac_address: Optional[str] = None
     model: Optional[str] = None
     manufacturer: Optional[str] = None
+    band_type: Optional[DeviceBand] = None
+    nuid: Optional[str] = None
     status: Optional[DeviceStatus] = None
     current_location: Optional[str] = None
     warranty_expiry: Optional[datetime] = None
@@ -83,6 +95,8 @@ class DeviceResponse(BaseModel):
     serial_number: str
     mac_address: str
     manufacturer: str
+    band_type: DeviceBand
+    nuid: Optional[str] = None
     status: DeviceStatus
     current_location: Optional[str] = None
     current_holder_id: Optional[str] = None

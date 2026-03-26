@@ -42,11 +42,7 @@ Write-Host "Frontend:  http://localhost:5173" -ForegroundColor White
 Write-Host "Backend:   http://localhost:8080" -ForegroundColor White
 Write-Host "API Docs:  http://localhost:8080/docs" -ForegroundColor White
 Write-Host ""
-Write-Host "Demo Accounts:" -ForegroundColor Yellow
-Write-Host "   admin@dms.com / admin123 (Admin)" -ForegroundColor White
-Write-Host "   manager@dms.com / manager123 (Manager)" -ForegroundColor White
-Write-Host "   distributor@dms.com / dist123 (Distributor)" -ForegroundColor White
-Write-Host ""
+
 Write-Host "Press any key to open browser..." -ForegroundColor Cyan
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 

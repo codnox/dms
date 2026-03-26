@@ -197,6 +197,10 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             if not device:
                 raise ValueError(f"Device {dev_id} not found")
             device = row_to_dict(device)
+            if device.get("status") == DeviceStatus.DEFECTIVE.value:
+                raise ValueError(
+                    f"Device {device['device_id']} is marked defective and cannot be transferred"
+                )
             if from_role in ["admin", "manager", "staff"]:
                 # Management distributes from PDIC stock — must be available
                 if device["status"] != DeviceStatus.AVAILABLE.value:

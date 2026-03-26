@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
-from app.models.device import DeviceType
+from app.models.device import DeviceType, DeviceBand
 
 
 class DefectType(str, Enum):
@@ -83,6 +83,8 @@ class ReplacementDeviceCreate(BaseModel):
     serial_number: str = Field(..., min_length=1, max_length=100)
     mac_address: str = Field(..., min_length=1, max_length=50)
     manufacturer: str = Field(..., min_length=1, max_length=100)
+    band_type: DeviceBand = DeviceBand.SINGLE_BAND
+    nuid: Optional[str] = None
 
 
 class ReplaceDeviceRequest(BaseModel):

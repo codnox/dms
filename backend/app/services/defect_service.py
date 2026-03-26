@@ -251,15 +251,6 @@ async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> 
         await db.commit()
         new_id = cursor.lastrowid
 
-    # Update device status (also records history internally)
-    await device_service.update_device_status(
-        device_id=defect_data.device_id,
-        status=DeviceStatus.DEFECTIVE.value,
-        performed_by=str(reporter["_id"]),
-        performed_by_name=reporter["name"],
-        notes=f"Defect reported: {defect_data.defect_type.value} - {defect_data.severity.value}"
-    )
-
     # Notify only enabled approval roles for defect reports.
     enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("defect")
     if not enabled_roles:
@@ -351,6 +342,13 @@ async def update_defect_status(
     if affected > 0:
         extra_msg = ""
         if status == DefectStatus.APPROVED.value:
+            await device_service.update_device_status(
+                device_id=defect["device_id"],
+                status=DeviceStatus.DEFECTIVE.value,
+                performed_by=str(user.get("_id") or user.get("id")),
+                performed_by_name=user.get("name", "Unknown"),
+                notes=f"Defect report {defect.get('report_id', defect_id)} approved"
+            )
             try:
                 auto_return = await return_service.auto_create_defect_return(
                     device_id=defect["device_id"],
@@ -474,6 +472,7 @@ async def replace_defect_device(
     pre_created_device: Optional[Dict[str, Any]] = None
 
     if register_device:
+        register_device.setdefault("band_type", "single_band")
         create_payload = DeviceCreate(**register_device)
         pre_created_device = await device_service.create_device(
             device_data=create_payload,

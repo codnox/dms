@@ -305,7 +305,7 @@ async def approve_request(
             raise ValueError("This request has already been processed")
 
         approver_role = _normalize_role(approver.get("role"))
-        if approver_role in {"admin", "manager"}:
+        if approver_role in {"admin", "manager", "staff"}:
             allowed = await is_role_allowed_for_approval_type(approver_role, approval.get("approval_type"))
             if not allowed:
                 raise PermissionError(
@@ -372,7 +372,7 @@ async def reject_request(
             raise ValueError("This request has already been processed")
 
         approver_role = _normalize_role(approver.get("role"))
-        if approver_role in {"admin", "manager"}:
+        if approver_role in {"admin", "manager", "staff"}:
             allowed = await is_role_allowed_for_approval_type(approver_role, approval.get("approval_type"))
             if not allowed:
                 raise PermissionError(

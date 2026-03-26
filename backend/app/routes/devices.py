@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile
 from typing import Optional, Dict, Any
 from app.models.device import DeviceCreate, DeviceUpdate, DeviceType
 from app.services import device_service, notification_service
-from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
+from app.middleware.auth_middleware import get_current_user, require_admin_or_manager, require_management
 
 router = APIRouter()
 
@@ -336,12 +336,12 @@ async def get_device_history(
 @router.post("/bulk-upload", status_code=status.HTTP_201_CREATED)
 async def bulk_upload_devices(
     file: UploadFile = File(...),
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Bulk upload devices from an Excel file.
     
-    Required columns: device_type, model, serial_number, mac_address, manufacturer
-    Optional columns: purchase_date, warranty_expiry
+    Required columns: device_type, model, serial_number, mac_address, manufacturer, band_type
+    Optional columns: nuid, purchase_date, warranty_expiry
     """
     filename_lower = file.filename.lower()
     if not filename_lower.endswith(('.xlsx', '.xls', '.csv')):
@@ -380,7 +380,7 @@ async def bulk_upload_devices(
                 for row in ws.iter_rows(min_row=2, values_only=True):
                     yield row
 
-        required = {"device_type", "model", "serial_number", "mac_address", "manufacturer"}
+        required = {"device_type", "model", "serial_number", "mac_address", "manufacturer", "band_type"}
         missing = required - set(headers)
         if missing:
             raise HTTPException(
@@ -389,6 +389,14 @@ async def bulk_upload_devices(
             )
 
         valid_types = {t.value.lower(): t.value for t in DeviceType}
+        valid_bands = {
+            "single_band": "single_band",
+            "single band": "single_band",
+            "single": "single_band",
+            "dual_band": "dual_band",
+            "dual band": "dual_band",
+            "dual": "dual_band",
+        }
         created, skipped, errors = [], [], []
 
         for row_idx, row in enumerate(iter_data_rows(), start=2):
@@ -410,6 +418,12 @@ async def bulk_upload_devices(
                 errors.append({"row": row_idx, "serial": serial, "error": f"Invalid device_type '{row_data.get('device_type')}'"})
                 continue
 
+            raw_band = row_data.get("band_type", "").lower()
+            band_type_val = valid_bands.get(raw_band)
+            if not band_type_val:
+                errors.append({"row": row_idx, "serial": serial, "error": f"Invalid band_type '{row_data.get('band_type')}'"})
+                continue
+
             try:
                 device_data = DeviceCreate(
                     device_type=device_type_val,
@@ -417,6 +431,8 @@ async def bulk_upload_devices(
                     serial_number=serial,
                     mac_address=row_data.get("mac_address", ""),
                     manufacturer=row_data.get("manufacturer", ""),
+                    band_type=band_type_val,
+                    nuid=row_data.get("nuid", "") or None,
                 )
                 device = await device_service.create_device(
                     device_data=device_data,
@@ -454,7 +470,7 @@ async def bulk_upload_devices(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_device(
     device_data: DeviceCreate,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_management)
 ):
     """Register a new device"""
     try:

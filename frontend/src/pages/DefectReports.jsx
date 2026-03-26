@@ -62,7 +62,7 @@ const DefectReports = () => {
   }, []);
 
   const canReport = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
-  const canReview = ['sub_distributor', 'admin', 'manager', 'staff'].includes(user?.role);
+  const canReview = ['admin', 'manager', 'staff'].includes(user?.role);
   const canReplace = ['admin', 'manager', 'staff'].includes(user?.role);
   const canConfirmReplacement = user?.role === 'operator';
 
