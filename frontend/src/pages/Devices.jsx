@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
-import { devicesAPI, defectsAPI } from '../services/api';
+import { devicesAPI, defectsAPI, usersAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Edit, Trash2, Box, Upload, Loader2, Users, Send, ArrowDownToLine, Link2, AlertTriangle, CheckCircle2, Save } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, Box, Upload, Loader2, Users, Send, ArrowDownToLine, Link2, AlertTriangle, CheckCircle2, Save, Filter, Building2, Network, Factory } from 'lucide-react';
 
 const Devices = () => {
   const { user } = useAuth();
@@ -18,10 +18,19 @@ const Devices = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [overview, setOverview] = useState(null);
+  const [hierarchyUsers, setHierarchyUsers] = useState([]);
   const [defectsData, setDefectsData] = useState([]);
   const [replacementMap, setReplacementMap] = useState({ replacementIds: new Set(), defectiveIds: new Set(), defectByDeviceId: {} });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [tableFilters, setTableFilters] = useState({
+    device_type: '',
+    manufacturer: '',
+    status: '',
+    sub_distributor_id: '',
+    cluster_id: '',
+  });
 
   const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'Setup Box', 'Other'];
   const bandTypeOptions = [
@@ -61,6 +70,31 @@ const Devices = () => {
       ]);
 
       setOverview(overviewResponse.data);
+
+      try {
+        const [subsResponse, clustersResponse, operatorsResponse] = await Promise.all([
+          usersAPI.getUsers({ role: 'sub_distributor', page_size: 5000 }),
+          usersAPI.getUsers({ role: 'cluster', page_size: 5000 }),
+          usersAPI.getUsers({ role: 'operator', page_size: 5000 }),
+        ]);
+
+        const collect = (response) => {
+          const payload = response?.data;
+          if (Array.isArray(payload)) return payload;
+          if (Array.isArray(payload?.users)) return payload.users;
+          return [];
+        };
+
+        const usersMap = new Map();
+        [...collect(subsResponse), ...collect(clustersResponse), ...collect(operatorsResponse)].forEach((u) => {
+          const key = String(u.id || u._id);
+          if (!key) return;
+          usersMap.set(key, u);
+        });
+        setHierarchyUsers(Array.from(usersMap.values()));
+      } catch {
+        setHierarchyUsers([]);
+      }
 
       const replacementIds = new Set();
       const defectiveIds = new Set();
@@ -124,6 +158,199 @@ const Devices = () => {
       default: return sortByReplacementGroups(overview.all_under_me || []);
     }
   })();
+
+  const managementAllDevices = useMemo(() => {
+    if (!isManagement) return [];
+    return overview?.all_under_me || [];
+  }, [isManagement, overview]);
+
+  const isAllDevicesView = isManagement && activeTab === 'all';
+
+  const hierarchyIndex = useMemo(() => {
+    const subDistributors = hierarchyUsers.filter((u) => u.role === 'sub_distributor');
+    const clusters = hierarchyUsers.filter((u) => u.role === 'cluster');
+    const operators = hierarchyUsers.filter((u) => u.role === 'operator');
+
+    const clustersBySub = {};
+    for (const cluster of clusters) {
+      const parentKey = String(cluster.parent_id || '');
+      if (!parentKey) continue;
+      if (!clustersBySub[parentKey]) clustersBySub[parentKey] = [];
+      clustersBySub[parentKey].push(cluster);
+    }
+
+    const operatorsByCluster = {};
+    const operatorsBySub = {};
+    for (const operator of operators) {
+      const parentKey = String(operator.parent_id || '');
+      if (!parentKey) continue;
+      const parentCluster = clusters.find((cluster) => String(cluster.id) === parentKey);
+      if (parentCluster) {
+        if (!operatorsByCluster[parentKey]) operatorsByCluster[parentKey] = [];
+        operatorsByCluster[parentKey].push(operator);
+      } else {
+        if (!operatorsBySub[parentKey]) operatorsBySub[parentKey] = [];
+        operatorsBySub[parentKey].push(operator);
+      }
+    }
+
+    return { subDistributors, clusters, operators, clustersBySub, operatorsByCluster, operatorsBySub };
+  }, [hierarchyUsers]);
+
+  const devicesByHolder = useMemo(() => {
+    const grouped = {};
+    for (const device of managementAllDevices) {
+      const holderId = String(device.current_holder_id || '');
+      if (!holderId) continue;
+      if (!grouped[holderId]) grouped[holderId] = [];
+      grouped[holderId].push(device);
+    }
+    return grouped;
+  }, [managementAllDevices]);
+
+  const byTypeSummary = useMemo(() => {
+    const grouped = {};
+    for (const device of managementAllDevices) {
+      const key = device.device_type || 'Unknown';
+      grouped[key] = (grouped[key] || 0) + 1;
+    }
+    return Object.entries(grouped)
+      .map(([type, total]) => ({ type, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [managementAllDevices]);
+
+  const subDistributorSummary = useMemo(() => {
+    return hierarchyIndex.subDistributors
+      .map((sub) => {
+        const subId = String(sub.id);
+        const childClusters = hierarchyIndex.clustersBySub[subId] || [];
+        const directOperators = hierarchyIndex.operatorsBySub[subId] || [];
+        const holderIds = [
+          subId,
+          ...childClusters.map((cluster) => String(cluster.id)),
+          ...directOperators.map((operator) => String(operator.id)),
+          ...childClusters.flatMap((cluster) =>
+            (hierarchyIndex.operatorsByCluster[String(cluster.id)] || []).map((operator) => String(operator.id))
+          ),
+        ];
+
+        const byType = {};
+        let total = 0;
+        for (const holderId of holderIds) {
+          for (const device of (devicesByHolder[holderId] || [])) {
+            total += 1;
+            const type = device.device_type || 'Unknown';
+            byType[type] = (byType[type] || 0) + 1;
+          }
+        }
+
+        return {
+          id: subId,
+          name: sub.name || 'Unknown Sub Distribution',
+          total,
+          byType,
+          holderIds,
+        };
+      })
+      .filter((item) => item.total > 0)
+      .map((item) => ({
+        ...item,
+        typeBreakdown: Object.entries(item.byType)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [devicesByHolder, hierarchyIndex]);
+
+  const clusterSummary = useMemo(() => {
+    return hierarchyIndex.clusters
+      .map((cluster) => {
+        const clusterId = String(cluster.id);
+        const childOperators = hierarchyIndex.operatorsByCluster[clusterId] || [];
+        const holderIds = [clusterId, ...childOperators.map((operator) => String(operator.id))];
+
+        const byType = {};
+        let total = 0;
+        for (const holderId of holderIds) {
+          for (const device of (devicesByHolder[holderId] || [])) {
+            total += 1;
+            const type = device.device_type || 'Unknown';
+            byType[type] = (byType[type] || 0) + 1;
+          }
+        }
+
+        return {
+          id: clusterId,
+          name: cluster.name || 'Unknown Cluster',
+          total,
+          byType,
+          holderIds,
+        };
+      })
+      .filter((item) => item.total > 0)
+      .map((item) => ({
+        ...item,
+        typeBreakdown: Object.entries(item.byType)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [devicesByHolder, hierarchyIndex]);
+
+  const manufacturerSummary = useMemo(() => {
+    const grouped = {};
+    for (const device of managementAllDevices) {
+      const key = (device.manufacturer || 'Unknown').trim() || 'Unknown';
+      if (!grouped[key]) {
+        grouped[key] = {
+          manufacturer: key,
+          total: 0,
+          byType: {},
+        };
+      }
+      grouped[key].total += 1;
+      const type = device.device_type || 'Unknown';
+      grouped[key].byType[type] = (grouped[key].byType[type] || 0) + 1;
+    }
+
+    return Object.values(grouped)
+      .map((item) => ({
+        ...item,
+        distinctTypes: Object.keys(item.byType).length,
+        typeBreakdown: Object.entries(item.byType)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [managementAllDevices]);
+
+  const filterOptions = useMemo(() => {
+    const deviceTypes = [...new Set(managementAllDevices.map((d) => d.device_type).filter(Boolean))].sort();
+    const manufacturers = [...new Set(managementAllDevices.map((d) => (d.manufacturer || '').trim()).filter(Boolean))].sort();
+    const subDistributors = subDistributorSummary.map((item) => ({ id: item.id, name: item.name }));
+    const clusters = clusterSummary.map((item) => ({ id: item.id, name: item.name }));
+
+    return { deviceTypes, manufacturers, subDistributors, clusters };
+  }, [managementAllDevices, subDistributorSummary, clusterSummary]);
+
+  const tableFilteredDevices = useMemo(() => {
+    if (!isAllDevicesView) return displayedDevices;
+    const selectedSub = subDistributorSummary.find((item) => item.id === tableFilters.sub_distributor_id);
+    const selectedCluster = clusterSummary.find((item) => item.id === tableFilters.cluster_id);
+    const subHolderSet = selectedSub ? new Set(selectedSub.holderIds) : null;
+    const clusterHolderSet = selectedCluster ? new Set(selectedCluster.holderIds) : null;
+
+    return displayedDevices.filter((device) => {
+      if (tableFilters.device_type && device.device_type !== tableFilters.device_type) return false;
+      if (tableFilters.manufacturer && (device.manufacturer || '').trim() !== tableFilters.manufacturer) return false;
+      if (tableFilters.status && device.status !== tableFilters.status) return false;
+      if (subHolderSet && !subHolderSet.has(String(device.current_holder_id || ''))) return false;
+      if (clusterHolderSet && !clusterHolderSet.has(String(device.current_holder_id || ''))) return false;
+      return true;
+    });
+  }, [displayedDevices, isAllDevicesView, tableFilters, subDistributorSummary, clusterSummary]);
+
+  const tableData = isAllDevicesView ? tableFilteredDevices : displayedDevices;
 
   const getRowClassName = (row) => {
     const id = String(row.id);
@@ -445,6 +672,218 @@ const Devices = () => {
         </div>
       )}
 
+      {!loading && isAllDevicesView && (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <Card className="!p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-800">Sub Distribution Device Totals</h3>
+              </div>
+              {subDistributorSummary.length === 0 ? (
+                <p className="text-sm text-gray-500">No devices currently held at sub distribution level.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {subDistributorSummary.map((item) => (
+                    <div key={item.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-medium text-gray-800 truncate pr-2">{item.name}</p>
+                        <span className="text-sm font-semibold text-blue-700">{item.total}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.typeBreakdown.map((entry) => (
+                          <span key={`${item.id}-${entry.type}`} className="px-2 py-0.5 text-xs rounded-full bg-white border border-gray-300 text-gray-700">
+                            {entry.type}: {entry.count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card className="!p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Network className="w-4 h-4 text-purple-600" />
+                <h3 className="text-sm font-semibold text-gray-800">Cluster Device Totals</h3>
+              </div>
+              {clusterSummary.length === 0 ? (
+                <p className="text-sm text-gray-500">No devices currently held at cluster level.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {clusterSummary.map((item) => (
+                    <div key={item.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-medium text-gray-800 truncate pr-2">{item.name}</p>
+                        <span className="text-sm font-semibold text-purple-700">{item.total}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.typeBreakdown.map((entry) => (
+                          <span key={`${item.id}-${entry.type}`} className="px-2 py-0.5 text-xs rounded-full bg-white border border-gray-300 text-gray-700">
+                            {entry.type}: {entry.count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <Card className="!p-4 xl:col-span-1">
+              <div className="flex items-center gap-2 mb-4">
+                <Box className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-semibold text-gray-800">Total By Device Type</h3>
+              </div>
+              {byTypeSummary.length === 0 ? (
+                <p className="text-sm text-gray-500">No device type data found.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3 max-h-[30rem] overflow-y-auto pr-1">
+                  {byTypeSummary.map((entry) => (
+                    <div key={entry.type} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <p className="text-sm font-semibold text-gray-700 mb-1">{entry.type}</p>
+                      <p className="text-3xl font-bold text-gray-800 leading-none">{entry.total}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card className="!p-4 xl:col-span-2">
+              <div className="flex items-center gap-2 mb-4">
+                <Factory className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-base font-semibold text-gray-800">Manufacturer Insights</h3>
+              </div>
+              {manufacturerSummary.length === 0 ? (
+                <p className="text-sm text-gray-500">No manufacturer data found.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[30rem] overflow-y-auto pr-1">
+                  {manufacturerSummary.map((item) => (
+                    <div key={item.manufacturer} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                        <p className="text-lg font-semibold text-gray-800 leading-tight">{item.manufacturer}</p>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-gray-800 leading-none">{item.total}</p>
+                          <p className="text-xs text-gray-600 font-medium">Types: {item.distinctTypes}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {item.typeBreakdown.map((entry) => (
+                          <span key={`${item.manufacturer}-${entry.type}`} className="px-2.5 py-1 text-xs rounded-md bg-white border border-gray-300 text-gray-700 font-medium">
+                            {entry.type}: {entry.count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <Card className="!p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-800">Table Filters (ALL Devices)</h3>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                className="text-xs"
+              >
+                {showAdvancedFilters ? 'Hide Filters' : 'Show Filters'}
+              </Button>
+            </div>
+
+            {showAdvancedFilters && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <select
+                  value={tableFilters.device_type}
+                  onChange={(e) => setTableFilters((prev) => ({ ...prev, device_type: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="">All Device Types</option>
+                  {filterOptions.deviceTypes.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={tableFilters.manufacturer}
+                  onChange={(e) => setTableFilters((prev) => ({ ...prev, manufacturer: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="">All Manufacturers</option>
+                  {filterOptions.manufacturers.map((manufacturer) => (
+                    <option key={manufacturer} value={manufacturer}>{manufacturer}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={tableFilters.sub_distributor_id}
+                  onChange={(e) => setTableFilters((prev) => ({ ...prev, sub_distributor_id: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="">All Sub Distributions</option>
+                  {filterOptions.subDistributors.map((entity) => (
+                    <option key={entity.id} value={entity.id}>{entity.name}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={tableFilters.cluster_id}
+                  onChange={(e) => setTableFilters((prev) => ({ ...prev, cluster_id: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="">All Clusters</option>
+                  {filterOptions.clusters.map((entity) => (
+                    <option key={entity.id} value={entity.id}>{entity.name}</option>
+                  ))}
+                </select>
+
+                <div className="flex gap-2">
+                  <select
+                    value={tableFilters.status}
+                    onChange={(e) => setTableFilters((prev) => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="available">available</option>
+                    <option value="distributed">distributed</option>
+                    <option value="in_use">in_use</option>
+                    <option value="defective">defective</option>
+                    <option value="replaced">replaced</option>
+                    <option value="returned">returned</option>
+                    <option value="maintenance">maintenance</option>
+                  </select>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setTableFilters({
+                      device_type: '',
+                      manufacturer: '',
+                      status: '',
+                      sub_distributor_id: '',
+                      cluster_id: '',
+                    })}
+                    className="whitespace-nowrap"
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-gray-500 mt-3">
+              Table result count: {tableData.length}
+            </p>
+          </Card>
+        </>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -468,7 +907,7 @@ const Devices = () => {
           )}
           <DataTable
             columns={columns}
-            data={displayedDevices}
+            data={tableData}
             selectable={canRegister}
             getRowClassName={getRowClassName}
             onRowClick={(row) => {

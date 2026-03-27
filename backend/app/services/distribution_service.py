@@ -139,6 +139,124 @@ async def get_distribution_by_id(distribution_id: str) -> Optional[Dict[str, Any
         return None
 
 
+async def create_distribution_from_identifiers(
+    to_user_id: str,
+    identifier_rows: List[Dict[str, Any]],
+    from_user: Dict[str, Any],
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a distribution from uploaded rows containing MAC and/or NUID.
+
+    If any row fails validation, distribution is not created and row-level errors are returned.
+    """
+    errors: List[Dict[str, Any]] = []
+    resolved_device_ids: List[str] = []
+    seen_device_ids = set()
+
+    async with get_db() as db:
+        for row in identifier_rows:
+            row_number = int(row.get("row") or 0)
+            mac_address = str(row.get("mac_address") or "").strip()
+            nuid = str(row.get("nuid") or "").strip()
+
+            if not mac_address and not nuid:
+                errors.append({
+                    "row": row_number,
+                    "identifier": "",
+                    "error": "Either mac_address or nuid is required",
+                })
+                continue
+
+            device_by_mac = None
+            device_by_nuid = None
+
+            if mac_address:
+                cursor = await db.execute(
+                    "SELECT * FROM devices WHERE lower(trim(mac_address)) = lower(trim(?))",
+                    (mac_address,),
+                )
+                row_mac = await cursor.fetchone()
+                if row_mac:
+                    device_by_mac = row_to_dict(row_mac)
+
+            if nuid:
+                cursor = await db.execute(
+                    "SELECT * FROM devices WHERE lower(trim(nuid)) = lower(trim(?))",
+                    (nuid,),
+                )
+                row_nuid = await cursor.fetchone()
+                if row_nuid:
+                    device_by_nuid = row_to_dict(row_nuid)
+
+            if device_by_mac and device_by_nuid and str(device_by_mac.get("id")) != str(device_by_nuid.get("id")):
+                errors.append({
+                    "row": row_number,
+                    "identifier": f"MAC={mac_address}, NUID={nuid}",
+                    "error": "MAC and NUID map to different devices",
+                })
+                continue
+
+            resolved_device = device_by_mac or device_by_nuid
+
+            if not resolved_device:
+                identifier_value = mac_address or nuid
+                identifier_label = "mac_address" if mac_address else "nuid"
+                errors.append({
+                    "row": row_number,
+                    "identifier": f"{identifier_label}={identifier_value}",
+                    "error": "Device not registered",
+                })
+                continue
+
+            resolved_id = str(resolved_device.get("id") or resolved_device.get("_id") or "")
+            if not resolved_id:
+                errors.append({
+                    "row": row_number,
+                    "identifier": mac_address or nuid,
+                    "error": "Resolved device is missing an id",
+                })
+                continue
+
+            if resolved_id in seen_device_ids:
+                errors.append({
+                    "row": row_number,
+                    "identifier": mac_address or nuid,
+                    "error": "Duplicate device in upload",
+                })
+                continue
+
+            seen_device_ids.add(resolved_id)
+            resolved_device_ids.append(resolved_id)
+
+    if errors:
+        return {
+            "created": False,
+            "distribution": None,
+            "created_count": 0,
+            "error_count": len(errors),
+            "errors": errors,
+            "total_rows": len(identifier_rows),
+            "valid_count": len(resolved_device_ids),
+        }
+
+    dist_data = DistributionCreate(
+        to_user_id=str(to_user_id),
+        device_ids=resolved_device_ids,
+        notes=notes,
+    )
+    distribution = await create_distribution(dist_data=dist_data, from_user=from_user)
+
+    return {
+        "created": True,
+        "distribution": distribution,
+        "created_count": len(resolved_device_ids),
+        "error_count": 0,
+        "errors": [],
+        "total_rows": len(identifier_rows),
+        "valid_count": len(resolved_device_ids),
+    }
+
+
 async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new distribution request"""
     async with get_db() as db:

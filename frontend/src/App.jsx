@@ -32,6 +32,7 @@ import Replacements from './pages/Replacements';
 import PendingReplacements from './pages/PendingReplacements';
 
 import BulkImportDevices from './pages/BulkImportDevices';
+import BulkImportDistribution from './pages/BulkImportDistribution';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -136,6 +137,14 @@ function AppRoutes() {
               <CreateDistribution />
             </ProtectedRoute>
           } 
+        />
+        <Route
+          path="distributions/bulk-upload"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+              <BulkImportDistribution />
+            </ProtectedRoute>
+          }
         />
 
         {/* Defect Reports */}

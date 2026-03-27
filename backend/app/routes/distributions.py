@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+import csv
+import io
+
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from typing import Optional
 from pydantic import BaseModel
@@ -12,6 +15,128 @@ router = APIRouter()
 class ReceiptConfirmation(BaseModel):
     received: bool
     notes: Optional[str] = None
+
+
+@router.post("/bulk-upload")
+async def bulk_upload_distribution(
+    file: UploadFile = File(...),
+    to_user_id: str = Form(...),
+    notes: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a distribution from uploaded CSV/Excel rows using mac_address and/or nuid."""
+    filename_lower = (file.filename or "").lower()
+    if not filename_lower.endswith((".xlsx", ".xls", ".csv")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Excel (.xlsx, .xls) or CSV (.csv) files are supported"
+        )
+
+    try:
+        contents = await file.read()
+
+        if filename_lower.endswith(".csv"):
+            decoded = contents.decode("utf-8-sig")
+            reader = csv.reader(io.StringIO(decoded))
+            all_rows = list(reader)
+            if not all_rows:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="CSV file is empty"
+                )
+            headers = [str(h).strip().lower() for h in all_rows[0]]
+            data_rows = all_rows[1:]
+
+            def iter_data_rows():
+                for row in data_rows:
+                    padded = row + [""] * (len(headers) - len(row))
+                    yield tuple(padded[:len(headers)])
+
+        else:
+            import openpyxl
+
+            workbook = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+            worksheet = workbook.active
+            header_row = next(worksheet.iter_rows(min_row=1, max_row=1), None)
+            if not header_row:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Excel file is empty"
+                )
+
+            headers = [str(cell.value).strip().lower() if cell.value is not None else "" for cell in header_row]
+
+            def iter_data_rows():
+                for row in worksheet.iter_rows(min_row=2, values_only=True):
+                    yield row
+
+        if "mac_address" not in headers and "nuid" not in headers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required columns: add at least one of mac_address or nuid"
+            )
+
+        identifier_rows = []
+        for row_idx, row in enumerate(iter_data_rows(), start=2):
+            row_data = {
+                headers[i]: (str(row[i]).strip() if i < len(row) and row[i] is not None else "")
+                for i in range(len(headers))
+            }
+
+            mac_address = row_data.get("mac_address", "")
+            nuid = row_data.get("nuid", "")
+
+            if not mac_address and not nuid:
+                # Skip fully empty lines, otherwise keep for validation.
+                if not any(v for v in row_data.values()):
+                    continue
+
+            identifier_rows.append({
+                "row": row_idx,
+                "mac_address": mac_address,
+                "nuid": nuid,
+            })
+
+        if not identifier_rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No identifier rows found in file"
+            )
+
+        result = await distribution_service.create_distribution_from_identifiers(
+            to_user_id=to_user_id,
+            identifier_rows=identifier_rows,
+            from_user=current_user,
+            notes=notes,
+        )
+
+        if result["created"]:
+            message = (
+                f"Distribution created successfully with {result['created_count']} device(s)"
+            )
+        else:
+            message = (
+                f"Upload validation failed: {result['error_count']} row error(s). "
+                "Fix errors and upload again."
+            )
+
+        return {
+            "success": True,
+            "message": message,
+            "data": result,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process file: {str(e)}"
+        )
 
 
 @router.post("/sync-devices")

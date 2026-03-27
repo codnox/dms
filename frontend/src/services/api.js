@@ -362,6 +362,41 @@ export const distributionsAPI = {
     return response;
   },
 
+  bulkUpload: async (file, toUserId, notes = '') => {
+    if (!file) {
+      throw new Error('No file selected for upload');
+    }
+
+    const token = getAuthToken();
+    const formData = new FormData();
+
+    // Create an in-memory snapshot to avoid browser disk-change upload errors.
+    const fileBuffer = await file.arrayBuffer();
+    const fileSnapshot = new Blob([fileBuffer], { type: file.type || 'application/octet-stream' });
+    formData.append('file', fileSnapshot, file.name || 'bulk-upload.csv');
+
+    formData.append('to_user_id', toUserId);
+    if (notes) {
+      formData.append('notes', notes);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/distributions/bulk-upload`, {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || data.detail || 'Failed to upload distribution file');
+    }
+
+    return data;
+  },
+
   downloadManifest: async (distributionId) => {
     const token = getAuthToken();
     const url = `${API_BASE_URL}/distributions/${distributionId}/manifest`;
