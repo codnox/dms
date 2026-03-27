@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -8,7 +8,17 @@ import Card from '../components/ui/Card';
 import { distributionsAPI, devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Truck, CheckCircle, Clock, Loader2, AlertTriangle, PackageCheck, XCircle } from 'lucide-react';
+import { Plus, Eye, Truck, CheckCircle, Loader2, AlertTriangle, PackageCheck, XCircle, Layers3, Factory, Upload } from 'lucide-react';
+
+const toDisplayLabel = (value, fallback = 'Unknown') => {
+  if (!value) return fallback;
+  return String(value).trim() || fallback;
+};
+
+const isSetupBoxType = (deviceType) => {
+  const normalized = String(deviceType || '').toLowerCase();
+  return normalized.includes('setup') || normalized.includes('set top') || normalized.includes('stb');
+};
 
 const Distributions = () => {
   const { user } = useAuth();
@@ -41,7 +51,7 @@ const Distributions = () => {
       setDistributionDevices([]);
       return;
     }
-    
+
     try {
       setLoadingDevices(true);
       const devicePromises = deviceIds.map(id => devicesAPI.getDevice(id));
@@ -94,6 +104,35 @@ const Distributions = () => {
   };
 
   const canCreate = ['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
+
+  const distributionInsights = useMemo(() => {
+    const typeCounts = {};
+    const manufacturerCounts = {};
+    let setupBoxCount = 0;
+
+    distributionDevices.forEach((device) => {
+      const typeLabel = toDisplayLabel(device.device_type);
+      const manufacturerLabel = toDisplayLabel(device.manufacturer);
+
+      typeCounts[typeLabel] = (typeCounts[typeLabel] || 0) + 1;
+      manufacturerCounts[manufacturerLabel] = (manufacturerCounts[manufacturerLabel] || 0) + 1;
+
+      if (isSetupBoxType(typeLabel)) {
+        setupBoxCount += 1;
+      }
+    });
+
+    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    const sortedManufacturers = Object.entries(manufacturerCounts).sort((a, b) => b[1] - a[1]);
+
+    return {
+      totalSent: selectedDist?.device_count || selectedDist?.device_ids?.length || 0,
+      loadedDetailsCount: distributionDevices.length,
+      setupBoxCount,
+      types: sortedTypes,
+      manufacturers: sortedManufacturers,
+    };
+  }, [distributionDevices, selectedDist]);
 
   const columns = [
     { key: 'distribution_id', label: 'Distribution ID' },
@@ -155,9 +194,14 @@ const Distributions = () => {
           <p className="text-gray-500 mt-1">Manage device distributions across the chain</p>
         </div>
         {canCreate && (
-          <Link to="/distributions/create">
-            <Button icon={Plus}>Create Distribution</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/distributions/bulk-upload">
+              <Button variant="outline" icon={Upload}>Bulk Upload</Button>
+            </Link>
+            <Link to="/distributions/create">
+              <Button icon={Plus}>Create Distribution</Button>
+            </Link>
+          </div>
         )}
       </div>
 
@@ -311,9 +355,64 @@ const Distributions = () => {
               </div>
             )}
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Total Sent</p>
+                <p className="text-2xl font-bold text-blue-900 mt-1">{distributionInsights.totalSent}</p>
+              </div>
+              <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">Setup Box</p>
+                <p className="text-2xl font-bold text-green-900 mt-1">{distributionInsights.setupBoxCount}</p>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">Details Loaded</p>
+                <p className="text-2xl font-bold text-amber-900 mt-1">{distributionInsights.loadedDetailsCount}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-gray-200 p-4 bg-white">
+                <div className="flex items-center gap-2 mb-3">
+                  <Layers3 className="w-4 h-4 text-indigo-600" />
+                  <h4 className="text-sm font-semibold text-gray-800">By Device Type</h4>
+                </div>
+                {distributionInsights.types.length > 0 ? (
+                  <div className="space-y-2">
+                    {distributionInsights.types.map(([type, count]) => (
+                      <div key={type} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
+                        <span className="text-sm text-gray-700">{type}</span>
+                        <span className="text-sm font-semibold text-gray-900">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No device type data available.</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-4 bg-white">
+                <div className="flex items-center gap-2 mb-3">
+                  <Factory className="w-4 h-4 text-rose-600" />
+                  <h4 className="text-sm font-semibold text-gray-800">By Manufacturer</h4>
+                </div>
+                {distributionInsights.manufacturers.length > 0 ? (
+                  <div className="space-y-2">
+                    {distributionInsights.manufacturers.map(([manufacturer, count]) => (
+                      <div key={manufacturer} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
+                        <span className="text-sm text-gray-700">{manufacturer}</span>
+                        <span className="text-sm font-semibold text-gray-900">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No manufacturer data available.</p>
+                )}
+              </div>
+            </div>
+
             {/* Devices List */}
             <div>
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Devices</label>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Device Details</label>
               {loadingDevices ? (
                 <div className="flex items-center justify-center py-4">
                   <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
@@ -327,7 +426,15 @@ const Distributions = () => {
                         <div className="flex-1">
                           <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
                           <p className="text-sm text-gray-500 font-mono">{device.serial_number}</p>
-                          <p className="text-xs text-gray-400">{device.mac_address}</p>
+                          <p className="text-xs text-gray-400">{device.mac_address || 'No MAC'}</p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                              Type: {toDisplayLabel(device.device_type)}
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                              Manufacturer: {toDisplayLabel(device.manufacturer)}
+                            </span>
+                          </div>
                         </div>
                         <StatusBadge status={device.status} size="sm" />
                       </div>
