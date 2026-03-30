@@ -5,7 +5,7 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.middleware.auth_middleware import get_current_user, require_admin, require_admin_or_manager
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
-from app.services import device_service, notification_service
+from app.services import device_service, notification_service, defect_service
 from datetime import datetime
 import uuid
 
@@ -295,6 +295,24 @@ async def review_change_request(
                             performed_by_name=current_user["name"],
                             notes=f"Approved via change request {request_id}"
                         )
+                        if str(new_dev_status).lower() == "defective":
+                            defect_reporter = {
+                                "id": str(req.get("requested_by") or current_user["id"]),
+                                "name": req.get("requested_by_name") or current_user["name"],
+                            }
+                            defect_notes_parts = [
+                                f"Defect created from approved status change request {request_id}."
+                            ]
+                            if req.get("reason"):
+                                defect_notes_parts.append(f"Requester reason: {req['reason']}")
+                            if review.review_note:
+                                defect_notes_parts.append(f"Reviewer note: {review.review_note}")
+
+                            await defect_service.create_or_get_active_defect_for_device(
+                                device_id=dev_id,
+                                reporter=defect_reporter,
+                                notes=" ".join(defect_notes_parts)
+                            )
                 elif req["request_type"] in ["email_change", "password_reset", "both"]:
                     # Use override values if provided, else use original request values
                     email_to_set = review.new_email or req.get("new_email")

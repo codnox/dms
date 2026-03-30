@@ -11,12 +11,10 @@ import {
   AlertTriangle,
   Boxes,
   ClipboardCheck,
-  DollarSign,
   Factory,
   Eye,
   PackagePlus,
   RefreshCw,
-  TrendingUp,
   Upload,
   Download,
 } from 'lucide-react';
@@ -61,6 +59,12 @@ const ExternalInventory = () => {
   const importInputRef = useRef(null);
 
   const [itemForm, setItemForm] = useState(initialItemForm);
+
+  const normalizedItemType = String(itemForm.device_type || '').trim().toLowerCase();
+  const isSetTopBoxType = normalizedItemType === 'set-top box';
+  const isOtherType = normalizedItemType === 'other';
+  const idFieldLabel = isSetTopBoxType ? 'NU ID' : 'MAC ID';
+  const isIdRequired = !isOtherType;
 
   const [poForm, setPoForm] = useState({
     supplier_name: '',
@@ -160,14 +164,19 @@ const ExternalInventory = () => {
   };
 
   const handleCreateItem = async () => {
+    const normalizedMacOrNuId = String(itemForm.mac_id || '').trim();
     if (
       !itemForm.item_id.trim() ||
       !itemForm.name.trim() ||
       !itemForm.serial_number.trim() ||
-      !itemForm.mac_id.trim() ||
       !itemForm.device_type.trim()
     ) {
-      showToast('Item ID, name, serial number, MAC ID and type are required', 'error');
+      showToast('Item ID, name, serial number and type are required', 'error');
+      return;
+    }
+
+    if (isIdRequired && !normalizedMacOrNuId) {
+      showToast(`${idFieldLabel} is required for the selected type`, 'error');
       return;
     }
 
@@ -175,6 +184,7 @@ const ExternalInventory = () => {
       setSubmitting(true);
       const created = await externalInventoryAPI.createItem({
         ...itemForm,
+        mac_id: normalizedMacOrNuId,
         price: Number(itemForm.price),
         quantity_on_hand: Number(itemForm.quantity_on_hand),
         reorder_level: Number(itemForm.reorder_level),
@@ -434,7 +444,14 @@ const ExternalInventory = () => {
     { key: 'item_id', label: 'Item ID' },
     { key: 'name', label: 'Name' },
     { key: 'serial_number', label: 'Serial Number' },
-    { key: 'mac_id', label: 'MAC ID' },
+    {
+      key: 'mac_id',
+      label: 'Identifier',
+      render: (value, row) => {
+        const isSetTop = String(row?.device_type || '').trim().toLowerCase() === 'set-top box';
+        return `${isSetTop ? 'NU ID' : 'MAC ID'}: ${value || '-'}`;
+      },
+    },
     { key: 'device_type', label: 'Type' },
     {
       key: 'price',
@@ -570,21 +587,15 @@ const ExternalInventory = () => {
       </div>
 
       {canManage && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card title="Items" icon={Boxes}>
           <p className="text-2xl font-bold text-gray-900">{dashboard?.total_skus ?? 0}</p>
-        </Card>
-        <Card title="Units" icon={TrendingUp}>
-          <p className="text-2xl font-bold text-gray-900">{dashboard?.total_units ?? 0}</p>
         </Card>
         <Card title="Low Stock" icon={AlertTriangle}>
           <p className="text-2xl font-bold text-red-600">{dashboard?.low_stock_items ?? 0}</p>
         </Card>
         <Card title="Pending POs" icon={ClipboardCheck}>
           <p className="text-2xl font-bold text-amber-600">{dashboard?.pending_purchase_orders ?? 0}</p>
-        </Card>
-        <Card title="Inventory Value" icon={DollarSign}>
-          <p className="text-2xl font-bold text-emerald-600">{formatCurrency(dashboard?.inventory_value || 0)}</p>
         </Card>
         </div>
       )}
@@ -687,20 +698,29 @@ const ExternalInventory = () => {
             />
           </label>
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">MAC ID</span>
+            <span className="text-sm font-medium text-gray-700">
+              {idFieldLabel}
+              {isIdRequired ? ' *' : ' (Optional)'}
+            </span>
             <input
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
               value={itemForm.mac_id}
               onChange={(e) => setItemForm((p) => ({ ...p, mac_id: e.target.value }))}
+              placeholder={isSetTopBoxType ? 'Enter NU ID' : 'Enter MAC ID'}
             />
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Type</span>
-            <input
+            <select
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
               value={itemForm.device_type}
               onChange={(e) => setItemForm((p) => ({ ...p, device_type: e.target.value }))}
-            />
+            >
+              <option value="">Select type</option>
+              <option value="Normal">Normal</option>
+              <option value="Set-top Box">Set-top Box</option>
+              <option value="Other">Other</option>
+            </select>
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Price</span>
@@ -731,14 +751,6 @@ const ExternalInventory = () => {
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
               value={itemForm.reorder_level}
               onChange={(e) => setItemForm((p) => ({ ...p, reorder_level: e.target.value }))}
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Unit</span>
-            <input
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
-              value={itemForm.unit}
-              onChange={(e) => setItemForm((p) => ({ ...p, unit: e.target.value }))}
             />
           </label>
           <label className="space-y-1">
@@ -819,13 +831,17 @@ const ExternalInventory = () => {
                 <p><span className="font-semibold text-gray-700">Name:</span> {selectedItem.name}</p>
                 <p><span className="font-semibold text-gray-700">Type:</span> {selectedItem.device_type}</p>
                 <p><span className="font-semibold text-gray-700">Serial:</span> {selectedItem.serial_number || '-'}</p>
-                <p><span className="font-semibold text-gray-700">MAC:</span> {selectedItem.mac_id || '-'}</p>
+                <p>
+                  <span className="font-semibold text-gray-700">
+                    {String(selectedItem.device_type || '').trim().toLowerCase() === 'set-top box' ? 'NU ID' : 'MAC ID'}:
+                  </span>{' '}
+                  {selectedItem.mac_id || '-'}
+                </p>
                 <p><span className="font-semibold text-gray-700">Price:</span> {formatCurrency(selectedItem.price || 0)}</p>
                 <p><span className="font-semibold text-gray-700">On Hand:</span> {selectedItem.quantity_on_hand}</p>
                 <p><span className="font-semibold text-gray-700">Reorder Level:</span> {selectedItem.reorder_level}</p>
                 <p><span className="font-semibold text-gray-700">Supplier:</span> {selectedItem.supplier_name || '-'}</p>
                 <p><span className="font-semibold text-gray-700">Location:</span> {selectedItem.location || '-'}</p>
-                <p><span className="font-semibold text-gray-700">Unit:</span> {selectedItem.unit || '-'}</p>
               </div>
             </div>
             <div>
@@ -894,7 +910,7 @@ const ExternalInventory = () => {
                   <option value="">Select device item</option>
                   {items.map((item) => (
                     <option key={item.inventory_id} value={item.inventory_id}>
-                      {item.item_id} | {item.name} | SN {item.serial_number} | MAC {item.mac_id}
+                      {item.item_id} | {item.name} | SN {item.serial_number} | {String(item.device_type || '').trim().toLowerCase() === 'set-top box' ? 'NU' : 'MAC'} {item.mac_id}
                     </option>
                   ))}
                 </select>

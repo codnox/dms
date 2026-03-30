@@ -36,6 +36,13 @@ async def init_db():
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_at TEXT",
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by TEXT",
             "ALTER TABLE defects ADD COLUMN replacement_confirmed_by_name TEXT",
+            "ALTER TABLE defects ADD COLUMN report_target TEXT DEFAULT 'manager_admin'",
+            "ALTER TABLE defects ADD COLUMN forwarded_to_management INTEGER DEFAULT 0",
+            "ALTER TABLE defects ADD COLUMN forwarded_to_management_at TEXT",
+            "ALTER TABLE defects ADD COLUMN forwarded_to_management_by TEXT",
+            "ALTER TABLE defects ADD COLUMN forwarded_to_management_by_name TEXT",
+            "ALTER TABLE defects ADD COLUMN operator_id TEXT",
+            "ALTER TABLE defects ADD COLUMN sub_distributor_id TEXT",
             "ALTER TABLE returns ADD COLUMN mac_address TEXT",
             "ALTER TABLE external_inventory_items ADD COLUMN item_id TEXT",
             "ALTER TABLE external_inventory_items ADD COLUMN serial_number TEXT",
@@ -69,6 +76,69 @@ async def init_db():
         )
         await db.execute(
             "UPDATE devices SET current_holder_name = 'PDIC (Distribution)' WHERE current_holder_type = 'noc' AND (current_holder_name IS NULL OR current_holder_name = 'NOC')"
+        )
+        await db.execute(
+            "UPDATE defects SET report_target = 'manager_admin' WHERE report_target IS NULL OR report_target = ''"
+        )
+        await db.execute(
+            "UPDATE defects SET forwarded_to_management = COALESCE(forwarded_to_management, 0)"
+        )
+        await db.execute(
+            """UPDATE defects
+               SET operator_id = CAST(reported_by AS TEXT)
+               WHERE (operator_id IS NULL OR operator_id = '')
+                 AND CAST(reported_by AS TEXT) IN (
+                     SELECT CAST(id AS TEXT) FROM users WHERE role = 'operator'
+                 )"""
+        )
+        await db.execute(
+            """UPDATE defects
+               SET sub_distributor_id = CAST(reported_by AS TEXT)
+               WHERE (sub_distributor_id IS NULL OR sub_distributor_id = '')
+                 AND CAST(reported_by AS TEXT) IN (
+                     SELECT CAST(id AS TEXT) FROM users WHERE role = 'sub_distributor'
+                 )"""
+        )
+        await db.execute(
+            """UPDATE defects
+               SET sub_distributor_id = (
+                   SELECT CAST(sd.id AS TEXT)
+                   FROM users op
+                   JOIN users sd ON op.parent_id = sd.id
+                   WHERE op.role = 'operator'
+                     AND sd.role = 'sub_distributor'
+                     AND CAST(op.id AS TEXT) = CAST(defects.reported_by AS TEXT)
+                   LIMIT 1
+               )
+               WHERE (sub_distributor_id IS NULL OR sub_distributor_id = '')"""
+        )
+        await db.execute(
+            """UPDATE defects
+               SET sub_distributor_id = (
+                   SELECT CAST(sd.id AS TEXT)
+                   FROM users op
+                   JOIN users cl ON op.parent_id = cl.id
+                   JOIN users sd ON cl.parent_id = sd.id
+                   WHERE op.role = 'operator'
+                     AND cl.role = 'cluster'
+                     AND sd.role = 'sub_distributor'
+                     AND CAST(op.id AS TEXT) = CAST(defects.reported_by AS TEXT)
+                   LIMIT 1
+               )
+               WHERE (sub_distributor_id IS NULL OR sub_distributor_id = '')"""
+        )
+        await db.execute(
+            """UPDATE defects
+               SET sub_distributor_id = (
+                   SELECT CAST(sd.id AS TEXT)
+                   FROM users cl
+                   JOIN users sd ON cl.parent_id = sd.id
+                   WHERE cl.role = 'cluster'
+                     AND sd.role = 'sub_distributor'
+                     AND CAST(cl.id AS TEXT) = CAST(defects.reported_by AS TEXT)
+                   LIMIT 1
+               )
+               WHERE (sub_distributor_id IS NULL OR sub_distributor_id = '')"""
         )
         # Backfill registered_by_name from device_history where possible
         await db.execute(
@@ -181,6 +251,13 @@ CREATE TABLE IF NOT EXISTS defects (
     severity TEXT NOT NULL,
     description TEXT NOT NULL,
     symptoms TEXT,
+    report_target TEXT DEFAULT 'manager_admin',
+    forwarded_to_management INTEGER DEFAULT 0,
+    forwarded_to_management_at TEXT,
+    forwarded_to_management_by TEXT,
+    forwarded_to_management_by_name TEXT,
+    operator_id TEXT,
+    sub_distributor_id TEXT,
     status TEXT DEFAULT 'reported',
     resolution TEXT,
     resolved_by TEXT,

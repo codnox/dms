@@ -106,7 +106,8 @@ async def bulk_upload_external_inventory_items(
 ):
     """Bulk upload external inventory items from CSV.
 
-    Required columns: item_id, name, serial_number, mac_id, device_type
+    Required columns: item_id, name, serial_number, device_type
+    Conditional column: mac_id (required for Normal and Set-top Box, optional for Other)
     Optional columns: price, unit, quantity_on_hand, reorder_level, supplier_name, location, notes
     """
     filename_lower = (file.filename or "").lower()
@@ -130,7 +131,7 @@ async def bulk_upload_external_inventory_items(
         headers = [h.strip().lower() for h in all_rows[0]]
         data_rows = all_rows[1:]
 
-        required = {"item_id", "name", "serial_number", "mac_id", "device_type"}
+        required = {"item_id", "name", "serial_number", "device_type"}
         missing = required - set(headers)
         if missing:
             raise HTTPException(

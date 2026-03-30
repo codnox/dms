@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class InventoryItemStatus(str, Enum):
@@ -39,6 +39,16 @@ class InventoryItemBase(BaseModel):
     notes: Optional[str] = None
     image_url: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_identifier_rules(self):
+        device_type = str(self.device_type or "").strip().lower()
+        mac_or_nu_id = str(self.mac_id or "").strip()
+
+        if device_type in {"normal", "set-top box"} and not mac_or_nu_id:
+            raise ValueError("MAC ID/NU ID is required for Normal and Set-top Box types")
+
+        return self
+
 
 class InventoryItemCreate(InventoryItemBase):
     pass
@@ -59,6 +69,19 @@ class InventoryItemUpdate(BaseModel):
     status: Optional[InventoryItemStatus] = None
     notes: Optional[str] = None
     image_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_identifier_rules(self):
+        if self.device_type is None:
+            return self
+
+        device_type = str(self.device_type or "").strip().lower()
+        mac_or_nu_id = str(self.mac_id or "").strip() if self.mac_id is not None else ""
+
+        if device_type in {"normal", "set-top box"} and not mac_or_nu_id:
+            raise ValueError("MAC ID/NU ID is required when type is Normal or Set-top Box")
+
+        return self
 
 
 class PurchaseOrderLineCreate(BaseModel):

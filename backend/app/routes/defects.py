@@ -98,9 +98,13 @@ async def get_defects(
             # "defects reported by me" OR "defects where my device is the holder"
             # Setting both reported_by AND holder_user_id would AND them, over-filtering.
             holder_user_id = user_id_str
-        elif role in ["cluster", "sub_distributor"]:
+        elif role == "cluster":
             # Show defects for devices in their possession or under their hierarchy
             holder_user_id = user_id_str
+        elif role == "sub_distributor":
+            # Sub distributor visibility is handled by service-side hierarchy filters.
+            # Do not set reported_by here, otherwise results are over-filtered to self-only.
+            pass
         elif role not in ["admin", "manager", "staff"]:
             # Any other non-management role: show only their own reported defects
             reported_by = user_id_str
@@ -113,7 +117,8 @@ async def get_defects(
             defect_type=defect_type,
             reported_by=reported_by,
             holder_user_id=holder_user_id,
-            search=search
+            search=search,
+            visibility_user=current_user
         )
 
         return {
@@ -128,6 +133,38 @@ async def get_defects(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve defect reports: {str(e)}"
+        )
+
+
+@router.post("/{defect_id}/forward-to-management")
+async def forward_defect_to_management(
+    defect_id: str,
+    action_data: DefectActionRequest,
+    current_user: dict = Depends(require_any_role)
+):
+    """Allow sub distributor to forward a routed defect to manager/admin queue."""
+    try:
+        defect = await defect_service.forward_defect_to_management(
+            defect_id=defect_id,
+            forwarder=current_user,
+            notes=action_data.notes
+        )
+        return {
+            "success": True,
+            "message": "Defect forwarded to manager/admin successfully",
+            "data": defect
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to forward defect '{defect_id}': {str(e)}"
         )
 
 

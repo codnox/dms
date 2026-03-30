@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from typing import Optional, Dict, Any
 from app.models.device import DeviceCreate, DeviceUpdate, DeviceType
-from app.services import device_service, notification_service
+from app.services import device_service, notification_service, defect_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager
 
 router = APIRouter()
@@ -575,6 +575,13 @@ async def update_device_status(
             performed_by_name=current_user["name"],
             notes=notes
         )
+
+        if str(status_value).lower() == "defective":
+            await defect_service.create_or_get_active_defect_for_device(
+                device_id=device_id,
+                reporter=current_user,
+                notes=notes
+            )
 
         if not device:
             raise HTTPException(

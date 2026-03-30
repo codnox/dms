@@ -31,6 +31,11 @@ class DefectStatus(str, Enum):
     RESOLVED = "resolved"
 
 
+class DefectReportTarget(str, Enum):
+    SUB_DISTRIBUTOR = "sub_distributor"
+    MANAGER_ADMIN = "manager_admin"
+
+
 class DefectBase(BaseModel):
     device_id: str
     defect_type: DefectType
@@ -41,6 +46,7 @@ class DefectBase(BaseModel):
 
 class DefectCreate(DefectBase):
     images: Optional[List[str]] = None
+    report_target: Optional[DefectReportTarget] = None
 
 
 class DefectUpdate(BaseModel):
@@ -59,10 +65,17 @@ class DefectReport(BaseModel):
     device_type: str
     reported_by: str
     reported_by_name: str
+    operator_id: Optional[str] = None
+    sub_distributor_id: Optional[str] = None
     defect_type: DefectType
     severity: DefectSeverity
     description: str
     symptoms: Optional[str] = None
+    report_target: DefectReportTarget = DefectReportTarget.MANAGER_ADMIN
+    forwarded_to_management: bool = False
+    forwarded_to_management_at: Optional[datetime] = None
+    forwarded_to_management_by: Optional[str] = None
+    forwarded_to_management_by_name: Optional[str] = None
     status: DefectStatus = DefectStatus.REPORTED
     resolution: Optional[str] = None
     resolved_by: Optional[str] = None
@@ -101,10 +114,17 @@ class DefectResponse(BaseModel):
     device_type: str
     reported_by: str
     reported_by_name: str
+    operator_id: Optional[str] = None
+    sub_distributor_id: Optional[str] = None
     defect_type: DefectType
     severity: DefectSeverity
     description: str
     symptoms: Optional[str] = None
+    report_target: DefectReportTarget
+    forwarded_to_management: bool = False
+    forwarded_to_management_at: Optional[datetime] = None
+    forwarded_to_management_by: Optional[str] = None
+    forwarded_to_management_by_name: Optional[str] = None
     status: DefectStatus
     resolution: Optional[str] = None
     resolved_by: Optional[str] = None
