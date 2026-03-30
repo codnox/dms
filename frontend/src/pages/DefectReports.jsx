@@ -63,6 +63,7 @@ const DefectReports = () => {
 
   const canReport = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
   const canReview = ['admin', 'manager', 'staff'].includes(user?.role);
+  const canForwardToManagement = user?.role === 'sub_distributor';
   const canReplace = ['admin', 'manager', 'staff'].includes(user?.role);
   const canConfirmReplacement = user?.role === 'operator';
 
@@ -137,6 +138,19 @@ const DefectReports = () => {
       fetchDefects();
     } catch (error) {
       showToast(error.message || 'Failed to mark as waiting', 'error');
+    }
+  };
+
+  const handleForwardToManagement = async (defect) => {
+    const id = getDefectId(defect);
+    try {
+      await defectsAPI.forwardToManagement(id, 'Forwarded by sub distributor for manager/admin review');
+      showToast('Defect forwarded to manager/admin successfully', 'success');
+      setShowReviewModal(false);
+      setReviewComment('');
+      fetchDefects();
+    } catch (error) {
+      showToast(error.message || 'Failed to forward defect', 'error');
     }
   };
 
@@ -273,6 +287,22 @@ const DefectReports = () => {
                 title="Review Defect"
               >
                 <MessageSquare className="w-4 h-4" />
+              </button>
+            )}
+            {canForwardToManagement &&
+              row.status === 'reported' &&
+              row.report_target === 'sub_distributor' &&
+              !row.forwarded_to_management && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDefect(row);
+                  setShowReviewModal(true);
+                }}
+                className="px-2 py-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded"
+                title="Forward to Manager/Admin"
+              >
+                Forward
               </button>
             )}
             {canReplace && row.status === 'approved' && (!row.auto_return_id || row.auto_return_status === 'received') && (
@@ -690,6 +720,17 @@ const DefectReports = () => {
                 Review Defect
               </Button>
             )}
+            {canForwardToManagement &&
+              selectedDefect?.status === 'reported' &&
+              selectedDefect?.report_target === 'sub_distributor' &&
+              !selectedDefect?.forwarded_to_management && (
+              <Button onClick={() => {
+                setShowModal(false);
+                setShowReviewModal(true);
+              }}>
+                Forward to Manager/Admin
+              </Button>
+            )}
             {canConfirmReplacement &&
               selectedDefect?.status === 'replacement_pending_confirmation' &&
               (String(selectedDefect?.reported_by) === String(user?.id) ||
@@ -849,8 +890,17 @@ const DefectReports = () => {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowReviewModal(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => handleReview('rejected')}>Reject</Button>
-            <Button onClick={() => handleReview('approved')}>Approve &amp; Initiate Return</Button>
+            {canReview && (
+              <>
+                <Button variant="danger" onClick={() => handleReview('rejected')}>Reject</Button>
+                <Button onClick={() => handleReview('approved')}>Approve &amp; Initiate Return</Button>
+              </>
+            )}
+            {canForwardToManagement &&
+              selectedDefect?.report_target === 'sub_distributor' &&
+              !selectedDefect?.forwarded_to_management && (
+              <Button onClick={() => handleForwardToManagement(selectedDefect)}>Forward to Manager/Admin</Button>
+            )}
           </>
         }
       >
@@ -875,9 +925,15 @@ const DefectReports = () => {
           </div>
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <p className="text-sm text-yellow-800">
-              Approving this defect will automatically create a return request for the device.
-            </p>
+            {canReview ? (
+              <p className="text-sm text-yellow-800">
+                Approving this defect will automatically create a return request for the device.
+              </p>
+            ) : (
+              <p className="text-sm text-yellow-800">
+                Forward this routed defect so it appears in manager/admin review queue.
+              </p>
+            )}
           </div>
         </div>
       </Modal>

@@ -3,7 +3,14 @@ from typing import Optional, List, Dict, Any, Set
 import json
 
 from app.database import get_db, row_to_dict, rows_to_list
-from app.models.defect import DefectCreate, DefectUpdate, DefectStatus, DefectSeverity
+from app.models.defect import (
+    DefectCreate,
+    DefectUpdate,
+    DefectStatus,
+    DefectSeverity,
+    DefectType,
+    DefectReportTarget,
+)
 from app.models.device import DeviceStatus, DeviceCreate
 from app.services import approval_service, device_service, notification_service, return_service
 from app.utils.helpers import get_pagination, generate_defect_id
@@ -20,6 +27,136 @@ def _parse_json_metadata(raw_metadata: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return {}
     return {}
+
+
+async def _get_user_role_and_parent(db, user_id: str) -> Optional[Dict[str, Any]]:
+    if not user_id or not str(user_id).isdigit():
+        return None
+    cursor = await db.execute(
+        "SELECT id, role, parent_id FROM users WHERE id = ?",
+        (int(user_id),)
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def _resolve_defect_lineage_ids(
+    db,
+    reporter_id: str,
+    reporter_role: str
+) -> Dict[str, Optional[str]]:
+    """Resolve operator_id/sub_distributor_id for a defect report."""
+    operator_id: Optional[str] = None
+    sub_distributor_id: Optional[str] = None
+
+    normalized_role = (reporter_role or "").strip().lower()
+    if not normalized_role:
+        user_row = await _get_user_role_and_parent(db, reporter_id)
+        normalized_role = (user_row.get("role") if user_row else "") or ""
+
+    if normalized_role == "operator":
+        operator_id = str(reporter_id)
+
+        # Operator can be directly under sub_distributor or under cluster -> sub_distributor.
+        cursor = await db.execute(
+            "SELECT id, role, parent_id FROM users WHERE CAST(id AS TEXT) = CAST(? AS TEXT)",
+            (str(reporter_id),)
+        )
+        op_row = await cursor.fetchone()
+        if op_row and op_row["parent_id"] is not None:
+            parent_id = int(op_row["parent_id"])
+            cursor = await db.execute(
+                "SELECT id, role, parent_id FROM users WHERE id = ?",
+                (parent_id,)
+            )
+            parent_row = await cursor.fetchone()
+            if parent_row:
+                if parent_row["role"] == "sub_distributor":
+                    sub_distributor_id = str(parent_row["id"])
+                elif parent_row["role"] == "cluster" and parent_row["parent_id"] is not None:
+                    cursor = await db.execute(
+                        "SELECT id FROM users WHERE id = ? AND role = 'sub_distributor'",
+                        (int(parent_row["parent_id"]),)
+                    )
+                    sub_row = await cursor.fetchone()
+                    if sub_row:
+                        sub_distributor_id = str(sub_row["id"])
+
+    elif normalized_role == "sub_distributor":
+        sub_distributor_id = str(reporter_id)
+
+    elif normalized_role == "cluster":
+        cursor = await db.execute(
+            "SELECT parent_id FROM users WHERE CAST(id AS TEXT) = CAST(? AS TEXT) AND role = 'cluster'",
+            (str(reporter_id),)
+        )
+        row = await cursor.fetchone()
+        if row and row["parent_id"] is not None:
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE id = ? AND role = 'sub_distributor'",
+                (int(row["parent_id"]),)
+            )
+            sub_row = await cursor.fetchone()
+            if sub_row:
+                sub_distributor_id = str(sub_row["id"])
+
+    return {
+        "operator_id": operator_id,
+        "sub_distributor_id": sub_distributor_id,
+    }
+
+
+async def _get_sub_distributor_operator_ids(db, sub_distributor_id: str) -> Set[str]:
+    """Return operator IDs directly/indirectly under a sub distributor."""
+    operator_ids: Set[str] = set()
+    cursor = await db.execute(
+        """SELECT CAST(id AS TEXT) AS id FROM users
+        WHERE role = 'operator' AND (
+            CAST(parent_id AS TEXT) = CAST(? AS TEXT)
+            OR parent_id IN (
+                SELECT id FROM users WHERE role = 'cluster' AND CAST(parent_id AS TEXT) = CAST(? AS TEXT)
+            )
+        )""",
+        (str(sub_distributor_id), str(sub_distributor_id))
+    )
+    for row in await cursor.fetchall():
+        operator_ids.add(str(row["id"]))
+    return operator_ids
+
+
+async def _resolve_sub_distributor_targets_for_operator(db, operator_id: str) -> List[str]:
+    """Resolve sub distributor recipients for an operator using parent hierarchy."""
+    recipients: Set[str] = set()
+    cursor = await db.execute(
+        "SELECT id, parent_id FROM users WHERE CAST(id AS TEXT) = CAST(? AS TEXT)",
+        (str(operator_id),)
+    )
+    operator_row = await cursor.fetchone()
+    if not operator_row:
+        return []
+
+    parent_id = operator_row["parent_id"]
+    if parent_id is None:
+        return []
+
+    cursor = await db.execute("SELECT id, role, parent_id FROM users WHERE id = ?", (int(parent_id),))
+    parent_row = await cursor.fetchone()
+    if not parent_row:
+        return []
+
+    parent_role = parent_row["role"]
+    if parent_role == "sub_distributor":
+        recipients.add(str(parent_row["id"]))
+    elif parent_role == "cluster" and parent_row["parent_id"] is not None:
+        cursor = await db.execute(
+            "SELECT id FROM users WHERE id = ? AND role = 'sub_distributor'",
+            (int(parent_row["parent_id"]),)
+        )
+        sub_row = await cursor.fetchone()
+        if sub_row:
+            recipients.add(str(sub_row["id"]))
+
+    return sorted(recipients)
 
 
 async def _get_report_scope_user_ids(db, user: Dict[str, Any]) -> Optional[Set[str]]:
@@ -131,7 +268,8 @@ async def get_defects(
     defect_type: Optional[str] = None,
     reported_by: Optional[str] = None,
     holder_user_id: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    visibility_user: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Get all defect reports with pagination and filters"""
     async with get_db() as db:
@@ -160,6 +298,28 @@ async def get_defects(
             conditions.append("(report_id LIKE ? OR device_serial LIKE ? OR description LIKE ?)")
             like = f"%{search}%"
             params.extend([like, like, like])
+
+        if visibility_user:
+            role = visibility_user.get("role")
+            user_id = str(visibility_user.get("id") or visibility_user.get("_id"))
+            if role in ["admin", "manager", "staff"]:
+                conditions.append(
+                    "(COALESCE(report_target, 'manager_admin') != 'sub_distributor' OR COALESCE(forwarded_to_management, 0) = 1)"
+                )
+            elif role == "sub_distributor":
+                operator_ids = await _get_sub_distributor_operator_ids(db, user_id)
+                if operator_ids:
+                    placeholders = ",".join(["?"] * len(operator_ids))
+                    conditions.append(
+                        "(" 
+                        "COALESCE(report_target, 'manager_admin') != 'sub_distributor' "
+                        "OR COALESCE(forwarded_to_management, 0) = 1 "
+                        f"OR (COALESCE(report_target, 'manager_admin') = 'sub_distributor' AND CAST(reported_by AS TEXT) IN ({placeholders}))"
+                        ")"
+                    )
+                    params.extend(sorted(operator_ids))
+                else:
+                    conditions.append("COALESCE(report_target, 'manager_admin') != 'sub_distributor' OR COALESCE(forwarded_to_management, 0) = 1")
 
         where = " AND ".join(conditions)
 
@@ -200,8 +360,22 @@ async def get_defect_by_id(defect_id: str) -> Optional[Dict[str, Any]]:
         return d
 
 
-async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> Dict[str, Any]:
+async def create_defect(
+    defect_data: DefectCreate,
+    reporter: Dict[str, Any],
+    sync_device_status: bool = True
+) -> Dict[str, Any]:
     """Create a new defect report"""
+    reporter_id = str(reporter.get("_id") or reporter.get("id"))
+    reporter_name = reporter.get("name") or "System"
+    reporter_role = reporter.get("role") or ""
+    requested_target = defect_data.report_target.value if defect_data.report_target else None
+    report_target = (
+        DefectReportTarget.SUB_DISTRIBUTOR.value
+        if requested_target == DefectReportTarget.SUB_DISTRIBUTOR.value and reporter_role == "operator"
+        else DefectReportTarget.MANAGER_ADMIN.value
+    )
+
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(defect_data.device_id),))
         device = await cursor.fetchone()
@@ -224,24 +398,29 @@ async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> 
 
         now = datetime.utcnow().isoformat()
         images_json = json.dumps(defect_data.images or [])
+        lineage = await _resolve_defect_lineage_ids(db, reporter_id=reporter_id, reporter_role=reporter_role)
 
         cursor = await db.execute(
             """INSERT INTO defects (report_id, device_id, device_serial, device_type,
             reported_by, reported_by_name, defect_type, severity, description, symptoms,
-            status, resolution, resolved_by, resolved_by_name, resolved_at, images,
-            created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            operator_id, sub_distributor_id, report_target, forwarded_to_management, status, resolution, resolved_by,
+            resolved_by_name, resolved_at, images, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 generate_defect_id(),
                 defect_data.device_id,
                 device["serial_number"],
                 device["device_type"],
-                str(reporter["_id"]),
-                reporter["name"],
+                reporter_id,
+                reporter_name,
                 defect_data.defect_type.value,
                 defect_data.severity.value,
                 defect_data.description,
                 defect_data.symptoms,
+                lineage.get("operator_id"),
+                lineage.get("sub_distributor_id"),
+                report_target,
+                0,
                 DefectStatus.REPORTED.value,
                 None, None, None, None,
                 images_json,
@@ -251,30 +430,156 @@ async def create_defect(defect_data: DefectCreate, reporter: Dict[str, Any]) -> 
         await db.commit()
         new_id = cursor.lastrowid
 
-    # Notify only enabled approval roles for defect reports.
-    enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("defect")
-    if not enabled_roles:
-        enabled_roles = ["admin"]
-    role_placeholders = ", ".join(["?"] * len(enabled_roles))
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"SELECT * FROM users WHERE role IN ({role_placeholders})",
-            enabled_roles,
+    # Update device status (also records history internally)
+    if sync_device_status:
+        await device_service.update_device_status(
+            device_id=defect_data.device_id,
+            status=DeviceStatus.DEFECTIVE.value,
+            performed_by=reporter_id,
+            performed_by_name=reporter_name,
+            notes=f"Defect reported: {defect_data.defect_type.value} - {defect_data.severity.value}"
         )
-        admins = await cursor.fetchall()
-        for admin in admins:
-            admin = dict(admin)
+
+    # Notify designated recipients based on report target.
+    async with get_db() as db:
+        recipient_ids: List[str] = []
+        if report_target == DefectReportTarget.SUB_DISTRIBUTOR.value:
+            recipient_ids = await _resolve_sub_distributor_targets_for_operator(db, reporter_id)
+
+        if not recipient_ids:
+            cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+            recipient_ids = [str(dict(row)["id"]) for row in await cursor.fetchall()]
+
+        for recipient_id in recipient_ids:
             await notification_service.create_notification(
-                user_id=str(admin["id"]),
+                user_id=recipient_id,
                 title="New Defect Report",
                 message=f"A new {defect_data.severity.value} severity defect has been reported for device {device['device_id']}",
                 notification_type="warning" if defect_data.severity.value in ["critical", "high"] else "info",
                 category="defect",
                 link=f"/defects?defectId={new_id}",
-                metadata={"action": "new_defect_report", "defect_id": str(new_id)}
+                metadata={
+                    "action": "new_defect_report",
+                    "defect_id": str(new_id),
+                    "report_target": report_target
+                }
             )
 
     return await get_defect_by_id(str(new_id))
+
+
+async def create_or_get_active_defect_for_device(
+    device_id: str,
+    reporter: Dict[str, Any],
+    notes: Optional[str] = None
+) -> Dict[str, Any]:
+    """Ensure there is an active defect report for a defective device.
+    Returns existing active report when present, otherwise creates a generic one."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id FROM defects WHERE device_id = ? AND status NOT IN ('resolved', 'rejected') ORDER BY created_at DESC LIMIT 1",
+            (str(device_id),)
+        )
+        existing = await cursor.fetchone()
+        if existing:
+            return await get_defect_by_id(str(dict(existing)["id"]))
+
+    note_text = (notes or "").strip()
+    description = note_text
+    if len(description) < 10:
+        description = "Device was marked as defective via status update."
+
+    payload = DefectCreate(
+        device_id=str(device_id),
+        defect_type=DefectType.OTHER,
+        severity=DefectSeverity.MEDIUM,
+        description=description,
+        symptoms=note_text or None,
+        images=[]
+    )
+    return await create_defect(payload, reporter, sync_device_status=False)
+
+
+async def forward_defect_to_management(
+    defect_id: str,
+    forwarder: Dict[str, Any],
+    notes: Optional[str] = None
+) -> Dict[str, Any]:
+    """Forward a sub-distributor-targeted defect to manager/admin queue."""
+    forwarder_role = forwarder.get("role")
+    forwarder_id = str(forwarder.get("id") or forwarder.get("_id"))
+    forwarder_name = forwarder.get("name") or "Sub Distributor"
+
+    if forwarder_role != "sub_distributor":
+        raise ValueError("Only sub distributors can forward defects to manager/admin")
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
+        defect = await cursor.fetchone()
+        if not defect:
+            raise ValueError("Defect report not found")
+        defect = dict(defect)
+
+        target = defect.get("report_target") or DefectReportTarget.MANAGER_ADMIN.value
+        if target != DefectReportTarget.SUB_DISTRIBUTOR.value:
+            raise ValueError("This defect is not routed through sub distributor")
+        if int(defect.get("forwarded_to_management") or 0) == 1:
+            raise ValueError("This defect has already been forwarded to manager/admin")
+
+        operator_ids = await _get_sub_distributor_operator_ids(db, forwarder_id)
+        if str(defect.get("reported_by")) not in operator_ids:
+            raise ValueError("You can only forward defects reported by operators under your hierarchy")
+
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            """UPDATE defects
+            SET forwarded_to_management = 1,
+                forwarded_to_management_at = ?,
+                forwarded_to_management_by = ?,
+                forwarded_to_management_by_name = ?,
+                updated_at = ?
+            WHERE id = ?""",
+            (now, forwarder_id, forwarder_name, now, int(defect_id))
+        )
+        await db.commit()
+
+        cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        management_users = await cursor.fetchall()
+
+    for row in management_users:
+        manager_user_id = str(dict(row)["id"])
+        await notification_service.create_notification(
+            user_id=manager_user_id,
+            title="Defect Forwarded by Sub Distributor",
+            message=(
+                f"Defect {defect.get('report_id')} was forwarded by {forwarder_name} "
+                "for manager/admin review."
+            ),
+            notification_type="info",
+            category="defect",
+            link=f"/defects?defectId={defect_id}",
+            metadata={
+                "action": "forwarded_to_management",
+                "defect_id": str(defect_id),
+                "notes": notes,
+                "forwarded_by": forwarder_name
+            }
+        )
+
+    if defect.get("reported_by"):
+        await notification_service.create_notification(
+            user_id=str(defect["reported_by"]),
+            title="Defect Forwarded to Manager/Admin",
+            message=(
+                f"Your defect report {defect.get('report_id')} has been forwarded to manager/admin "
+                "for further review."
+            ),
+            notification_type="info",
+            category="defect",
+            link=f"/defects?defectId={defect_id}"
+        )
+
+    return await get_defect_by_id(defect_id)
 
 
 async def update_defect(defect_id: str, defect_data: DefectUpdate) -> Optional[Dict[str, Any]]:
