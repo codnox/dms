@@ -9,7 +9,7 @@ import Timeline from '../components/ui/Timeline';
 import { returnsAPI, approvalsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, RotateCcw, CheckCircle, XCircle, Truck, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
+import { Plus, Eye, RotateCcw, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
 
 const Returns = () => {
   const { user } = useAuth();
@@ -18,7 +18,6 @@ const Returns = () => {
   const [loading, setLoading] = useState(true);
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [showActionModal, setShowActionModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [actionComment, setActionComment] = useState('');
   const [routingConfig, setRoutingConfig] = useState({
@@ -71,8 +70,7 @@ const Returns = () => {
   const canApprove = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
   const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
 
-  const pendingReviewReturns = returnRequests.filter((r) => r.status === 'pending');
-  const pendingReceiptReturns = returnRequests.filter((r) => r.status === 'approved');
+  const pendingReceiptReturns = returnRequests.filter((r) => ['pending', 'approved'].includes(r.status));
 
   const columns = [
     {
@@ -114,22 +112,7 @@ const Returns = () => {
           >
             <Eye className="w-4 h-4" />
           </button>
-          {canApprove && row.status === 'pending' && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedReturn(row);
-                  setShowActionModal(true);
-                }}
-                className="p-1 text-green-600 hover:bg-green-50 rounded"
-                title="Approve/Reject"
-              >
-                <CheckCircle className="w-4 h-4" />
-              </button>
-            </>
-          )}
-          {canConfirmReceipt && row.status === 'approved' && (
+          {canConfirmReceipt && ['pending', 'approved'].includes(row.status) && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -138,7 +121,7 @@ const Returns = () => {
                 setShowReceiptModal(true);
               }}
               className="p-1 text-purple-600 hover:bg-purple-50 rounded"
-              title="Confirm device received at PDIC"
+              title="Confirm device reached PDIC"
             >
               <PackageCheck className="w-4 h-4" />
             </button>
@@ -147,27 +130,6 @@ const Returns = () => {
       )
     }
   ];
-
-  const handleAction = async (action) => {
-    try {
-      await returnsAPI.updateReturnStatus(
-        selectedReturn._id || selectedReturn.id,
-        action,
-        actionComment
-      );
-      showToast(
-        action === 'approved'
-          ? 'Return approved — operator notified to bring device to PDIC'
-          : 'Return request rejected',
-        action === 'approved' ? 'success' : 'warning'
-      );
-      setShowActionModal(false);
-      setActionComment('');
-      fetchReturns();
-    } catch (error) {
-      showToast('Failed to update return request', 'error');
-    }
-  };
 
   const handleConfirmReceipt = async () => {
     try {
@@ -225,28 +187,16 @@ const Returns = () => {
 
   return (
     <div className="space-y-6">
-      {(canApprove || canConfirmReceipt) && (pendingReviewReturns.length > 0 || pendingReceiptReturns.length > 0) && (
+      {(canApprove || canConfirmReceipt) && pendingReceiptReturns.length > 0 && (
         <div className="space-y-3">
-          {pendingReviewReturns.length > 0 && (
-            <div className="p-4 rounded-xl border border-red-300 bg-red-50">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-                <p className="font-semibold text-red-900">Return Review Attention</p>
-              </div>
-              <p className="text-sm text-red-800">
-                {pendingReviewReturns.length} defective-device return requests are pending review.
-              </p>
-            </div>
-          )}
-
           {pendingReceiptReturns.length > 0 && (
             <div className="p-4 rounded-xl border border-amber-300 bg-amber-50">
               <div className="flex items-center gap-2 mb-2">
-                <PackageCheck className="w-5 h-5 text-amber-600" />
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
                 <p className="font-semibold text-amber-900">PDIC Receipt Confirmation Pending</p>
               </div>
               <p className="text-sm text-amber-800">
-                {pendingReceiptReturns.length} approved return requests are waiting for physical receipt confirmation at PDIC.
+                {pendingReceiptReturns.length} return requests are waiting for device reached confirmation at PDIC.
               </p>
             </div>
           )}
@@ -325,19 +275,13 @@ const Returns = () => {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            {canApprove && selectedReturn?.status === 'pending' && (
-              <Button onClick={() => {
-                setShowModal(false);
-                setShowActionModal(true);
-              }}>Review Request</Button>
-            )}
-            {canConfirmReceipt && selectedReturn?.status === 'approved' && (
+            {canConfirmReceipt && ['pending', 'approved'].includes(selectedReturn?.status) && (
               <Button onClick={() => {
                 setShowModal(false);
                 setActionComment('');
                 setShowReceiptModal(true);
               }}>
-                Confirm Receipt at PDIC
+                Confirm Device Reached at PDIC
               </Button>
             )}
           </>
@@ -409,52 +353,6 @@ const Returns = () => {
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* Action Modal */}
-      <Modal
-        isOpen={showActionModal}
-        onClose={() => {
-          setShowActionModal(false);
-          setActionComment('');
-        }}
-        title="Review Return Request"
-        size="md"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowActionModal(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => handleAction('rejected')}>Reject</Button>
-            <Button onClick={() => handleAction('approved')}>Approve</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="font-medium text-gray-800">{selectedReturn?.device_type || selectedReturn?.device_name || 'Unknown'}</p>
-            <p className="text-sm text-gray-500 capitalize">{selectedReturn?.reason}</p>
-            <p className="text-xs text-gray-400">Serial: {selectedReturn?.device_serial || 'N/A'} | MAC: {selectedReturn?.mac_address || 'N/A'}</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Comments
-            </label>
-            <textarea
-              value={actionComment}
-              onChange={(e) => setActionComment(e.target.value)}
-              rows={3}
-              placeholder="Add your review comments..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-800">
-              Approving will notify the operator to physically return the device to PDIC.
-              Once the device arrives, use ‘Confirm Receipt’ to transfer ownership back to PDIC.
-            </p>
-          </div>
-        </div>
       </Modal>
 
       {/* Confirm Receipt Modal */}
