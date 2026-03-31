@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import json
+import io
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -64,6 +65,51 @@ def _build_distribution_manifest(
     file_path = _distribution_manifest_dir() / file_name
     workbook.save(file_path)
     return file_name
+
+
+def _build_distribution_mac_nuid_file(
+    distribution_code: str,
+    devices: List[Dict[str, Any]],
+    file_format: str = "csv",
+) -> Dict[str, Any]:
+    """Build export containing only mac_address and nuid for a distribution."""
+    normalized = str(file_format or "csv").strip().lower()
+    if normalized not in {"csv", "xlsx"}:
+        raise ValueError("Unsupported export format. Use 'csv' or 'xlsx'")
+
+    rows = [
+        {
+            "mac_address": str(device.get("mac_address") or "").strip(),
+            "nuid": str(device.get("nuid") or "").strip(),
+        }
+        for device in devices
+    ]
+
+    if normalized == "xlsx":
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "MAC_NUID"
+        sheet.append(["mac_address", "nuid"])
+        for row in rows:
+            sheet.append([row["mac_address"], row["nuid"]])
+
+        payload = io.BytesIO()
+        workbook.save(payload)
+        payload.seek(0)
+        return {
+            "content": payload.getvalue(),
+            "filename": f"{distribution_code}-mac-nuid.xlsx",
+            "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+
+    content = "mac_address,nuid\n" + "\n".join(
+        f"{row['mac_address']},{row['nuid']}" for row in rows
+    )
+    return {
+        "content": content.encode("utf-8"),
+        "filename": f"{distribution_code}-mac-nuid.csv",
+        "media_type": "text/csv",
+    }
 
 
 async def get_distributions(
@@ -650,6 +696,48 @@ async def get_distribution_manifest_file(distribution_id: str, user: Dict[str, A
         "path": str(file_path),
         "filename": str(manifest_file),
     }
+
+
+async def get_distribution_mac_nuid_export(
+    distribution_id: str,
+    user: Dict[str, Any],
+    file_format: str = "csv",
+) -> Dict[str, Any]:
+    """Get a MAC/NUID export payload for distribution devices if requester is permitted."""
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
+        raise ValueError("Distribution not found")
+
+    role = str(user.get("role", "")).lower()
+    user_id = str(user.get("id", user.get("_id", "")))
+
+    if role not in ["admin", "manager", "staff"]:
+        if user_id not in [str(dist.get("from_user_id", "")), str(dist.get("to_user_id", ""))]:
+            raise ValueError("You are not allowed to access this distribution export")
+
+    device_ids = dist.get("device_ids") or []
+    if isinstance(device_ids, str):
+        try:
+            device_ids = json.loads(device_ids)
+        except (json.JSONDecodeError, TypeError):
+            device_ids = []
+
+    devices: List[Dict[str, Any]] = []
+    if device_ids:
+        placeholders = ",".join(["?"] * len(device_ids))
+        async with get_db() as db:
+            cursor = await db.execute(
+                f"SELECT id, mac_address, nuid FROM devices WHERE id IN ({placeholders})",
+                tuple(int(device_id) for device_id in device_ids)
+            )
+            devices = rows_to_list(await cursor.fetchall())
+
+    distribution_code = str(dist.get("distribution_id") or f"distribution-{distribution_id}")
+    return _build_distribution_mac_nuid_file(
+        distribution_code=distribution_code,
+        devices=devices,
+        file_format=file_format,
+    )
 
 
 async def get_pending_distributions() -> List[Dict[str, Any]]:

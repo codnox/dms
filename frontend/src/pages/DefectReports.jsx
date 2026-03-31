@@ -13,6 +13,30 @@ import {
   Search, Link2, CheckCircle2, Bell, Package, Info
 } from 'lucide-react';
 
+const DEVICE_TYPE_OPTIONS = [
+  'ONU',
+  'ONT',
+  'Router',
+  'Switch',
+  'Modem',
+  'Access Point',
+  'Setup Box',
+  'Other',
+];
+
+const BAND_TYPE_OPTIONS = [
+  { value: 'single_band', label: 'Single Band' },
+  { value: 'dual_band', label: 'Dual Band' },
+];
+
+const normalizeDeviceType = (deviceType) => {
+  if (!deviceType) return 'ONT';
+  const match = DEVICE_TYPE_OPTIONS.find((option) => option.toLowerCase() === String(deviceType).toLowerCase());
+  return match || 'Other';
+};
+
+const isSetupBoxType = (deviceType) => String(deviceType || '').toLowerCase() === 'setup box';
+
 const DefectReports = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
@@ -37,7 +61,9 @@ const DefectReports = () => {
     model: '',
     manufacturer: '',
     serial_number: '',
-    mac_address: ''
+    mac_address: '',
+    band_type: 'single_band',
+    nuid: ''
   });
   const [activeEnquiryDefectId, setActiveEnquiryDefectId] = useState(null);
   const [enquiryDrafts, setEnquiryDrafts] = useState({});
@@ -181,15 +207,17 @@ const DefectReports = () => {
     setReplacementMode('existing');
     setReplaceData({ notes: '' });
     setReplacementSearch('');
-    setReplacementDeviceType(row?.device_type || 'all');
+    setReplacementDeviceType(normalizeDeviceType(row?.device_type));
     setSelectedReplacementDeviceId('');
     setSelectedReplacementDevice(null);
     setNewDeviceData({
-      device_type: row?.device_type || 'ONT',
+      device_type: normalizeDeviceType(row?.device_type),
       model: '',
       manufacturer: '',
       serial_number: '',
-      mac_address: ''
+      mac_address: '',
+      band_type: 'single_band',
+      nuid: ''
     });
     setShowReplaceModal(true);
     await fetchAvailableReplacementDevices(row);
@@ -228,7 +256,7 @@ const DefectReports = () => {
       return true;
     }
     const query = replacementSearch.toLowerCase();
-    return [device.device_id, device.serial_number, device.mac_address, device.model, device.manufacturer]
+    return [device.device_id, device.serial_number, device.mac_address, device.model, device.manufacturer, device.nuid]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
   });
@@ -453,13 +481,27 @@ const DefectReports = () => {
         showToast('Fill all required fields for new device registration', 'error');
         return;
       }
+
+      if (isSetupBoxType(newDeviceData.device_type) && !String(newDeviceData.nuid || '').trim()) {
+        showToast('NUID is required for Setup Box replacement devices', 'error');
+        return;
+      }
     }
+
+    const cleanedNewDeviceData = {
+      ...newDeviceData,
+      model: String(newDeviceData.model || '').trim(),
+      manufacturer: String(newDeviceData.manufacturer || '').trim(),
+      serial_number: String(newDeviceData.serial_number || '').trim(),
+      mac_address: String(newDeviceData.mac_address || '').trim(),
+      nuid: String(newDeviceData.nuid || '').trim() || undefined,
+    };
 
     const payload = {
       notes: replaceData.notes || undefined,
       ...(replacementMode === 'existing'
         ? { replacement_device_id: selectedReplacementDeviceId }
-        : { register_device: newDeviceData })
+        : { register_device: cleanedNewDeviceData })
     };
 
     try {
@@ -468,7 +510,7 @@ const DefectReports = () => {
         replacementMode === 'existing' && selectedReplacementDevice
           ? `${selectedReplacementDevice.device_id} (${selectedReplacementDevice.serial_number})`
           : replacementMode === 'new'
-          ? `New ${newDeviceData.device_type} (${newDeviceData.serial_number})`
+          ? `New ${cleanedNewDeviceData.device_type} (${cleanedNewDeviceData.serial_number})`
           : 'selected device';
       showToast(
         `Replacement assigned: ${deviceLabel}. Operator will receive an alert and must confirm receipt before it appears in their account.`,
@@ -1016,13 +1058,9 @@ const DefectReports = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                   >
                     <option value="all">All Types</option>
-                    <option value="ONU">ONU</option>
-                    <option value="ONT">ONT</option>
-                    <option value="Router">Router</option>
-                    <option value="Switch">Switch</option>
-                    <option value="Modem">Modem</option>
-                    <option value="Access Point">Access Point</option>
-                    <option value="Other">Other</option>
+                    {DEVICE_TYPE_OPTIONS.map((deviceType) => (
+                      <option key={deviceType} value={deviceType}>{deviceType}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="flex-1">
@@ -1078,6 +1116,9 @@ const DefectReports = () => {
                         </div>
                         <p className="text-gray-600 mt-0.5">{device.model} · {device.manufacturer}</p>
                         <p className="text-gray-500 text-xs">Serial: {device.serial_number} · MAC: {device.mac_address}</p>
+                        {device.nuid && (
+                          <p className="text-gray-500 text-xs">NUID: {device.nuid}</p>
+                        )}
                       </div>
                     </label>
                   ))
@@ -1095,6 +1136,8 @@ const DefectReports = () => {
                     <div><span className="text-gray-500">Manufacturer:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.manufacturer || 'N/A'}</span></div>
                     <div><span className="text-gray-500">Serial:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.serial_number}</span></div>
                     <div><span className="text-gray-500">MAC:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.mac_address}</span></div>
+                    <div><span className="text-gray-500">Band:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.band_type || 'N/A'}</span></div>
+                    <div><span className="text-gray-500">NUID:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.nuid || 'N/A'}</span></div>
                     <div><span className="text-gray-500">Status:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.status}</span></div>
                     <div><span className="text-gray-500">Current Holder:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.current_holder_name || 'PDIC (Stock)'}</span></div>
                   </div>
@@ -1110,17 +1153,31 @@ const DefectReports = () => {
                   <select
                     value={newDeviceData.device_type}
                     onChange={(e) => {
-                      setNewDeviceData(prev => ({ ...prev, device_type: e.target.value }));
+                      const nextType = e.target.value;
+                      setNewDeviceData(prev => ({
+                        ...prev,
+                        device_type: nextType,
+                        nuid: isSetupBoxType(nextType) ? prev.nuid : ''
+                      }));
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="ONU">ONU</option>
-                    <option value="ONT">ONT</option>
-                    <option value="Router">Router</option>
-                    <option value="Switch">Switch</option>
-                    <option value="Modem">Modem</option>
-                    <option value="Access Point">Access Point</option>
-                    <option value="Other">Other</option>
+                    {DEVICE_TYPE_OPTIONS.map((deviceType) => (
+                      <option key={deviceType} value={deviceType}>{deviceType}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Band Type <span className="text-red-500">*</span></label>
+                  <select
+                    value={newDeviceData.band_type}
+                    onChange={(e) => setNewDeviceData(prev => ({ ...prev, band_type: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {BAND_TYPE_OPTIONS.map((band) => (
+                      <option key={band.value} value={band.value}>{band.label}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1167,6 +1224,19 @@ const DefectReports = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {isSetupBoxType(newDeviceData.device_type) && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">NUID <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={newDeviceData.nuid}
+                      onChange={(e) => setNewDeviceData(prev => ({ ...prev, nuid: e.target.value }))}
+                      placeholder="e.g. NUID-00021"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
