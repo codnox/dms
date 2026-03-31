@@ -5,6 +5,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { defectsAPI, devicesAPI, notificationsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -65,7 +66,7 @@ const DefectReports = () => {
   const canReview = ['admin', 'manager', 'staff'].includes(user?.role);
   const canForwardToManagement = user?.role === 'sub_distributor';
   const canReplace = ['admin', 'manager', 'staff'].includes(user?.role);
-  const canConfirmReplacement = user?.role === 'operator';
+  const canConfirmReplacement = ['operator', 'cluster', 'sub_distributor'].includes(user?.role);
 
   useEffect(() => {
     if (canReplace) {
@@ -238,11 +239,7 @@ const DefectReports = () => {
       key: 'device_name',
       label: 'Device',
       render: (value, row) => (
-        <div>
-          <p className="font-medium text-gray-800">{value || row.device_type || 'Unknown'}</p>
-          <p className="text-xs text-gray-500">Serial: {row.device_serial || row.defective_device?.serial_number || 'N/A'}</p>
-          <p className="text-xs text-gray-500">MAC: {row.mac_address || row.defective_device?.mac_address || 'N/A'}</p>
-        </div>
+        <DeviceIdentity device={{ ...row, model: value || row.model }} />
       )
     },
     { key: 'defect_type', label: 'Type' },
@@ -761,9 +758,7 @@ const DefectReports = () => {
                 <AlertTriangle className="w-8 h-8 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-800">{selectedDefect.device_name || selectedDefect.device_type || 'Unknown'}</h3>
-                <p className="text-gray-500">Serial: {selectedDefect.device_serial || selectedDefect.defective_device?.serial_number || 'N/A'}</p>
-                <p className="text-gray-500">MAC: {selectedDefect.mac_address || selectedDefect.defective_device?.mac_address || 'N/A'}</p>
+                <DeviceIdentity device={selectedDefect} />
                 <div className="flex gap-2 mt-2">
                   <StatusBadge status={selectedDefect.severity} />
                   <StatusBadge status={selectedDefect.status} />
@@ -778,7 +773,7 @@ const DefectReports = () => {
                 <div>
                   <p className="text-sm font-semibold text-amber-900">Replacement Device Ready</p>
                   <p className="text-sm text-amber-700 mt-0.5">
-                    A replacement device has been assigned. The operator must confirm receipt for it to be activated.
+                    A replacement device has been assigned. The recipient must confirm receipt for it to be activated.
                   </p>
                 </div>
               </div>
@@ -811,13 +806,7 @@ const DefectReports = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-xs text-red-600 uppercase tracking-wider mb-2 font-semibold">🔴 Defective Device</p>
-                <p className="font-semibold text-red-900">
-                  {selectedDefect?.defective_device?.device_id || selectedDefect?.device_serial || 'N/A'}
-                </p>
-                <p className="text-sm text-red-800 mt-1">Serial: {selectedDefect?.defective_device?.serial_number || selectedDefect?.device_serial || 'N/A'}</p>
-                <p className="text-sm text-red-800">MAC: {selectedDefect?.defective_device?.mac_address || 'N/A'}</p>
-                <p className="text-sm text-red-800">Type: {selectedDefect?.defective_device?.device_type || selectedDefect?.device_type || 'N/A'}</p>
-                <p className="text-sm text-red-800">Model: {selectedDefect?.defective_device?.model || 'N/A'}</p>
+                <DeviceIdentity device={selectedDefect?.defective_device || selectedDefect} />
                 <p className="text-sm text-red-800">Status: {selectedDefect?.defective_device?.status || 'defective'}</p>
               </div>
 
@@ -825,11 +814,7 @@ const DefectReports = () => {
                 <p className="text-xs text-green-600 uppercase tracking-wider mb-2 font-semibold">🟢 Replacement Device</p>
                 {selectedDefect?.replacement_device ? (
                   <>
-                    <p className="font-semibold text-green-900">{selectedDefect.replacement_device.device_id || 'N/A'}</p>
-                    <p className="text-sm text-green-800 mt-1">Serial: {selectedDefect.replacement_device.serial_number || 'N/A'}</p>
-                    <p className="text-sm text-green-800">MAC: {selectedDefect.replacement_device.mac_address || 'N/A'}</p>
-                    <p className="text-sm text-green-800">Type: {selectedDefect.replacement_device.device_type || 'N/A'}</p>
-                    <p className="text-sm text-green-800">Model: {selectedDefect.replacement_device.model || 'N/A'}</p>
+                    <DeviceIdentity device={selectedDefect.replacement_device} />
                     <p className="text-sm text-green-800">
                       Status: {selectedDefect.status === 'resolved' ? '✅ Confirmed & Active' : '⏳ Awaiting Confirmation'}
                     </p>
@@ -1076,8 +1061,8 @@ const DefectReports = () => {
                           <StatusBadge status={device.device_type} size="sm" />
                           <StatusBadge status={device.status} size="sm" />
                         </div>
-                        <p className="text-gray-600 mt-0.5">{device.model} · {device.manufacturer}</p>
-                        <p className="text-gray-500 text-xs">Serial: {device.serial_number} · MAC: {device.mac_address}</p>
+                        <DeviceIdentity device={device} className="mt-1" />
+                        <p className="text-gray-600 mt-0.5">{device.manufacturer || 'Unknown Manufacturer'}</p>
                       </div>
                     </label>
                   ))
@@ -1090,11 +1075,8 @@ const DefectReports = () => {
                   <p className="text-xs text-blue-600 uppercase tracking-wider font-semibold mb-2">🟢 Selected Replacement Details</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                     <div><span className="text-gray-500">Device ID:</span> <span className="font-semibold text-blue-900">{selectedReplacementDevice.device_id}</span></div>
-                    <div><span className="text-gray-500">Type:</span> <span className="font-semibold text-blue-900">{selectedReplacementDevice.device_type}</span></div>
-                    <div><span className="text-gray-500">Model:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.model || 'N/A'}</span></div>
                     <div><span className="text-gray-500">Manufacturer:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.manufacturer || 'N/A'}</span></div>
-                    <div><span className="text-gray-500">Serial:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.serial_number}</span></div>
-                    <div><span className="text-gray-500">MAC:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.mac_address}</span></div>
+                    <div className="col-span-2"><DeviceIdentity device={selectedReplacementDevice} /></div>
                     <div><span className="text-gray-500">Status:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.status}</span></div>
                     <div><span className="text-gray-500">Current Holder:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.current_holder_name || 'PDIC (Stock)'}</span></div>
                   </div>

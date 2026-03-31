@@ -937,9 +937,10 @@ async def confirm_replacement_receipt(
     confirmer: Dict[str, Any],
     notes: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Operator confirms replacement receipt; then replacement is assigned to their account."""
+    """Defect reporter/current holder confirms replacement receipt; replacement is assigned to confirmer account."""
     confirmer_id = str(confirmer.get("_id") or confirmer.get("id"))
     confirmer_name = confirmer.get("name") or "Operator"
+    confirmer_role = str(confirmer.get("role") or "operator")
 
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
@@ -965,7 +966,7 @@ async def confirm_replacement_receipt(
         reporter_user_id = str(defect.get("reported_by")) if defect.get("reported_by") else None
         allowed_confirmer_ids = {uid for uid in [holder_user_id, reporter_user_id] if uid}
         if confirmer_id not in allowed_confirmer_ids:
-            raise ValueError("Only the current operator/holder can confirm replacement receipt")
+            raise ValueError("Only the current holder or original defect reporter can confirm replacement receipt")
 
         cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(replacement_device_id),))
         new_device = await cursor.fetchone()
@@ -1000,12 +1001,12 @@ async def confirm_replacement_receipt(
         )
         await db.commit()
 
-    # Assign replacement device to the CONFIRMING OPERATOR (not old_device holder which may be stale)
+    # Assign replacement device to the confirming user account (not stale holder data)
     updated_device = await device_service.update_device_holder(
         device_id=str(new_device["id"]),
         holder_id=confirmer_id,
         holder_name=confirmer_name,
-        holder_type="operator",
+        holder_type=confirmer_role,
         location=confirmer_name,
         status=DeviceStatus.IN_USE.value,
         performed_by=confirmer_id,
@@ -1032,7 +1033,7 @@ async def confirm_replacement_receipt(
             user_id=str(row["id"]),
             title="Replacement Receipt Confirmed",
             message=(
-                f"Operator {confirmer_name} confirmed receipt of replacement device "
+                f"{confirmer_name} ({confirmer_role.replace('_', ' ')}) confirmed receipt of replacement device "
                 f"for defect {defect.get('report_id')}."
             ),
             notification_type="success",

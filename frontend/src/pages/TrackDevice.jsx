@@ -5,6 +5,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Timeline from '../components/ui/Timeline';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { devicesAPI, changeRequestsAPI, defectsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -289,9 +290,7 @@ const TrackDevice = () => {
                       <Box className="w-5 h-5 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{device.model || 'Unknown Model'}</p>
-                      <p className="text-xs text-gray-500 font-mono truncate">{device.serial_number}</p>
-                      <p className="text-xs text-gray-400 truncate">{device.mac_address}</p>
+                        <DeviceIdentity device={device} />
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <StatusBadge status={device.status} size="sm" />
@@ -319,8 +318,7 @@ const TrackDevice = () => {
                             <AlertTriangle className="w-5 h-5 text-red-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-800 truncate line-through decoration-red-400">{device.model || 'Unknown Model'}</p>
-                            <p className="text-xs text-gray-500 font-mono truncate">{device.serial_number}</p>
+                            <DeviceIdentity device={device} />
                             <p className="text-xs text-red-600 truncate">
                               {mapping?.replacement_device?.device_id
                                 ? `Replaced by ${mapping.replacement_device.device_id}`
@@ -394,8 +392,8 @@ const TrackDevice = () => {
                       <Box className="w-10 h-10 text-blue-600" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-gray-800">{searchResult.model || 'Unknown Model'}</h2>
-                      <p className="text-gray-500">{searchResult.manufacturer || searchResult.device_type}</p>
+                      <DeviceIdentity device={searchResult} />
+                      <p className="text-gray-500 mt-1">{searchResult.manufacturer || 'Unknown Manufacturer'}</p>
                       <div className="flex gap-2 mt-2">
                         <StatusBadge status={searchResult.status} />
                       </div>

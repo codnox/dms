@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
+import DeviceIdentity from '../../components/ui/DeviceIdentity';
 import Button from '../../components/ui/Button';
 import { dashboardAPI, devicesAPI, distributionsAPI, usersAPI, defectsAPI, returnsAPI } from '../../services/api';
 import {
@@ -101,10 +102,7 @@ const DistributorDashboard = () => {
             ) : (
               inventoryDevices.slice(0, 4).map((device) => (
                 <div key={device.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">{device.model || device.device_type}</p>
-                    <p className="text-xs text-gray-500">{device.mac_address}</p>
-                  </div>
+                  <DeviceIdentity device={device} />
                   <StatusBadge status={device.status} size="sm" />
                 </div>
               ))

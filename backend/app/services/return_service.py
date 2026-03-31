@@ -42,7 +42,18 @@ async def get_returns(
 
         offset = (page - 1) * page_size
         cursor = await db.execute(
-            f"SELECT * FROM returns WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"""
+            SELECT
+                r.*,
+                d.model AS device_model,
+                d.manufacturer AS manufacturer,
+                d.device_id AS source_device_id
+            FROM returns r
+            LEFT JOIN devices d ON d.id = r.device_id
+            WHERE {where}
+            ORDER BY r.created_at DESC
+            LIMIT ? OFFSET ?
+            """,
             params + [page_size, offset]
         )
         rows = await cursor.fetchall()
@@ -56,7 +67,19 @@ async def get_returns(
 async def get_return_by_id(return_id: str) -> Optional[Dict[str, Any]]:
     """Get return request by ID"""
     async with get_db() as db:
-        cursor = await db.execute("SELECT * FROM returns WHERE id = ?", (int(return_id),))
+        cursor = await db.execute(
+            """
+            SELECT
+                r.*,
+                d.model AS device_model,
+                d.manufacturer AS manufacturer,
+                d.device_id AS source_device_id
+            FROM returns r
+            LEFT JOIN devices d ON d.id = r.device_id
+            WHERE r.id = ?
+            """,
+            (int(return_id),)
+        )
         row = await cursor.fetchone()
         return row_to_dict(row) if row else None
 

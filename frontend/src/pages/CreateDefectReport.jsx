@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { devicesAPI, defectsAPI } from '../services/api';
+import { getDeviceSelectLabel } from '../utils/deviceDisplay';
 import { AlertTriangle, Save, X, Upload, Camera, Loader2 } from 'lucide-react';
 
 const CreateDefectReport = () => {
@@ -127,7 +129,7 @@ const CreateDefectReport = () => {
               <option value="">Select a device...</option>
               {myDevices.map(device => (
                 <option key={device._id || device.id} value={device._id || device.id}>
-                  {device.model || device.device_type} - {device.mac_address}
+                  {getDeviceSelectLabel(device)}
                 </option>
               ))}
             </select>
@@ -140,11 +142,7 @@ const CreateDefectReport = () => {
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                   <AlertTriangle className="w-6 h-6 text-blue-600" />
                 </div>
-                <div>
-                  <p className="font-medium text-gray-800">{selectedDevice.model || selectedDevice.device_type}</p>
-                  <p className="text-sm text-gray-500">MAC: {selectedDevice.mac_address}</p>
-                  <p className="text-sm text-gray-500">SN: {selectedDevice.serial_number}</p>
-                </div>
+                <DeviceIdentity device={selectedDevice} />
                 <div className="ml-auto">
                   <StatusBadge status={selectedDevice.status} />
                 </div>

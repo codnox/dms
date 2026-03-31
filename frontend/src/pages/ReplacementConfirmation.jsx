@@ -148,14 +148,16 @@ const ReplacementConfirmation = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-3 rounded-lg border border-red-200 bg-red-50">
                       <p className="text-xs uppercase tracking-wider text-red-600 mb-2">Defective Device</p>
-                      <p className="text-sm text-red-900">{defective.device_id || 'N/A'}</p>
+                      <p className="text-sm text-red-900 font-medium">{defective.device_id || 'N/A'}</p>
+                      <p className="text-sm text-red-800">Model: {defective.model || 'Unknown Model'}</p>
                       <p className="text-sm text-red-800">Serial: {defective.serial_number || defect.device_serial || 'N/A'}</p>
                       <p className="text-sm text-red-800">Type: {defective.device_type || defect.device_type || 'N/A'}</p>
                     </div>
 
                     <div className="p-3 rounded-lg border border-green-200 bg-green-50">
                       <p className="text-xs uppercase tracking-wider text-green-600 mb-2">Replacement Device</p>
-                      <p className="text-sm text-green-900">{replacement.device_id || 'N/A'}</p>
+                      <p className="text-sm text-green-900 font-medium">{replacement.device_id || 'N/A'}</p>
+                      <p className="text-sm text-green-800">Model: {replacement.model || 'Unknown Model'}</p>
                       <p className="text-sm text-green-800">Serial: {replacement.serial_number || 'N/A'}</p>
                       <p className="text-sm text-green-800">Type: {replacement.device_type || 'N/A'}</p>
                     </div>
