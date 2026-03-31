@@ -10,6 +10,7 @@ import { Doughnut } from 'react-chartjs-2';
 import StatCard from '../../components/ui/StatCard';
 import Card from '../../components/ui/Card';
 import StatusBadge from '../../components/ui/StatusBadge';
+import DeviceIdentity from '../../components/ui/DeviceIdentity';
 import Button from '../../components/ui/Button';
 import { dashboardAPI, devicesAPI, defectsAPI, returnsAPI } from '../../services/api';
 import {
@@ -127,9 +128,7 @@ const OperatorDashboard = () => {
                 </div>
                 <StatusBadge status={device.status} />
               </div>
-              <h4 className="font-medium text-gray-800">{device.model || device.device_type}</h4>
-              <p className="text-sm text-gray-500 mt-1">{device.mac_address}</p>
-              <p className="text-xs text-gray-400 mt-2">SN: {device.serial_number}</p>
+              <DeviceIdentity device={device} />
               <div className="flex items-center gap-2 mt-3">
                 <Link to={`/devices/track?serial=${encodeURIComponent(device.serial_number)}`} className="flex-1">
                   <Button variant="outline" size="sm" className="w-full" icon={Eye}>

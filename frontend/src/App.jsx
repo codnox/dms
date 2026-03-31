@@ -213,7 +213,7 @@ function AppRoutes() {
         <Route
           path="replacement-confirmation"
           element={
-            <ProtectedRoute allowedRoles={['operator']}>
+            <ProtectedRoute allowedRoles={['operator', 'cluster', 'sub_distributor']}>
               <ReplacementConfirmation />
             </ProtectedRoute>
           }

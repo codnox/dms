@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import StatusBadge from '../components/ui/StatusBadge';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { distributionsAPI, devicesAPI } from '../services/api';
@@ -414,11 +415,7 @@ const DeliveryConfirmations = () => {
                   {distributionDevices.map((device, index) => (
                     <div key={device._id || device.id || index} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
-                          <p className="text-sm text-gray-500 font-mono">{device.serial_number}</p>
-                          <p className="text-xs text-gray-400">{device.mac_address}</p>
-                        </div>
+                        <DeviceIdentity device={device} className="flex-1" />
                         <StatusBadge status={device.status} size="sm" />
                       </div>
                     </div>

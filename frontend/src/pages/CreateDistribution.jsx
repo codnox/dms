@@ -4,6 +4,7 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import StatusBadge from '../components/ui/StatusBadge';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { devicesAPI, usersAPI, distributionsAPI } from '../services/api';
@@ -402,11 +403,7 @@ const CreateDistribution = () => {
                       }`}
                       onClick={() => handleAddDevice(device)}
                     >
-                      <div>
-                        <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
-                        <p className="text-sm text-gray-500">{device.mac_address}</p>
-                        <p className="text-xs text-gray-400">{device.serial_number}</p>
-                      </div>
+                      <DeviceIdentity device={device} />
                       <div className="flex items-center gap-2">
                         <StatusBadge status={device.status} size="sm" />
                         <button type="button" onClick={(e) => { e.stopPropagation(); handleAddDevice(device); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded">
@@ -428,10 +425,7 @@ const CreateDistribution = () => {
               ) : (
                 selectedDevices.map(device => (
                   <div key={device._id || device.id} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
-                      <p className="text-sm text-gray-500">{device.mac_address}</p>
-                    </div>
+                    <DeviceIdentity device={device} />
                     <button type="button" onClick={() => handleRemoveDevice(device._id || device.id)} className="p-1 text-red-600 hover:bg-red-100 rounded">
                       <Trash2 className="w-4 h-4" />
                     </button>

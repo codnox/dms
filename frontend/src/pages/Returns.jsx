@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Card from '../components/ui/Card';
 import Timeline from '../components/ui/Timeline';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { returnsAPI, approvalsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -77,11 +78,13 @@ const Returns = () => {
       key: 'device_name',
       label: 'Device',
       render: (value, row) => (
-        <div>
-          <p className="font-medium text-gray-800">{row.device_type || value || 'Unknown'}</p>
-          <p className="text-xs text-gray-500">SN: {row.device_serial || 'N/A'}</p>
-          <p className="text-xs text-gray-400">MAC: {row.mac_address || 'N/A'}</p>
-        </div>
+        <DeviceIdentity
+          device={{
+            ...row,
+            model: row.model || row.device_model || value,
+            serial_number: row.serial_number || row.device_serial,
+          }}
+        />
       )
     },
     { key: 'reason', label: 'Reason' },
@@ -294,9 +297,13 @@ const Returns = () => {
                 <RotateCcw className="w-8 h-8 text-orange-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-800">{selectedReturn.device_name || selectedReturn.device_type || 'Unknown'}</h3>
-                <p className="text-gray-500">SN: {selectedReturn.device_serial || selectedReturn.serial_number || 'N/A'}</p>
-                <p className="text-gray-400 text-sm">MAC: {selectedReturn.mac_address || 'N/A'}</p>
+                <DeviceIdentity
+                  device={{
+                    ...selectedReturn,
+                    model: selectedReturn.model || selectedReturn.device_model || selectedReturn.device_name,
+                    serial_number: selectedReturn.serial_number || selectedReturn.device_serial,
+                  }}
+                />
                 <StatusBadge status={selectedReturn.status} />
               </div>
             </div>
@@ -375,9 +382,13 @@ const Returns = () => {
       >
         <div className="space-y-4">
           <div className="p-4 bg-purple-50 rounded-lg">
-            <p className="font-medium text-gray-800">{selectedReturn?.device_type || 'Unknown Device'}</p>
-            <p className="text-sm text-gray-500">Serial: {selectedReturn?.device_serial || 'N/A'}</p>
-            <p className="text-sm text-gray-500">MAC: {selectedReturn?.mac_address || 'N/A'}</p>
+            <DeviceIdentity
+              device={{
+                ...selectedReturn,
+                model: selectedReturn?.model || selectedReturn?.device_model || selectedReturn?.device_name,
+                serial_number: selectedReturn?.serial_number || selectedReturn?.device_serial,
+              }}
+            />
             <p className="text-sm text-gray-500">
               Return ID: {selectedReturn?.return_id || selectedReturn?._id || 'N/A'}
             </p>

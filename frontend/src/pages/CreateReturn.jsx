@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
+import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { useNotifications } from '../context/NotificationContext';
 import { devicesAPI, defectsAPI, returnsAPI } from '../services/api';
+import { getDeviceSelectLabel } from '../utils/deviceDisplay';
 import { RotateCcw, Save, X, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 
 const CreateReturn = () => {
@@ -93,7 +95,7 @@ const CreateReturn = () => {
               <option value="">Select a device...</option>
               {returnableDevices.map(device => (
                 <option key={device._id || device.id} value={device._id || device.id}>
-                  {device.model || device.device_type} - {device.mac_address}
+                  {getDeviceSelectLabel(device)}
                 </option>
               ))}
             </select>
@@ -106,11 +108,7 @@ const CreateReturn = () => {
                 <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                   <RotateCcw className="w-6 h-6 text-orange-600" />
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-800">{selectedDevice.model || selectedDevice.device_type}</p>
-                  <p className="text-sm text-gray-500">MAC: {selectedDevice.mac_address}</p>
-                  <p className="text-sm text-gray-500">SN: {selectedDevice.serial_number}</p>
-                </div>
+                <DeviceIdentity device={selectedDevice} className="flex-1" />
                 <StatusBadge status={selectedDevice.status} />
               </div>
             </div>

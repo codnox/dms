@@ -460,10 +460,10 @@ async def enquire_replacement_status(
     current_user: dict = Depends(require_any_role)
 ):
     """Operator sends replacement-status enquiry to management users."""
-    if current_user.get("role") != "operator":
+    if current_user.get("role") not in {"operator", "cluster", "sub_distributor"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only operators can send replacement enquiries"
+            detail="Only operator, cluster, or sub distributor users can send replacement enquiries"
         )
 
     try:
