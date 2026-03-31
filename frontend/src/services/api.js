@@ -425,6 +425,34 @@ export const distributionsAPI = {
     };
   },
 
+  downloadMacNuidExport: async (distributionId, format = 'csv') => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/distributions/${distributionId}/export-mac-nuid?format=${encodeURIComponent(format)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to download MAC/NUID export';
+      try {
+        const text = await response.text();
+        const parsed = text ? JSON.parse(text) : {};
+        errorMessage = parsed?.message || parsed?.detail || errorMessage;
+      } catch {
+        // Keep default message when response is not JSON.
+      }
+      throw new Error(errorMessage);
+    }
+
+    return {
+      blob: await response.blob(),
+      contentDisposition: response.headers.get('content-disposition') || '',
+    };
+  },
+
   updateDistributionStatus: async (distributionId, status, notes) => {
     const response = await apiRequest(`/distributions/${distributionId}/status`, {
       method: 'PATCH',

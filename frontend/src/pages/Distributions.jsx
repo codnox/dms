@@ -8,7 +8,7 @@ import Card from '../components/ui/Card';
 import { distributionsAPI, devicesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, Truck, CheckCircle, Loader2, AlertTriangle, PackageCheck, XCircle, Layers3, Factory, Upload } from 'lucide-react';
+import { Plus, Eye, Truck, CheckCircle, Loader2, AlertTriangle, PackageCheck, XCircle, Layers3, Factory, Upload, Download } from 'lucide-react';
 
 const toDisplayLabel = (value, fallback = 'Unknown') => {
   if (!value) return fallback;
@@ -104,6 +104,40 @@ const Distributions = () => {
   };
 
   const canCreate = ['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
+  const canRecipientSubDistributorDownload =
+    user?.role === 'sub_distributor' &&
+    selectedDist &&
+    String(selectedDist.to_user_id) === String(user?.id);
+
+  const handleDownloadMacNuidExport = async (format = 'csv') => {
+    if (!selectedDist) return;
+
+    try {
+      const distributionId = selectedDist._id || selectedDist.id;
+      const response = await distributionsAPI.downloadMacNuidExport(distributionId, format);
+      const blob = response.blob;
+      const disposition = response.contentDisposition || '';
+
+      let fileName = `${selectedDist.distribution_id || 'distribution'}-mac-nuid.${format}`;
+      const fileNameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      if (fileNameMatch?.[1]) {
+        fileName = fileNameMatch[1];
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      showToast(`Downloaded ${format.toUpperCase()} MAC/NUID export`, 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to download MAC/NUID export', 'error');
+    }
+  };
 
   const distributionInsights = useMemo(() => {
     const typeCounts = {};
@@ -325,6 +359,24 @@ const Distributions = () => {
                 <p className="text-gray-500">{selectedDist.from_user_name} → {selectedDist.to_user_name}</p>
                 <StatusBadge status={selectedDist.status} />
               </div>
+              {canRecipientSubDistributorDownload && (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    icon={Download}
+                    onClick={() => handleDownloadMacNuidExport('csv')}
+                  >
+                    Download CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    icon={Download}
+                    onClick={() => handleDownloadMacNuidExport('xlsx')}
+                  >
+                    Download Excel
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

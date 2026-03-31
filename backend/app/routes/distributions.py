@@ -2,7 +2,7 @@ import csv
 import io
 
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from typing import Optional
 from pydantic import BaseModel
 from app.models.distribution import DistributionCreate, DistributionStatusUpdate
@@ -248,6 +248,45 @@ async def download_distribution_manifest(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download manifest for distribution '{distribution_id}': {str(e)}"
+        )
+
+
+@router.get("/{distribution_id}/export-mac-nuid")
+async def download_distribution_mac_nuid(
+    distribution_id: str,
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Download distribution devices as MAC/NUID export in CSV or XLSX format."""
+    try:
+        export_data = await distribution_service.get_distribution_mac_nuid_export(
+            distribution_id=distribution_id,
+            user=current_user,
+            file_format=format,
+        )
+
+        return Response(
+            content=export_data["content"],
+            media_type=export_data["media_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={export_data['filename']}"
+            },
+        )
+    except ValueError as e:
+        message = str(e)
+        if "not found" in message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=message
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=message
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download MAC/NUID export for distribution '{distribution_id}': {str(e)}"
         )
 
 
