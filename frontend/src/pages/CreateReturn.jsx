@@ -209,9 +209,9 @@ const CreateReturn = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium text-blue-800">Return Approval Process</p>
+              <p className="font-medium text-blue-800">Return Tracking Process</p>
               <p className="text-sm text-blue-600 mt-1">
-                Your return request will be reviewed by the management for approval. 
+                Your return request will appear in Returns for PDIC device-reached confirmation.
                 You can track the status from the Returns page.
               </p>
             </div>
