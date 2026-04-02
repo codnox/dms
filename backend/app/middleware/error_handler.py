@@ -2,7 +2,10 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-import traceback
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def add_exception_handlers(app: FastAPI):
@@ -11,14 +14,24 @@ def add_exception_handlers(app: FastAPI):
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         """Handle HTTP exceptions"""
+        response_detail = exc.detail
+        if exc.status_code >= 500:
+            logger.error(
+                "Internal HTTP exception on %s %s: %s",
+                request.method,
+                request.url.path,
+                exc.detail,
+            )
+            response_detail = "An internal error occurred. Please try again later."
+
         return JSONResponse(
             status_code=exc.status_code,
             content={
                 "success": False,
-                "message": exc.detail,
+                "message": response_detail,
                 "error": {
                     "code": f"HTTP_{exc.status_code}",
-                    "details": exc.detail
+                    "details": response_detail
                 }
             }
         )
@@ -80,9 +93,11 @@ def add_exception_handlers(app: FastAPI):
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         """Handle all other exceptions"""
-        # Log the error
-        print(f"Unhandled error: {exc}")
-        traceback.print_exc()
+        logger.exception(
+            "Unhandled error on %s %s",
+            request.method,
+            request.url.path,
+        )
         
         return JSONResponse(
             status_code=500,

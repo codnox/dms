@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authAPI } from '../services/api';
+import { getStoredUser, saveStoredUser, clearStoredUser } from '../utils/authStorage';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const handleInactivityLogout = useCallback(() => {
     console.log('[AuthContext] Logging out due to 20 minutes of inactivity');
     setUser(null);
-    localStorage.removeItem('dms_user');
+    clearStoredUser();
     isAuthenticatedRef.current = false;
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
@@ -70,10 +71,10 @@ export const AuthProvider = ({ children }) => {
     // Check for stored user session and validate with backend
     const initAuth = async () => {
       console.log('[AuthContext] Initializing authentication');
-      const storedUser = localStorage.getItem('dms_user');
+      const storedUser = getStoredUser();
       if (storedUser) {
         try {
-          const userData = JSON.parse(storedUser);
+          const userData = storedUser;
           const storedToken = userData.token;
           console.log('[AuthContext] Found stored user, validating token');
           
@@ -81,27 +82,27 @@ export const AuthProvider = ({ children }) => {
           const response = await authAPI.getCurrentUser();
           if (response.success) {
             const validatedUser = response.data;
-            // Preserve the token from localStorage
+            // Preserve the token from the existing stored session
             validatedUser.token = storedToken;
             // Add avatar initials
             validatedUser.avatar = validatedUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
             setUser(validatedUser);
             console.log('[AuthContext] User authenticated:', validatedUser.email);
           } else {
-            // Invalid token, clear storage
+            // Invalid token, clear stored session
             console.warn('[AuthContext] Token validation failed, clearing storage');
-            localStorage.removeItem('dms_user');
+            clearStoredUser();
           }
         } catch (error) {
           console.error('[AuthContext] Auth validation error:', error);
           // Only clear storage if it's an auth error (401), not a network error
           if (error.message && (error.message.includes('Invalid') || error.message.includes('expired') || error.message.includes('401'))) {
             console.warn('[AuthContext] Token expired or invalid, clearing storage');
-            localStorage.removeItem('dms_user');
+            clearStoredUser();
           } else {
             // Network error or server error - keep the stored session
             console.warn('[AuthContext] Network/server error, keeping stored session');
-            const userData = JSON.parse(localStorage.getItem('dms_user'));
+            const userData = getStoredUser();
             if (userData) {
               userData.avatar = userData.name.split(' ').map(n => n[0]).join('').toUpperCase();
               setUser(userData);
@@ -130,8 +131,8 @@ export const AuthProvider = ({ children }) => {
         userData.avatar = userData.name.split(' ').map(n => n[0]).join('').toUpperCase();
         userData.token = access_token;
         
-        // Store user with token
-        localStorage.setItem('dms_user', JSON.stringify(userData));
+        // Store user with token in session storage only.
+        saveStoredUser(userData);
         setUser(userData);
         
         console.log('[AuthContext] Login successful for:', email);
@@ -164,7 +165,7 @@ export const AuthProvider = ({ children }) => {
       });
     } finally {
       setUser(null);
-      localStorage.removeItem('dms_user');
+      clearStoredUser();
       console.log('[AuthContext] User session cleared');
     }
   };

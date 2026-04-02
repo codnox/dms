@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 import json
 
@@ -86,7 +86,7 @@ async def create_notification(
 ) -> Dict[str, Any]:
     """Create a new notification"""
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
         
         cursor = await db.execute(
@@ -136,7 +136,7 @@ async def delete_notification(notification_id: str, user_id: str) -> bool:
 
 async def delete_old_notifications(days: int = 30) -> int:
     """Delete notifications older than specified days"""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
     async with get_db() as db:
         cursor = await db.execute("DELETE FROM notifications WHERE created_at < ?", (cutoff,))
         await db.commit()
@@ -153,7 +153,7 @@ async def send_bulk_notification(
 ) -> int:
     """Send notification to multiple users"""
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         count = 0
         for uid in user_ids:
             await db.execute(

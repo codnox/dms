@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from typing import Optional
 from pydantic import BaseModel
 from app.database import get_db, row_to_dict, rows_to_list
@@ -6,10 +6,17 @@ from app.middleware.auth_middleware import get_current_user, require_admin, requ
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
 from app.services import device_service, notification_service, defect_service
-from datetime import datetime
+from app.core.audit import audit_logger
+from datetime import datetime, timezone
 import uuid
 
 router = APIRouter()
+
+
+def _looks_like_bcrypt_hash(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    return value.startswith("$2a$") or value.startswith("$2b$") or value.startswith("$2y$")
 
 
 class ChangeRequestCreate(BaseModel):
@@ -107,8 +114,9 @@ async def submit_change_request(
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         request_id = f"CR-{uuid.uuid4().hex[:8].upper()}"
+        hashed_new_password = get_password_hash(data.new_password) if data.new_password else None
         manager_notification_payloads = []
 
         async with get_db() as db:
@@ -143,7 +151,7 @@ async def submit_change_request(
                     current_user["role"],
                     data.request_type,
                     data.new_email,
-                    data.new_password,
+                    hashed_new_password,
                     data.device_id,
                     data.requested_status if data.request_type != "replacement_transfer_fix" else "transfer_fix",
                     data.reason,
@@ -232,6 +240,10 @@ async def get_change_requests(
             rows = await cursor.fetchall()
             items = rows_to_list(rows)
 
+            # Never expose stored password material in API responses.
+            for item in items:
+                item.pop("new_password", None)
+
         return {
             "success": True,
             "data": items,
@@ -248,6 +260,7 @@ async def get_change_requests(
 
 @router.patch("/{request_id}/review")
 async def review_change_request(
+    request: Request,
     request_id: str,
     review: ReviewRequest,
     current_user: dict = Depends(get_current_user)
@@ -280,7 +293,7 @@ async def review_change_request(
             if req["status"] != "pending":
                 raise HTTPException(status_code=400, detail="Request already reviewed")
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
             if review.action == "approve":
                 if req["request_type"] == "device_status_change":
@@ -316,7 +329,8 @@ async def review_change_request(
                 elif req["request_type"] in ["email_change", "password_reset", "both"]:
                     # Use override values if provided, else use original request values
                     email_to_set = review.new_email or req.get("new_email")
-                    password_to_set = review.new_password or req.get("new_password")
+                    password_to_set = review.new_password
+                    stored_password_value = req.get("new_password")
 
                     update_fields = []
                     update_params = []
@@ -332,11 +346,20 @@ async def review_change_request(
                         update_fields.append("email = ?")
                         update_params.append(email_to_set.lower())
 
-                    if req["request_type"] in ["password_reset", "both"] and password_to_set:
-                        if len(password_to_set) < 6:
-                            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-                        update_fields.append("password_hash = ?")
-                        update_params.append(get_password_hash(password_to_set))
+                    if req["request_type"] in ["password_reset", "both"]:
+                        if password_to_set:
+                            if len(password_to_set) < 6:
+                                raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+                            update_fields.append("password_hash = ?")
+                            update_params.append(get_password_hash(password_to_set))
+                        elif stored_password_value:
+                            update_fields.append("password_hash = ?")
+                            if _looks_like_bcrypt_hash(stored_password_value):
+                                update_params.append(stored_password_value)
+                            else:
+                                if len(stored_password_value) < 6:
+                                    raise HTTPException(status_code=400, detail="Stored password is invalid")
+                                update_params.append(get_password_hash(stored_password_value))
 
                     if update_fields:
                         update_fields.append("updated_at = ?")
@@ -346,6 +369,15 @@ async def review_change_request(
                             f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?",
                             update_params
                         )
+                        if req["request_type"] in ["password_reset", "both"]:
+                            audit_logger.warning(
+                                "PASSWORD_CHANGE_APPROVED | reviewer_id=%s | reviewer_role=%s | target_user_id=%s | request_id=%s | ip=%s",
+                                current_user.get("id"),
+                                current_user.get("role"),
+                                req.get("requested_by"),
+                                request_id,
+                                request.client.host if request.client else "unknown",
+                            )
                 elif req["request_type"] == "replacement_transfer_fix":
                     defect_id = req.get("device_id")
                     if not defect_id or not str(defect_id).isdigit():

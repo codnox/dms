@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from app.database import get_db, row_to_dict, rows_to_list
@@ -8,6 +8,12 @@ from app.utils.helpers import get_pagination
 
 
 APPROVAL_TYPES = ("distribution", "return", "defect")
+ENTITY_TABLE_MAP = {
+    "distribution": "distributions",
+    "return": "returns",
+    "defect": "defects",
+}
+ALLOWED_ENTITY_TABLES = set(ENTITY_TABLE_MAP.values())
 
 
 def _normalize_role(role: Optional[str]) -> str:
@@ -20,7 +26,7 @@ async def _ensure_default_routing_rows(db) -> None:
             """INSERT OR IGNORE INTO approval_role_routing
                (approval_type, admin_enabled, manager_enabled, staff_enabled, updated_by, updated_at)
                VALUES (?, 1, 1, 1, 'system', ?)""",
-            (approval_type, datetime.utcnow().isoformat()),
+            (approval_type, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()),
         )
 
 
@@ -63,7 +69,7 @@ async def update_role_routing_config(config: Dict[str, Any], actor: Dict[str, An
     actor_id = actor.get("id") or actor.get("_id")
     actor_name = actor.get("name") or "admin"
     updated_by = f"{actor_name} ({actor_id})" if actor_id else str(actor_name)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     async with get_db() as db:
         await _ensure_default_routing_rows(db)
@@ -172,8 +178,9 @@ async def get_routing_enabled_roles_for_approval_type(approval_type: str) -> Lis
 
 async def _get_entity_details(db, approval_type: str, entity_id: str) -> Optional[Dict[str, Any]]:
     """Get entity details for an approval"""
-    table_map = {"distribution": "distributions", "return": "returns", "defect": "defects"}
-    table = table_map.get(approval_type)
+    table = ENTITY_TABLE_MAP.get(approval_type)
+    if table and table not in ALLOWED_ENTITY_TABLES:
+        raise ValueError(f"Invalid table name: {table}")
     if not table:
         return None
     cursor = await db.execute(f"SELECT * FROM {table} WHERE id = ?", (int(entity_id),))
@@ -277,8 +284,9 @@ async def get_approval_by_id(approval_id: str) -> Optional[Dict[str, Any]]:
         approval_data = row_to_dict(row)
 
         # Get full entity details
-        table_map = {"distribution": "distributions", "return": "returns", "defect": "defects"}
-        table = table_map.get(approval_data.get("approval_type"))
+        table = ENTITY_TABLE_MAP.get(approval_data.get("approval_type"))
+        if table and table not in ALLOWED_ENTITY_TABLES:
+            raise ValueError(f"Invalid table name: {table}")
         if table and approval_data.get("entity_id"):
             cursor = await db.execute(f"SELECT * FROM {table} WHERE id = ?", (int(approval_data["entity_id"]),))
             entity_row = await cursor.fetchone()
@@ -312,7 +320,7 @@ async def approve_request(
                     f"{approver_role.capitalize()} role is not allowed to process {approval.get('approval_type')} requests"
                 )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
         await db.execute(
             """UPDATE approvals SET status = ?, approved_by = ?, approved_by_name = ?,
@@ -379,7 +387,7 @@ async def reject_request(
                     f"{approver_role.capitalize()} role is not allowed to process {approval.get('approval_type')} requests"
                 )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
         await db.execute(
             """UPDATE approvals SET status = ?, approved_by = ?, approved_by_name = ?,

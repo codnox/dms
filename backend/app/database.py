@@ -58,6 +58,8 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_mac_id ON external_inventory_items(mac_id)",
             "CREATE INDEX IF NOT EXISTS idx_external_inventory_items_device_type ON external_inventory_items(device_type)",
             "CREATE TABLE IF NOT EXISTS approval_role_routing (id INTEGER PRIMARY KEY AUTOINCREMENT, approval_type TEXT UNIQUE NOT NULL, admin_enabled INTEGER DEFAULT 1, manager_enabled INTEGER DEFAULT 1, staff_enabled INTEGER DEFAULT 1, updated_by TEXT, updated_at TEXT NOT NULL)",
+            "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN locked_until TEXT",
         ]:
             try:
                 await db.execute(stmt)
@@ -195,6 +197,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login TEXT,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TEXT,
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
@@ -486,6 +490,12 @@ CREATE TABLE IF NOT EXISTS approval_role_routing (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS token_blacklist (
+    token_hash TEXT PRIMARY KEY,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_external_inventory_items_status ON external_inventory_items(status);
 CREATE INDEX IF NOT EXISTS idx_external_inventory_items_sku ON external_inventory_items(sku);
 CREATE INDEX IF NOT EXISTS idx_inventory_purchase_orders_status ON inventory_purchase_orders(status);
@@ -495,6 +505,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_receipt_lines_receipt_id ON inventory_r
 CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_item_id ON inventory_stock_movements(item_inventory_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_created_at ON inventory_stock_movements(created_at);
 CREATE INDEX IF NOT EXISTS idx_approval_role_routing_type ON approval_role_routing(approval_type);
+CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires_at ON token_blacklist(expires_at);
 """
 
 

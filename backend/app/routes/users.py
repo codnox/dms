@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from typing import Optional
 from app.models.user import UserCreate, UserUpdate, UserStatus
 from app.services import user_service
 from app.middleware.auth_middleware import get_current_user, require_admin, require_admin_or_manager
+from app.core.audit import audit_logger
 
 router = APIRouter()
 
@@ -279,6 +280,7 @@ async def update_user(
 
 @router.delete("/{user_id}")
 async def delete_user(
+    request: Request,
     user_id: str,
     current_user: dict = Depends(require_admin)
 ):
@@ -299,6 +301,14 @@ async def delete_user(
                 detail="User not found"
             )
 
+        audit_logger.warning(
+            "USER_DELETE | actor_id=%s | actor_email=%s | target_user_id=%s | ip=%s",
+            current_user.get("id"),
+            current_user.get("email"),
+            user_id,
+            request.client.host if request.client else "unknown",
+        )
+
         return {
             "success": True,
             "message": "User deleted successfully"
@@ -314,6 +324,7 @@ async def delete_user(
 
 @router.patch("/{user_id}/status")
 async def update_user_status(
+    request: Request,
     user_id: str,
     status_update: dict,
     current_user: dict = Depends(require_admin)
@@ -336,6 +347,15 @@ async def update_user_status(
                 detail="User not found"
             )
 
+        audit_logger.info(
+            "USER_STATUS_UPDATE | actor_id=%s | actor_email=%s | target_user_id=%s | status=%s | ip=%s",
+            current_user.get("id"),
+            current_user.get("email"),
+            user_id,
+            status_value,
+            request.client.host if request.client else "unknown",
+        )
+
         return {
             "success": True,
             "message": "User status updated successfully",
@@ -352,6 +372,7 @@ async def update_user_status(
 
 @router.patch("/{user_id}/credentials")
 async def admin_update_credentials(
+    request: Request,
     user_id: str,
     data: dict,
     current_user: dict = Depends(require_admin)
@@ -359,7 +380,7 @@ async def admin_update_credentials(
     """Admin reset user email/password directly"""
     from app.utils.security import get_password_hash as _hash
     from app.database import get_db as _db
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _timezone
 
     try:
         async with _db() as db:
@@ -386,7 +407,7 @@ async def admin_update_credentials(
                 raise HTTPException(status_code=400, detail="No data to update")
 
             update_fields.append("updated_at = ?")
-            params.append(_dt.utcnow().isoformat())
+            params.append(_dt.now(_timezone.utc).replace(tzinfo=None).isoformat())
             params.append(int(user_id))
 
             cursor = await db.execute(
@@ -397,6 +418,25 @@ async def admin_update_credentials(
             await db.commit()
 
         user = await user_service.get_user_by_id(user_id)
+
+        if "password" in data and data["password"]:
+            audit_logger.warning(
+                "PASSWORD_RESET_BY_ADMIN | actor_id=%s | actor_email=%s | target_user_id=%s | ip=%s",
+                current_user.get("id"),
+                current_user.get("email"),
+                user_id,
+                request.client.host if request.client else "unknown",
+            )
+
+        if "email" in data and data["email"]:
+            audit_logger.info(
+                "EMAIL_CHANGE_BY_ADMIN | actor_id=%s | actor_email=%s | target_user_id=%s | ip=%s",
+                current_user.get("id"),
+                current_user.get("email"),
+                user_id,
+                request.client.host if request.client else "unknown",
+            )
+
         return {"success": True, "message": "Credentials updated", "data": user}
     except HTTPException:
         raise

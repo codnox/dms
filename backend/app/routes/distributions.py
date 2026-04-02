@@ -11,6 +11,40 @@ from app.middleware.auth_middleware import get_current_user, require_admin_or_ma
 
 router = APIRouter()
 
+MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def _is_likely_text(content: bytes) -> bool:
+    if not content:
+        return True
+    return b"\x00" not in content
+
+
+def _validate_upload_signature(filename_lower: str, content: bytes) -> None:
+    if filename_lower.endswith(".xlsx"):
+        if not content.startswith(b"PK\x03\x04"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid XLSX file content"
+            )
+        return
+
+    if filename_lower.endswith(".xls"):
+        if not content.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid XLS file content"
+            )
+        return
+
+    if filename_lower.endswith(".csv"):
+        if not _is_likely_text(content[:2048]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid CSV file content"
+            )
+        return
+
 
 class ReceiptConfirmation(BaseModel):
     received: bool
@@ -34,6 +68,13 @@ async def bulk_upload_distribution(
 
     try:
         contents = await file.read()
+        if len(contents) > MAX_UPLOAD_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File too large. Maximum 10MB allowed"
+            )
+
+        _validate_upload_signature(filename_lower, contents)
 
         if filename_lower.endswith(".csv"):
             decoded = contents.decode("utf-8-sig")
