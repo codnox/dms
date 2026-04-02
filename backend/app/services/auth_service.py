@@ -1,11 +1,35 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+import hashlib
 import json
+from jose import JWTError, jwt
+from fastapi import HTTPException, status
 
 from app.database import get_db, row_to_dict
 from app.models.auth import TokenData
-from app.utils.security import verify_password, get_password_hash, create_access_token, decode_token
+from app.utils.security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    verify_token_type,
+)
 from app.config import settings
+
+
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+
+
+def _parse_datetime(value: str) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            return parsed.astimezone().replace(tzinfo=None)
+        return parsed
+    except ValueError:
+        return None
 
 
 async def authenticate_user(email: str, password: str) -> Optional[dict]:
@@ -21,12 +45,44 @@ async def authenticate_user(email: str, password: str) -> Optional[dict]:
             return None
         
         user = row_to_dict(row)
+
+        locked_until_raw = user.get("locked_until")
+        if locked_until_raw:
+            locked_until = _parse_datetime(locked_until_raw)
+            if locked_until and datetime.now(timezone.utc).replace(tzinfo=None) < locked_until:
+                raise HTTPException(
+                    status_code=status.HTTP_423_LOCKED,
+                    detail="Account temporarily locked. Try again later."
+                )
+
+            await db.execute(
+                "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+                (int(user["id"]),)
+            )
+            await db.commit()
+            user["failed_login_attempts"] = 0
+            user["locked_until"] = None
         
         if not verify_password(password, user["password_hash"]):
+            attempts = int(user.get("failed_login_attempts") or 0) + 1
+            lock_time = None
+            if attempts >= MAX_FAILED_LOGIN_ATTEMPTS:
+                lock_time = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)).isoformat()
+
+            await db.execute(
+                "UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?",
+                (attempts, lock_time, int(user["id"]))
+            )
+            await db.commit()
             return None
+
+        await db.execute(
+            "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+            (int(user["id"]),)
+        )
         
         # Update last login
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await db.execute(
             "UPDATE users SET last_login = ? WHERE id = ?",
             (now, int(user["id"]))
@@ -37,7 +93,7 @@ async def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 
 async def create_user_token(user: dict) -> dict:
-    """Create access token for user"""
+    """Create access and refresh tokens for user"""
     token_data = {
         "sub": str(user["id"]),
         "email": user["email"],
@@ -49,11 +105,14 @@ async def create_user_token(user: dict) -> dict:
         data=token_data,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    refresh_token = create_refresh_token(data=token_data)
     
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "refresh_expires_in": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         "user": {
             "id": str(user["id"]),
             "email": user["email"],
@@ -63,8 +122,113 @@ async def create_user_token(user: dict) -> dict:
     }
 
 
+async def refresh_access_token(refresh_token: str) -> Optional[dict]:
+    """Validate refresh token and issue a new access token."""
+    if not verify_token_type(refresh_token, "refresh"):
+        return None
+
+    if await is_token_blacklisted(refresh_token):
+        return None
+
+    try:
+        payload = jwt.decode(refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return None
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        return None
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE id = ?",
+            (int(user_id),)
+        )
+        row = await cursor.fetchone()
+
+        if not row:
+            return None
+
+        user = row_to_dict(row)
+        if user.get("status") != "active":
+            return None
+
+    token_data = {
+        "sub": str(user["id"]),
+        "email": user["email"],
+        "role": user["role"],
+        "name": user["name"],
+    }
+
+    access_token = create_access_token(
+        data=token_data,
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
+
+
+async def blacklist_token(token: str) -> None:
+    """Blacklist a JWT token until it expires."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_at = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        exp = payload.get("exp")
+        if exp is not None:
+            # jose can return exp as epoch seconds; support datetime-like values defensively.
+            if isinstance(exp, (int, float)):
+                expires_at = datetime.utcfromtimestamp(exp)
+            elif isinstance(exp, str):
+                expires_at = datetime.fromisoformat(exp.replace("Z", "+00:00")).replace(tzinfo=None)
+    except (JWTError, ValueError, TypeError):
+        # If token decode fails during logout, keep conservative TTL fallback.
+        pass
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    async with get_db() as db:
+        await db.execute(
+            """INSERT OR IGNORE INTO token_blacklist (token_hash, expires_at, created_at)
+               VALUES (?, ?, ?)""",
+            (token_hash, expires_at.isoformat(), now.isoformat())
+        )
+        await db.execute(
+            "DELETE FROM token_blacklist WHERE expires_at <= ?",
+            (now.isoformat(),)
+        )
+        await db.commit()
+
+
+async def is_token_blacklisted(token: str) -> bool:
+    """Check if a token hash exists in blacklist and is still active."""
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM token_blacklist WHERE expires_at <= ?",
+            (now_iso,)
+        )
+        cursor = await db.execute(
+            "SELECT 1 FROM token_blacklist WHERE token_hash = ? LIMIT 1",
+            (token_hash,)
+        )
+        row = await cursor.fetchone()
+        await db.commit()
+        return row is not None
+
+
 async def get_current_user_from_token(token: str) -> Optional[dict]:
     """Get current user from JWT token"""
+    if await is_token_blacklisted(token):
+        return None
+
     token_data = decode_token(token)
     
     if token_data is None or token_data.user_id is None:
@@ -81,6 +245,9 @@ async def get_current_user_from_token(token: str) -> Optional[dict]:
             return None
         
         user = row_to_dict(row)
+
+        if token_data.role and user.get("role") != token_data.role:
+            return None
         
         # Parse permissions JSON
         if user.get("permissions"):
@@ -115,7 +282,7 @@ async def change_user_password(user_id: str, current_password: str, new_password
             return False
         
         new_hash = get_password_hash(new_password)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         
         await db.execute(
             "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",

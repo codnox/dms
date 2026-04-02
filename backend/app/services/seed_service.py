@@ -1,6 +1,34 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import os
+import secrets
+import string
+
+from app.config import settings
 from app.database import get_db
 from app.utils.security import get_password_hash
+
+
+def generate_secure_password(length: int = 16) -> str:
+    """Generate a strong random password for initial admin provisioning."""
+    if length < 12:
+        length = 12
+
+    lowercase = string.ascii_lowercase
+    uppercase = string.ascii_uppercase
+    digits = string.digits
+    symbols = "!@#$%^&*()"
+    alphabet = lowercase + uppercase + digits + symbols
+
+    # Ensure minimum complexity, then fill remaining chars randomly.
+    password_chars = [
+        secrets.choice(lowercase),
+        secrets.choice(uppercase),
+        secrets.choice(digits),
+        secrets.choice(symbols),
+    ]
+    password_chars.extend(secrets.choice(alphabet) for _ in range(length - 4))
+    secrets.SystemRandom().shuffle(password_chars)
+    return "".join(password_chars)
 
 
 async def seed_initial_data():
@@ -14,8 +42,9 @@ async def seed_initial_data():
             return
         
         print("🌱 Creating admin account...")
+        admin_password = os.getenv("ADMIN_INITIAL_PASSWORD") or generate_secure_password()
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         
         await db.execute(
             """INSERT INTO users (email, password_hash, name, role, phone, department, location,
@@ -24,7 +53,7 @@ async def seed_initial_data():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 "admin@dms.com",
-                get_password_hash("Admin@123"),
+                get_password_hash(admin_password),
                 "System Administrator",
                 "admin",
                 "+8801700000001",
@@ -44,12 +73,16 @@ async def seed_initial_data():
         await db.commit()
         
         print("✅ Admin account created")
-        print("\n📋 Admin Credentials:")
-        print("=" * 45)
-        print(f"{'Role':<15} {'Email':<25} {'Password'}")
-        print("-" * 45)
-        print(f"{'Admin':<15} {'admin@dms.com':<25} Admin@123")
-        print("=" * 45)
+        if settings.ENVIRONMENT == "development":
+            print("\n📋 Admin Credentials:")
+            print("=" * 45)
+            print(f"{'Role':<15} {'Email':<25} {'Password'}")
+            print("-" * 45)
+            print(f"{'Admin':<15} {'admin@dms.com':<25} {admin_password}")
+            print("=" * 45)
+            print("⚠️  Change this password immediately after first login!")
+        else:
+            print("ℹ️  Initial admin account created. Set ADMIN_INITIAL_PASSWORD to control first-run credentials.")
         print("🎉 Admin account setup complete!")
         print("ℹ️  Login as admin to create managers, staff, and other users.")
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
 from app.database import get_db, rows_to_list
@@ -73,7 +73,7 @@ async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
         approval_stats = await approval_service.get_approval_stats()
 
         # This month's distributions
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         month_start = datetime(now.year, now.month, 1).isoformat()
         async with get_db() as db:
             cursor = await db.execute(
@@ -218,7 +218,7 @@ async def get_recent_activities(user: Dict[str, Any], limit: int = 10) -> list:
 async def get_distribution_chart_data() -> list:
     """Get distribution data for charts"""
     data = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async with get_db() as db:
         for i in range(11, -1, -1):
@@ -242,7 +242,7 @@ async def get_distribution_chart_data() -> list:
 async def get_defect_chart_data() -> list:
     """Get defect data for charts"""
     data = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async with get_db() as db:
         for i in range(11, -1, -1):
@@ -389,7 +389,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             "reliability": {"summary": {}, "trend": []},
         }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     month_start = _month_start(now)
     year_start = datetime(now.year, 1, 1)
 

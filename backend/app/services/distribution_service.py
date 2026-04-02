@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import json
 import io
@@ -396,7 +396,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         dist_id = generate_distribution_id()
         
         cursor = await db.execute(
@@ -463,7 +463,7 @@ async def update_distribution_status(
     if not dist:
         return None
     
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     user_id = str(user.get("id", user.get("_id", "")))
     user_role = str(user.get("role", "")).lower()
 
@@ -544,7 +544,7 @@ async def confirm_receipt(
     if dist["status"] != DistributionStatus.PENDING_RECEIPT.value:
         raise ValueError("This distribution is not awaiting receipt confirmation")
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     role_to_type = {
         "admin": "noc", "manager": "noc", "staff": "staff",
@@ -660,7 +660,7 @@ async def cancel_distribution(distribution_id: str, user: dict) -> bool:
         raise ValueError("Cannot cancel a distribution that has already been confirmed")
     
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await db.execute(
             "UPDATE distributions SET status = ?, updated_at = ? WHERE id = ?",
             (DistributionStatus.CANCELLED.value, now, int(distribution_id))

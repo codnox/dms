@@ -4,6 +4,7 @@ import Button from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { authAPI, usersAPI } from '../services/api';
+import { updateStoredUser } from '../utils/authStorage';
 import { 
   User, Mail, Phone, Building, MapPin, Lock, 
   Save, Eye, EyeOff 
@@ -45,7 +46,7 @@ const Profile = () => {
       // Update auth context with new user data
       const updatedUser = { ...user, ...response.data };
       setUser(updatedUser);
-      localStorage.setItem('dms_user', JSON.stringify({ ...JSON.parse(localStorage.getItem('dms_user') || '{}'), ...updatedUser }));
+      updateStoredUser(updatedUser);
       showToast('Profile updated successfully', 'success');
     } catch (err) {
       showToast(err.message || 'Failed to update profile', 'error');

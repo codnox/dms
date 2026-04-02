@@ -1,29 +1,29 @@
 // API Configuration
+import { getAuthToken } from '../utils/authStorage';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const isDev = import.meta.env.DEV;
+const log = isDev ? console.log : () => {};
+const logError = isDev ? console.error : () => {};
 
-console.log('[API] Initialized with base URL:', API_BASE_URL);
+log('[API] Initialized with base URL:', API_BASE_URL);
 
-// Get auth token from localStorage
-const getAuthToken = () => {
-  try {
-    const user = localStorage.getItem('dms_user');
-    if (user) {
-      const userData = JSON.parse(user);
-      return userData.token;
-    }
-    return null;
-  } catch (error) {
-    console.error('[API] Error getting auth token:', error);
-    return null;
-  }
+const getCookieValue = (name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
 };
+
+const isUnsafeMethod = (method) => !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method.toUpperCase());
 
 // API request helper
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getAuthToken();
+  const method = (options.method || 'GET').toUpperCase();
+  const csrfToken = getCookieValue('csrftoken');
 
-  console.log('[API] Making request:', {
+  log('[API] Making request:', {
     method: options.method || 'GET',
     endpoint,
     hasToken: !!token,
@@ -33,16 +33,18 @@ const apiRequest = async (endpoint, options = {}) => {
   const headers = {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
+    ...(csrfToken && isUnsafeMethod(method) && { 'X-CSRFToken': csrfToken }),
     ...options.headers,
   };
 
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: 'include',
       headers,
     });
 
-    console.log('[API] Response received:', {
+    log('[API] Response received:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
@@ -86,7 +88,7 @@ const apiRequest = async (endpoint, options = {}) => {
         errorMessage = first?.message || errorMessage;
       }
 
-      console.error('[API] Request failed:', {
+      logError('[API] Request failed:', {
         endpoint,
         status: response.status,
         error: errorMessage,
@@ -95,10 +97,10 @@ const apiRequest = async (endpoint, options = {}) => {
       throw new Error(errorMessage);
     }
 
-    console.log('[API] Request successful:', endpoint);
+    log('[API] Request successful:', endpoint);
     return data;
   } catch (error) {
-    console.error('[API] Request error:', {
+    logError('[API] Request error:', {
       endpoint,
       error: error.message,
       stack: error.stack
@@ -110,48 +112,48 @@ const apiRequest = async (endpoint, options = {}) => {
 // Auth API
 export const authAPI = {
   login: async (email, password) => {
-    console.log('[authAPI] Login attempt for:', email);
+    log('[authAPI] Login attempt for:', email);
     try {
       const response = await apiRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      console.log('[authAPI] Login successful');
+      log('[authAPI] Login successful');
       return response;
     } catch (error) {
-      console.error('[authAPI] Login failed:', error.message);
+      logError('[authAPI] Login failed:', error.message);
       throw error;
     }
   },
 
   logout: async () => {
-    console.log('[authAPI] Logging out');
+    log('[authAPI] Logging out');
     try {
       const response = await apiRequest('/auth/logout', {
         method: 'POST',
       });
-      console.log('[authAPI] Logout successful');
+      log('[authAPI] Logout successful');
       return response;
     } catch (error) {
-      console.error('[authAPI] Logout failed:', error.message);
+      logError('[authAPI] Logout failed:', error.message);
       throw error;
     }
   },
 
   getCurrentUser: async () => {
-    console.log('[authAPI] Fetching current user');
+    log('[authAPI] Fetching current user');
     try {
       const response = await apiRequest('/auth/me');
-      console.log('[authAPI] Current user fetched successfully');
+      log('[authAPI] Current user fetched successfully');
       return response;
     } catch (error) {
-      console.error('[authAPI] Failed to fetch current user:', error.message);
+      logError('[authAPI] Failed to fetch current user:', error.message);
       throw error;
     }
   },
 
   changePassword: async (currentPassword, newPassword) => {
-    console.log('[authAPI] Changing password');
+    log('[authAPI] Changing password');
     try {
       const response = await apiRequest('/auth/password', {
         method: 'PUT',
@@ -160,10 +162,10 @@ export const authAPI = {
           new_password: newPassword,
         }),
       });
-      console.log('[authAPI] Password changed successfully');
+      log('[authAPI] Password changed successfully');
       return response;
     } catch (error) {
-      console.error('[authAPI] Failed to change password:', error.message);
+      logError('[authAPI] Failed to change password:', error.message);
       throw error;
     }
   },
@@ -217,14 +219,14 @@ export const usersAPI = {
 // Devices API
 export const devicesAPI = {
   getDevices: async (params = {}) => {
-    console.log('[devicesAPI] Getting devices with params:', params);
+    log('[devicesAPI] Getting devices with params:', params);
     try {
       const queryString = new URLSearchParams(params).toString();
       const response = await apiRequest(`/devices?${queryString}`);
-      console.log('[devicesAPI] Successfully fetched', response.data?.length || 0, 'devices');
+      log('[devicesAPI] Successfully fetched', response.data?.length || 0, 'devices');
       return response;
     } catch (error) {
-      console.error('[devicesAPI] Failed to get devices:', error.message);
+      logError('[devicesAPI] Failed to get devices:', error.message);
       throw error;
     }
   },
@@ -245,13 +247,13 @@ export const devicesAPI = {
   },
 
   trackDeviceBySerial: async (serialNumber) => {
-    console.log('[devicesAPI] Tracking device by serial:', serialNumber);
+    log('[devicesAPI] Tracking device by serial:', serialNumber);
     try {
       const response = await apiRequest(`/devices/track/${serialNumber}`);
-      console.log('[devicesAPI] Device tracking data retrieved');
+      log('[devicesAPI] Device tracking data retrieved');
       return response;
     } catch (error) {
-      console.error('[devicesAPI] Failed to track device:', error.message);
+      logError('[devicesAPI] Failed to track device:', error.message);
       throw error;
     }
   },
@@ -262,16 +264,16 @@ export const devicesAPI = {
   },
 
   createDevice: async (deviceData) => {
-    console.log('[devicesAPI] Creating device:', deviceData);
+    log('[devicesAPI] Creating device:', deviceData);
     try {
       const response = await apiRequest('/devices', {
         method: 'POST',
         body: JSON.stringify(deviceData),
       });
-      console.log('[devicesAPI] Device created successfully:', response.data);
+      log('[devicesAPI] Device created successfully:', response.data);
       return response;
     } catch (error) {
-      console.error('[devicesAPI] Failed to create device:', error.message);
+      logError('[devicesAPI] Failed to create device:', error.message);
       throw error;
     }
   },
@@ -714,80 +716,80 @@ export const operatorsAPI = {
 // Notifications API
 export const notificationsAPI = {
   getNotifications: async (params = {}) => {
-    console.log('[notificationsAPI] Getting notifications with params:', params);
+    log('[notificationsAPI] Getting notifications with params:', params);
     try {
       const queryString = new URLSearchParams(params).toString();
       const response = await apiRequest(`/notifications?${queryString}`);
-      console.log('[notificationsAPI] Successfully fetched notifications');
+      log('[notificationsAPI] Successfully fetched notifications');
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to get notifications:', error.message);
+      logError('[notificationsAPI] Failed to get notifications:', error.message);
       throw error;
     }
   },
 
   getUnreadCount: async () => {
-    console.log('[notificationsAPI] Getting unread count');
+    log('[notificationsAPI] Getting unread count');
     try {
       const response = await apiRequest('/notifications/unread');
-      console.log('[notificationsAPI] Unread count:', response.data?.count ?? 0);
+      log('[notificationsAPI] Unread count:', response.data?.count ?? 0);
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to get unread count:', error.message);
+      logError('[notificationsAPI] Failed to get unread count:', error.message);
       throw error;
     }
   },
 
   getLatestNotifications: async (limit = 5) => {
-    console.log('[notificationsAPI] Getting latest notifications, limit:', limit);
+    log('[notificationsAPI] Getting latest notifications, limit:', limit);
     try {
       const response = await apiRequest(`/notifications/latest?limit=${limit}`);
-      console.log('[notificationsAPI] Successfully fetched', response.data?.length || 0, 'notifications');
+      log('[notificationsAPI] Successfully fetched', response.data?.length || 0, 'notifications');
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to get latest notifications:', error.message);
+      logError('[notificationsAPI] Failed to get latest notifications:', error.message);
       throw error;
     }
   },
 
   markAsRead: async (notificationId) => {
-    console.log('[notificationsAPI] Marking notification as read:', notificationId);
+    log('[notificationsAPI] Marking notification as read:', notificationId);
     try {
       const response = await apiRequest(`/notifications/${notificationId}/read`, {
         method: 'PATCH',
       });
-      console.log('[notificationsAPI] Notification marked as read');
+      log('[notificationsAPI] Notification marked as read');
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to mark notification as read:', error.message);
+      logError('[notificationsAPI] Failed to mark notification as read:', error.message);
       throw error;
     }
   },
 
   markAllAsRead: async () => {
-    console.log('[notificationsAPI] Marking all notifications as read');
+    log('[notificationsAPI] Marking all notifications as read');
     try {
       const response = await apiRequest('/notifications/read-all', {
         method: 'PATCH',
       });
-      console.log('[notificationsAPI] All notifications marked as read');
+      log('[notificationsAPI] All notifications marked as read');
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to mark all notifications as read:', error.message);
+      logError('[notificationsAPI] Failed to mark all notifications as read:', error.message);
       throw error;
     }
   },
 
   deleteNotification: async (notificationId) => {
-    console.log('[notificationsAPI] Deleting notification:', notificationId);
+    log('[notificationsAPI] Deleting notification:', notificationId);
     try {
       const response = await apiRequest(`/notifications/${notificationId}`, {
         method: 'DELETE',
       });
-      console.log('[notificationsAPI] Notification deleted');
+      log('[notificationsAPI] Notification deleted');
       return response;
     } catch (error) {
-      console.error('[notificationsAPI] Failed to delete notification:', error.message);
+      logError('[notificationsAPI] Failed to delete notification:', error.message);
       throw error;
     }
   },
@@ -1004,3 +1006,4 @@ export default {
   reports: reportsAPI,
   dashboard: dashboardAPI,
 };
+

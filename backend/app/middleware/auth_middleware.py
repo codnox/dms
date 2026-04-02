@@ -1,16 +1,26 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, List
 
 from app.services.auth_service import get_current_user_from_token
 from app.utils.permissions import check_permission
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """Get current authenticated user from JWT token"""
-    token = credentials.credentials
+    token = credentials.credentials if credentials else request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     try:
         user = await get_current_user_from_token(token)
@@ -38,14 +48,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 async def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
 ):
     """Get current user if token is provided, else return None"""
-    if credentials is None:
+    token = credentials.credentials if credentials else request.cookies.get("access_token")
+    if token is None:
         return None
 
     try:
-        token = credentials.credentials
         return await get_current_user_from_token(token)
     except Exception:
         return None

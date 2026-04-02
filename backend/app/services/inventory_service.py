@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
@@ -166,7 +166,7 @@ async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> D
                 existing = row_to_dict(existing_rows[0])
                 old_qty = int(existing.get("quantity_on_hand") or 0)
                 new_qty = old_qty + int(item_data.quantity_on_hand or 0)
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
                 await db.execute(
                     """UPDATE external_inventory_items
@@ -210,7 +210,7 @@ async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> D
                 merged_item["_merge_source_count"] = len(existing_rows)
                 return merged_item
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         inventory_id = generate_inventory_item_id()
 
         cursor = await db.execute(
@@ -315,7 +315,7 @@ async def update_item(
         new_qty = int(update_dict.get("quantity_on_hand", old_qty))
         qty_delta = new_qty - old_qty
 
-        update_dict["updated_at"] = datetime.utcnow().isoformat()
+        update_dict["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         set_clause = ", ".join([f"{k} = ?" for k in update_dict.keys()])
 
         await db.execute(
@@ -347,7 +347,7 @@ async def update_item(
                     f"Quantity adjusted from {old_qty} to {new_qty}",
                     actor["id"],
                     actor["name"],
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 ),
             )
 
@@ -368,7 +368,7 @@ async def update_item_image(inventory_id: str, image_url: str) -> Optional[Dict[
 
         await db.execute(
             "UPDATE external_inventory_items SET image_url = ?, updated_at = ? WHERE inventory_id = ?",
-            (image_url, datetime.utcnow().isoformat(), inventory_id),
+            (image_url, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), inventory_id),
         )
         await db.commit()
 
@@ -438,7 +438,7 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
         )
 
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         po_id = generate_purchase_order_id()
         total_amount = 0.0
 
@@ -605,7 +605,7 @@ async def receive_purchase_order(
         po_lines = rows_to_list(await po_lines_cursor.fetchall())
         po_line_map = {line["item_inventory_id"]: line for line in po_lines}
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         receipt_id = generate_inventory_receipt_id()
 
         await db.execute(
@@ -869,7 +869,7 @@ async def create_stock_adjustment(
                 detail="Adjustment would result in negative stock",
             )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await db.execute(
             """UPDATE external_inventory_items
                SET quantity_on_hand = ?, updated_at = ?

@@ -8,7 +8,7 @@ $backendRunning = Get-Process -Name python -ErrorAction SilentlyContinue | Where
 
 if (-not $backendRunning) {
     Write-Host "Starting Backend Server..." -ForegroundColor Yellow
-    $backendCmd = "cd '$PSScriptRoot\backend'; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080"
+    $backendCmd = "cd '$PSScriptRoot\backend'; python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8080"
     Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
     Write-Host "Backend server starting on http://localhost:8080" -ForegroundColor Green
     Write-Host ""

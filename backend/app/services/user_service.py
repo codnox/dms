@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import json
 
@@ -6,6 +6,10 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.models.user import UserCreate, UserUpdate, UserRole, UserStatus
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
+
+
+def escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def get_users(
@@ -33,8 +37,9 @@ async def get_users(
             conditions.append("status = ?")
             params.append(status)
         if search:
-            conditions.append("(name LIKE ? OR email LIKE ?)")
-            params.extend([f"%{search}%", f"%{search}%"])
+            search_escaped = escape_like(search)
+            conditions.append("(name LIKE ? ESCAPE '\\\\' OR email LIKE ? ESCAPE '\\\\')")
+            params.extend([f"%{search_escaped}%", f"%{search_escaped}%"])
         if parent_ids_in is not None:
             placeholders = ','.join('?' * len(parent_ids_in))
             conditions.append(f"parent_id IN ({placeholders})")
@@ -120,7 +125,7 @@ async def create_user(user_data: UserCreate, creator_role: str = "admin") -> Dic
             if count_row and count_row[0] >= 5000:
                 raise ValueError("Cluster has reached the maximum limit of 5000 operators")
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         permissions_json = json.dumps(user_data.permissions) if user_data.permissions else "{}"
         parent_id = int(user_data.parent_id) if user_data.parent_id else None
         
@@ -193,7 +198,7 @@ async def update_user(user_id: str, user_data: UserUpdate) -> Optional[Dict[str,
             return await get_user_by_id(user_id)
         
         update_fields.append("updated_at = ?")
-        params.append(datetime.utcnow().isoformat())
+        params.append(datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
         params.append(int(user_id))
         
         await db.execute(
@@ -216,7 +221,7 @@ async def delete_user(user_id: str) -> bool:
 async def update_user_status(user_id: str, status: str) -> Optional[Dict[str, Any]]:
     """Update user status"""
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await db.execute(
             "UPDATE users SET status = ?, updated_at = ? WHERE id = ?",
             (status, now, int(user_id))
@@ -263,7 +268,7 @@ async def get_user_stats() -> Dict[str, int]:
 async def update_user_permissions(user_id: str, permissions: dict) -> Optional[Dict[str, Any]]:
     """Update user's custom permissions (admin only)"""
     async with get_db() as db:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await db.execute(
             "UPDATE users SET permissions = ?, updated_at = ? WHERE id = ?",
             (json.dumps(permissions), now, int(user_id))

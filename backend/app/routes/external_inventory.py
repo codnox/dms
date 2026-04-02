@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -263,7 +263,7 @@ async def upload_external_inventory_item_image(
             )
 
         suffix = Path(image.filename or "").suffix.lower() or ".jpg"
-        file_name = f"{inventory_id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}{suffix}"
+        file_name = f"{inventory_id}_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}{suffix}"
         file_path = UPLOAD_DIR / file_name
 
         content = await image.read()
