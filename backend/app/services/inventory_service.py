@@ -35,10 +35,6 @@ def _resolve_actor(user: Dict[str, Any]) -> Dict[str, str]:
     return {"id": str(actor_id), "name": str(actor_name)}
 
 
-def _normalize_item_name(name: Optional[str]) -> str:
-    return " ".join(str(name or "").strip().lower().split())
-
-
 async def get_dashboard_summary() -> Dict[str, Any]:
     async with get_db() as db:
         cursor = await db.execute(
@@ -47,12 +43,12 @@ async def get_dashboard_summary() -> Dict[str, Any]:
         total_skus = (await cursor.fetchone())[0]
 
         cursor = await db.execute(
-            "SELECT COALESCE(SUM(quantity_on_hand), 0) FROM external_inventory_items WHERE status = 'active'"
+            "SELECT COUNT(*) FROM external_inventory_items WHERE status = 'active'"
         )
         total_units = (await cursor.fetchone())[0]
 
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM external_inventory_items WHERE status = 'active' AND quantity_on_hand <= reorder_level"
+            "SELECT 0"
         )
         low_stock_items = (await cursor.fetchone())[0]
 
@@ -62,7 +58,7 @@ async def get_dashboard_summary() -> Dict[str, Any]:
         pending_purchase_orders = (await cursor.fetchone())[0]
 
         cursor = await db.execute(
-            "SELECT COALESCE(SUM(quantity_on_hand * COALESCE(price, unit_cost, 0)), 0) FROM external_inventory_items WHERE status = 'active'"
+            "SELECT COALESCE(SUM(COALESCE(price, unit_cost, 0)), 0) FROM external_inventory_items WHERE status = 'active'"
         )
         inventory_value = float((await cursor.fetchone())[0] or 0)
 
@@ -111,7 +107,7 @@ async def get_items(
             params.append(status_filter)
 
         if low_stock_only:
-            conditions.append("quantity_on_hand <= reorder_level")
+            conditions.append("1 = 0")
 
         where_clause = " AND ".join(conditions)
 
@@ -124,7 +120,7 @@ async def get_items(
         offset = (page - 1) * page_size
         cursor = await db.execute(
             f"""SELECT *,
-                  CASE WHEN quantity_on_hand <= reorder_level THEN 1 ELSE 0 END AS is_low_stock
+                                    0 AS is_low_stock
                 FROM external_inventory_items
                 WHERE {where_clause}
                 ORDER BY updated_at DESC
@@ -151,72 +147,20 @@ async def get_item_by_inventory_id(inventory_id: str) -> Optional[Dict[str, Any]
 
 async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> Dict[str, Any]:
     actor = _resolve_actor(user)
-    normalized_name = _normalize_item_name(item_data.name)
+    effective_device_type = (
+        str(item_data.custom_device_type or "").strip()
+        if str(item_data.device_type or "").strip().lower() == "others"
+        else str(item_data.device_type or "").strip()
+    ) or str(item_data.device_type or "").strip()
 
     async with get_db() as db:
-        if normalized_name:
-            existing_cursor = await db.execute(
-                """SELECT * FROM external_inventory_items
-                   WHERE status = 'active' AND lower(trim(name)) = ?
-                   ORDER BY updated_at DESC, id DESC""",
-                (normalized_name,),
-            )
-            existing_rows = await existing_cursor.fetchall()
-            if existing_rows:
-                existing = row_to_dict(existing_rows[0])
-                old_qty = int(existing.get("quantity_on_hand") or 0)
-                new_qty = old_qty + int(item_data.quantity_on_hand or 0)
-                now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-
-                await db.execute(
-                    """UPDATE external_inventory_items
-                       SET quantity_on_hand = ?, updated_at = ?
-                       WHERE inventory_id = ?""",
-                    (new_qty, now, existing["inventory_id"]),
-                )
-
-                if int(item_data.quantity_on_hand or 0) > 0:
-                    await db.execute(
-                        """INSERT INTO inventory_stock_movements (
-                               movement_id, item_inventory_id, item_sku, item_name,
-                               movement_type, quantity, reference_type, reference_id,
-                               notes, performed_by, performed_by_name, created_at
-                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            generate_inventory_movement_id(),
-                            existing["inventory_id"],
-                            existing.get("item_id") or existing.get("sku"),
-                            existing.get("name"),
-                            MovementType.ADJUSTMENT_IN.value,
-                            int(item_data.quantity_on_hand or 0),
-                            "duplicate_increment",
-                            existing["inventory_id"],
-                            f"Merged duplicate device name '{item_data.name}' and incremented quantity",
-                            actor["id"],
-                            actor["name"],
-                            now,
-                        ),
-                    )
-
-                await db.commit()
-                merged_item = await get_item_by_inventory_id(existing["inventory_id"])
-                if not merged_item:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Merged inventory item could not be retrieved",
-                    )
-                merged_item["_merged_duplicate"] = True
-                merged_item["_merged_by_name"] = item_data.name
-                merged_item["_merge_source_count"] = len(existing_rows)
-                return merged_item
-
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         inventory_id = generate_inventory_item_id()
 
         cursor = await db.execute(
             """INSERT INTO external_inventory_items (
                    inventory_id, item_id, name, serial_number, mac_id, device_type, price,
-                   sku, category, unit, quantity_on_hand, reorder_level,
+                     sku, category, unit, quantity_on_hand, reorder_level,
                    unit_cost, supplier_name, location, status,
                    notes, image_url, created_by, created_at, updated_at
                )
@@ -227,13 +171,13 @@ async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> D
                 item_data.name,
                 item_data.serial_number,
                 item_data.mac_id,
-                item_data.device_type,
+                effective_device_type,
                 item_data.price,
                 item_data.item_id,
-                item_data.device_type,
+                effective_device_type,
                 item_data.unit,
-                item_data.quantity_on_hand,
-                item_data.reorder_level,
+                1,
+                0,
                 item_data.price,
                 item_data.supplier_name,
                 item_data.location,
@@ -245,38 +189,13 @@ async def create_item(item_data: InventoryItemCreate, user: Dict[str, Any]) -> D
             ),
         )
 
-        if item_data.quantity_on_hand > 0:
-            await db.execute(
-                """INSERT INTO inventory_stock_movements (
-                       movement_id, item_inventory_id, item_sku, item_name,
-                       movement_type, quantity, reference_type, reference_id,
-                       notes, performed_by, performed_by_name, created_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    generate_inventory_movement_id(),
-                    inventory_id,
-                    item_data.item_id,
-                    item_data.name,
-                    MovementType.ADJUSTMENT_IN.value,
-                    item_data.quantity_on_hand,
-                    "initial_stock",
-                    inventory_id,
-                    "Initial stock on item creation",
-                    actor["id"],
-                    actor["name"],
-                    now,
-                ),
-            )
-
         await db.commit()
 
         cursor = await db.execute(
             "SELECT * FROM external_inventory_items WHERE id = ?",
             (cursor.lastrowid,),
         )
-        created_item = row_to_dict(await cursor.fetchone())
-        created_item["_merged_duplicate"] = False
-        return created_item
+        return row_to_dict(await cursor.fetchone())
 
 
 async def update_item(
@@ -284,11 +203,13 @@ async def update_item(
     item_data: InventoryItemUpdate,
     user: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    actor = _resolve_actor(user)
-
     update_dict = {k: v for k, v in item_data.model_dump().items() if v is not None}
     if not update_dict:
         return await get_item_by_inventory_id(inventory_id)
+
+    custom_device_type = str(update_dict.pop("custom_device_type", "") or "").strip()
+    if str(update_dict.get("device_type", "")).strip().lower() == "others" and custom_device_type:
+        update_dict["device_type"] = custom_device_type
 
     if "status" in update_dict:
         update_dict["status"] = update_dict["status"].value
@@ -302,18 +223,12 @@ async def update_item(
         if not existing:
             return None
 
-        existing_dict = row_to_dict(existing)
-
         if "item_id" in update_dict:
             update_dict["sku"] = update_dict["item_id"]
         if "device_type" in update_dict:
             update_dict["category"] = update_dict["device_type"]
         if "price" in update_dict:
             update_dict["unit_cost"] = update_dict["price"]
-
-        old_qty = int(existing_dict.get("quantity_on_hand") or 0)
-        new_qty = int(update_dict.get("quantity_on_hand", old_qty))
-        qty_delta = new_qty - old_qty
 
         update_dict["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         set_clause = ", ".join([f"{k} = ?" for k in update_dict.keys()])
@@ -322,34 +237,6 @@ async def update_item(
             f"UPDATE external_inventory_items SET {set_clause} WHERE inventory_id = ?",
             list(update_dict.values()) + [inventory_id],
         )
-
-        if qty_delta != 0:
-            movement_type = (
-                MovementType.ADJUSTMENT_IN.value
-                if qty_delta > 0
-                else MovementType.ADJUSTMENT_OUT.value
-            )
-            await db.execute(
-                """INSERT INTO inventory_stock_movements (
-                       movement_id, item_inventory_id, item_sku, item_name,
-                       movement_type, quantity, reference_type, reference_id,
-                       notes, performed_by, performed_by_name, created_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    generate_inventory_movement_id(),
-                    inventory_id,
-                    update_dict.get("item_id", existing_dict.get("item_id") or existing_dict.get("sku")),
-                    update_dict.get("name", existing_dict["name"]),
-                    movement_type,
-                    abs(qty_delta),
-                    "manual_adjustment",
-                    inventory_id,
-                    f"Quantity adjusted from {old_qty} to {new_qty}",
-                    actor["id"],
-                    actor["name"],
-                    datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
-                ),
-            )
 
         await db.commit()
 
@@ -380,6 +267,7 @@ async def get_purchase_orders(
     page_size: int = 20,
     status_filter: Optional[str] = None,
     search: Optional[str] = None,
+    ordered_by: Optional[str] = None,
 ) -> Dict[str, Any]:
     async with get_db() as db:
         conditions = ["1=1"]
@@ -393,6 +281,10 @@ async def get_purchase_orders(
             like = f"%{search}%"
             conditions.append("(po_id LIKE ? OR supplier_name LIKE ? OR ordered_by_name LIKE ?)")
             params.extend([like, like, like])
+
+        if ordered_by:
+            conditions.append("ordered_by = ?")
+            params.append(ordered_by)
 
         where_clause = " AND ".join(conditions)
 
@@ -462,6 +354,7 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
                     detail=f"Item '{line.item_inventory_id}' is not active",
                 )
 
+            quantity_ordered = int(line.quantity_ordered or 1)
             unit_cost = float(
                 line.unit_cost
                 if line.unit_cost is not None
@@ -470,7 +363,7 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
                 else item.get("unit_cost")
                 or 0
             )
-            line_total = float(line.quantity_ordered) * unit_cost
+            line_total = float(quantity_ordered) * unit_cost
             total_amount += line_total
 
             normalized_lines.append(
@@ -478,7 +371,7 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
                     "item_inventory_id": item["inventory_id"],
                     "item_sku": item.get("item_id") or item.get("sku"),
                     "item_name": item["name"],
-                    "quantity_ordered": int(line.quantity_ordered),
+                    "quantity_ordered": quantity_ordered,
                     "unit_cost": unit_cost,
                     "line_total": line_total,
                 }
@@ -491,7 +384,7 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 po_id,
-                po_data.supplier_name,
+                po_data.name,
                 po_data.status.value,
                 po_data.expected_date,
                 actor["id"],
@@ -525,10 +418,21 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, user: Dict[str, An
 
     result = await get_purchase_order_by_id(po_id)
     if not result:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create purchase order",
-        )
+        # Fallback response to avoid failing a successful insert when immediate readback is unavailable.
+        result = {
+            "po_id": po_id,
+            "supplier_name": po_data.name,
+            "status": po_data.status.value,
+            "expected_date": po_data.expected_date,
+            "ordered_by": actor["id"],
+            "ordered_by_name": actor["name"],
+            "total_amount": total_amount,
+            "notes": po_data.notes,
+            "created_at": now,
+            "updated_at": now,
+            "lines": normalized_lines,
+            "receipts": [],
+        }
     return result
 
 
@@ -643,6 +547,11 @@ async def receive_purchase_order(
                 )
 
             item = row_to_dict(item_row)
+            quantity_received = int(
+                line.quantity_received
+                or po_line_map[item_id].get("quantity_ordered")
+                or 1
+            )
             unit_cost = float(
                 line.unit_cost
                 if line.unit_cost is not None
@@ -651,7 +560,7 @@ async def receive_purchase_order(
                 or item.get("unit_cost")
                 or 0
             )
-            line_total = float(line.quantity_received) * unit_cost
+            line_total = float(quantity_received) * unit_cost
 
             await db.execute(
                 """INSERT INTO inventory_receipt_lines (
@@ -663,27 +572,22 @@ async def receive_purchase_order(
                     item_id,
                     item.get("item_id") or item.get("sku"),
                     item.get("name"),
-                    int(line.quantity_received),
+                    quantity_received,
                     unit_cost,
                     line_total,
                 ),
             )
 
-            current_qty = int(item.get("quantity_on_hand") or 0)
-            consume_qty = int(line.quantity_received)
-            if consume_qty > current_qty:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Insufficient stock for item '{item.get('item_id') or item_id}'. On hand: {current_qty}, requested: {consume_qty}",
-                )
-
-            new_qty = current_qty - consume_qty
             await db.execute(
                 """UPDATE external_inventory_items
-                   SET quantity_on_hand = ?, price = ?, unit_cost = ?, updated_at = ?
+                   SET quantity_on_hand = 0, status = 'inactive', price = ?, unit_cost = ?, updated_at = ?
                    WHERE inventory_id = ?""",
-                (new_qty, unit_cost, unit_cost, now, item_id),
+                (unit_cost, unit_cost, now, item_id),
             )
+
+            placed_by_name = po.get("ordered_by_name") or po.get("ordered_by") or "Unknown"
+            confirmation_note = f"Order placed by {placed_by_name}. Confirmed by {actor['name']}"
+            base_note = receipt_data.notes or f"Stock submitted against PO {po_id}"
 
             await db.execute(
                 """INSERT INTO inventory_stock_movements (
@@ -697,10 +601,10 @@ async def receive_purchase_order(
                     item.get("item_id") or item.get("sku"),
                     item.get("name"),
                     MovementType.OUT.value,
-                    consume_qty,
+                    quantity_received,
                     "purchase_submit",
                     receipt_id,
-                    receipt_data.notes or f"Stock submitted against PO {po_id}",
+                    f"{base_note}. {confirmation_note}",
                     actor["id"],
                     actor["name"],
                     now,

@@ -21,7 +21,7 @@ const DEVICE_TYPE_OPTIONS = [
   'Switch',
   'Modem',
   'Access Point',
-  'Setup Box',
+  'Set-top box',
   'Other',
 ];
 
@@ -36,7 +36,7 @@ const normalizeDeviceType = (deviceType) => {
   return match || 'Other';
 };
 
-const isSetupBoxType = (deviceType) => String(deviceType || '').toLowerCase() === 'setup box';
+const isSetupBoxType = (deviceType) => String(deviceType || '').toLowerCase() === 'Set-top box';
 
 const DefectReports = () => {
   const { user } = useAuth();
@@ -480,7 +480,7 @@ const DefectReports = () => {
       }
 
       if (isSetupBoxType(newDeviceData.device_type) && !String(newDeviceData.nuid || '').trim()) {
-        showToast('NUID is required for Setup Box replacement devices', 'error');
+        showToast('NUID is required for Set-top box replacement devices', 'error');
         return;
       }
     }

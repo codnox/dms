@@ -32,7 +32,7 @@ const Devices = () => {
     cluster_id: '',
   });
 
-  const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'Setup Box', 'Other'];
+  const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'Set-top box', 'Other'];
   const bandTypeOptions = [
     { value: 'single_band', label: 'Single Band' },
     { value: 'dual_band', label: 'Dual Band' },
@@ -390,8 +390,8 @@ const Devices = () => {
       return;
     }
 
-    if (trimmedForm.device_type === 'Setup Box' && !trimmedForm.nuid) {
-      showToast('NUID is required for Setup Box devices.', 'error');
+    if (trimmedForm.device_type === 'Set-top box' && !trimmedForm.nuid) {
+      showToast('NUID is required for Set-top box devices.', 'error');
       return;
     }
 
@@ -402,7 +402,7 @@ const Devices = () => {
       mac_address: trimmedForm.mac_address,
       device_type: trimmedForm.device_type,
       band_type: trimmedForm.band_type,
-      nuid: trimmedForm.device_type === 'Setup Box' ? trimmedForm.nuid : null,
+      nuid: trimmedForm.device_type === 'Set-top box' ? trimmedForm.nuid : null,
       current_location: trimmedForm.current_location,
     };
 
@@ -1248,7 +1248,7 @@ const Devices = () => {
               />
             </div>
 
-            {editForm.device_type === 'Setup Box' && (
+            {editForm.device_type === 'Set-top box' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   NUID
@@ -1257,7 +1257,7 @@ const Devices = () => {
                   type="text"
                   value={editForm.nuid}
                   onChange={(e) => setEditForm(prev => ({ ...prev, nuid: e.target.value }))}
-                  placeholder={selectedDevice.nuid || 'Enter Setup Box NUID'}
+                  placeholder={selectedDevice.nuid || 'Enter Set-top box NUID'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>

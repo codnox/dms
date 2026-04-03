@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Response
 from app.services import report_service
 from app.middleware.auth_middleware import require_admin_or_manager
 
@@ -162,4 +162,62 @@ async def export_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export report: {str(e)}"
+        )
+
+
+@router.get("/device-backup")
+async def download_device_backup(
+    format: str = Query("xlsx", pattern="^(csv|xlsx)$"),
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Download full device backup including each device journey path."""
+    try:
+        export_data = await report_service.get_device_backup_export(file_format=format)
+        return Response(
+            content=export_data["content"],
+            media_type=export_data["media_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={export_data['filename']}"
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download device backup: {str(e)}"
+        )
+
+
+@router.get("/returns-defects-backup")
+async def download_returns_defects_backup(
+    format: str = Query("xlsx", pattern="^(csv|xlsx)$"),
+    current_user: dict = Depends(require_admin_or_manager)
+):
+    """Download backup for returned devices and defect reports."""
+    try:
+        export_data = await report_service.get_returns_defects_backup_export(file_format=format)
+        return Response(
+            content=export_data["content"],
+            media_type=export_data["media_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={export_data['filename']}"
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download returns/defects backup: {str(e)}"
         )

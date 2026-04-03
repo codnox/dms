@@ -22,7 +22,8 @@ import {
   X,
   Network,
   PackageCheck,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Database
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -85,6 +86,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/activities', icon: FileText, label: 'Activities' },
+        { path: '/backup', icon: Database, label: 'Backup' },
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         { path: '/settings', icon: Settings, label: 'Settings' },
@@ -119,6 +122,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/backup', icon: Database, label: 'Backup' },
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
       ],

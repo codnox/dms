@@ -70,8 +70,8 @@ async def get_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
 async def create_device(device_data: DeviceCreate, created_by: str, created_by_name: str) -> Dict[str, Any]:
     """Create a new device"""
     async with get_db() as db:
-        if device_data.device_type.value == "Setup Box" and not (device_data.nuid and device_data.nuid.strip()):
-            raise ValueError("NUID is required for Setup Box devices")
+        if device_data.device_type.value == "Set-top box" and not (device_data.nuid and device_data.nuid.strip()):
+            raise ValueError("NUID is required for Set-top box devices")
 
         # Check if serial number exists
         cursor = await db.execute("SELECT id FROM devices WHERE serial_number = ?", (device_data.serial_number,))
@@ -136,8 +136,8 @@ async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[D
         if hasattr(next_device_type, "value"):
             next_device_type = next_device_type.value
         next_nuid = data.get("nuid", current_device.get("nuid"))
-        if next_device_type == "Setup Box" and not (next_nuid and str(next_nuid).strip()):
-            raise ValueError("NUID is required for Setup Box devices")
+        if next_device_type == "Set-top box" and not (next_nuid and str(next_nuid).strip()):
+            raise ValueError("NUID is required for Set-top box devices")
 
         if "serial_number" in data and data["serial_number"] is not None:
             serial_number = str(data["serial_number"]).strip()

@@ -4,11 +4,10 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import DataTable from '../components/ui/DataTable';
-import { externalInventoryAPI } from '../services/api';
+import { dashboardAPI, externalInventoryAPI } from '../services/api';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
-  AlertTriangle,
   Boxes,
   ClipboardCheck,
   Factory,
@@ -25,21 +24,23 @@ const initialItemForm = {
   serial_number: '',
   mac_id: '',
   device_type: '',
+  custom_device_type: '',
   price: 0,
   unit: 'pcs',
-  quantity_on_hand: 0,
-  reorder_level: 0,
   supplier_name: '',
   location: '',
   notes: '',
 };
 
-const defaultPOLine = { item_inventory_id: '', quantity_ordered: 1, unit_cost: 0 };
+const ITEM_TYPE_OPTIONS = ['OTT Box', 'OLT', 'Remote', 'Set-top Box', 'Adapter', 'Others'];
+
+const defaultPOLine = { item_inventory_id: '' };
 
 const ExternalInventory = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
   const canManage = ['admin', 'manager', 'staff'].includes(user?.role);
+  const canConfirmPO = canManage;
 
   const [dashboard, setDashboard] = useState(null);
   const [items, setItems] = useState([]);
@@ -60,16 +61,15 @@ const ExternalInventory = () => {
 
   const [itemForm, setItemForm] = useState(initialItemForm);
   const [editingInventoryId, setEditingInventoryId] = useState('');
-  const [editQuantityToAdd, setEditQuantityToAdd] = useState(0);
 
   const normalizedItemType = String(itemForm.device_type || '').trim().toLowerCase();
   const isSetTopBoxType = normalizedItemType === 'set-top box';
-  const isOtherType = normalizedItemType === 'other';
+  const isOtherType = normalizedItemType === 'others';
   const idFieldLabel = isSetTopBoxType ? 'NU ID' : 'MAC ID';
   const isIdRequired = !isOtherType;
 
   const [poForm, setPoForm] = useState({
-    supplier_name: '',
+    name: '',
     expected_date: '',
     notes: '',
     lines: [{ ...defaultPOLine }],
@@ -124,7 +124,7 @@ const ExternalInventory = () => {
       if (canManage) {
         const [dashboardRes, itemsRes, poRes, movementRes] = await Promise.all([
           externalInventoryAPI.getDashboard(),
-          externalInventoryAPI.getItems({ page_size: 100 }),
+          externalInventoryAPI.getItems({ page_size: 100, status: 'active' }),
           externalInventoryAPI.getPurchaseOrders({ page_size: 50 }),
           externalInventoryAPI.getMovements({ page_size: 50 }),
         ]);
@@ -134,10 +134,13 @@ const ExternalInventory = () => {
         setPurchaseOrders(poRes.data || []);
         setMovements(movementRes.data || []);
       } else {
-        const itemsRes = await externalInventoryAPI.getItems({ page_size: 100, status: 'active' });
+        const [itemsRes, poRes] = await Promise.all([
+          externalInventoryAPI.getItems({ page_size: 100, status: 'active' }),
+          externalInventoryAPI.getPurchaseOrders({ page_size: 50 }),
+        ]);
         setDashboard(null);
         setItems(itemsRes.data || []);
-        setPurchaseOrders([]);
+        setPurchaseOrders(poRes.data || []);
         setMovements([]);
       }
     } catch (error) {
@@ -151,14 +154,9 @@ const ExternalInventory = () => {
     loadData();
   }, [canManage]);
 
-  const lowStockItems = useMemo(
-    () => items.filter((item) => Number(item.quantity_on_hand) <= Number(item.reorder_level)),
-    [items]
-  );
-
   const resetPoForm = () => {
     setPoForm({
-      supplier_name: '',
+      name: '',
       expected_date: '',
       notes: '',
       lines: [{ ...defaultPOLine }],
@@ -188,10 +186,6 @@ const ExternalInventory = () => {
         ...itemForm,
         mac_id: normalizedMacOrNuId,
         price: Number(itemForm.price),
-        quantity_on_hand: editingInventoryId
-          ? Number(itemForm.quantity_on_hand) + Number(editQuantityToAdd || 0)
-          : Number(itemForm.quantity_on_hand),
-        reorder_level: Number(itemForm.reorder_level),
       };
 
       const created = editingInventoryId
@@ -207,7 +201,6 @@ const ExternalInventory = () => {
       setShowAddItemModal(false);
       setItemForm(initialItemForm);
       setEditingInventoryId('');
-      setEditQuantityToAdd(0);
       setItemImageFile(null);
       setItemImagePreview('');
       await loadData();
@@ -228,16 +221,7 @@ const ExternalInventory = () => {
   const updatePOLine = (index, key, value) => {
     setPoForm((prev) => {
       const next = [...prev.lines];
-      const updatedLine = { ...next[index], [key]: value };
-
-      if (key === 'item_inventory_id') {
-        const selectedItem = items.find((item) => item.inventory_id === value);
-        if (selectedItem) {
-          updatedLine.unit_cost = Number(selectedItem.price ?? selectedItem.unit_cost ?? 0);
-        }
-      }
-
-      next[index] = updatedLine;
+      next[index] = { ...next[index], [key]: value };
       return { ...prev, lines: next };
     });
   };
@@ -250,27 +234,25 @@ const ExternalInventory = () => {
   };
 
   const handleCreatePO = async () => {
-    if (!poForm.supplier_name.trim()) {
-      showToast('Supplier name is required', 'error');
+    if (!poForm.name.trim()) {
+      showToast('Name is required', 'error');
       return;
     }
 
-    if (poForm.lines.some((line) => !line.item_inventory_id || Number(line.quantity_ordered) <= 0)) {
-      showToast('Each PO line needs a selected item and quantity', 'error');
+    if (poForm.lines.some((line) => !line.item_inventory_id)) {
+      showToast('Each PO line needs a selected device item', 'error');
       return;
     }
 
     try {
       setSubmitting(true);
       await externalInventoryAPI.createPurchaseOrder({
-        supplier_name: poForm.supplier_name,
+        name: poForm.name,
         expected_date: poForm.expected_date || null,
         notes: poForm.notes || null,
         status: 'submitted',
         lines: poForm.lines.map((line) => ({
           item_inventory_id: line.item_inventory_id,
-          quantity_ordered: Number(line.quantity_ordered),
-          unit_cost: Number(line.unit_cost),
         })),
       });
 
@@ -307,14 +289,91 @@ const ExternalInventory = () => {
     }
   };
 
+  const escapeCsvCell = (value) => {
+    const text = String(value ?? '');
+    if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const handleDownloadModel = async () => {
+    try {
+      await dashboardAPI.trackActivity({
+        action: 'export_model_download',
+        description: 'Downloaded external inventory import model',
+        context: 'external_inventory',
+      });
+    } catch {
+      // Continue model download even if tracking fails.
+    }
+
+    const headers = [
+      'item_id',
+      'name',
+      'serial_number',
+      'mac_id',
+      'device_type',
+      'custom_device_type',
+      'price',
+      'unit',
+      'supplier_name',
+      'location',
+      'notes',
+    ];
+
+    const sampleRows = [
+      {
+        item_id: 'ITEM-EX-1001',
+        name: 'Sample OTT Device',
+        serial_number: 'SN-EX-1001',
+        mac_id: 'MAC-EX-1001',
+        device_type: 'OTT Box',
+        custom_device_type: '',
+        price: '2799',
+        unit: 'pcs',
+        supplier_name: 'Sample Supplier',
+        location: 'Warehouse A',
+        notes: 'Sample row',
+      },
+      {
+        item_id: 'ITEM-EX-1002',
+        name: 'Custom Device Sample',
+        serial_number: 'SN-EX-1002',
+        mac_id: '',
+        device_type: 'Others',
+        custom_device_type: 'Media Converter',
+        price: '1599',
+        unit: 'pcs',
+        supplier_name: 'Sample Supplier',
+        location: 'Warehouse B',
+        notes: 'MAC/NU ID optional for Others',
+      },
+    ];
+
+    const csvLines = [
+      headers.join(','),
+      ...sampleRows.map((row) => headers.map((key) => escapeCsvCell(row[key])).join(',')),
+    ];
+
+    const csvContent = `\uFEFF${csvLines.join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'external-inventory-import-model.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const openReceiveModal = (po) => {
     setReceivingPO(po);
     setReceiptForm({
       notes: '',
       lines: (po.lines || []).map((line) => ({
         item_inventory_id: line.item_inventory_id,
-        quantity_received: Number(line.quantity_ordered) || 1,
-        unit_cost: Number(line.unit_cost) || 0,
       })),
     });
   };
@@ -322,19 +381,12 @@ const ExternalInventory = () => {
   const handleReceivePO = async () => {
     if (!receivingPO) return;
 
-    if (receiptForm.lines.some((line) => Number(line.quantity_received) <= 0)) {
-      showToast('Submit line quantities must be greater than zero', 'error');
-      return;
-    }
-
     try {
       setSubmitting(true);
       const response = await externalInventoryAPI.receivePurchaseOrder(receivingPO.po_id, {
         notes: receiptForm.notes || null,
         lines: receiptForm.lines.map((line) => ({
           item_inventory_id: line.item_inventory_id,
-          quantity_received: Number(line.quantity_received),
-          unit_cost: Number(line.unit_cost),
         })),
       });
 
@@ -359,6 +411,7 @@ const ExternalInventory = () => {
     const doc = new jsPDF();
     const lines = receipt?.lines || [];
     const total = lines.reduce((sum, line) => sum + Number(line.line_total || 0), 0);
+    const orderPlacedBy = po?.ordered_by_name || po?.ordered_by || '-';
 
     let y = 16;
     doc.setFontSize(16);
@@ -370,7 +423,9 @@ const ExternalInventory = () => {
     y += 7;
     doc.text(`PO ID: ${po?.po_id || '-'}`, 14, y);
     y += 7;
-    doc.text(`Supplier: ${po?.supplier_name || receipt?.supplier_name || '-'}`, 14, y);
+    doc.text(`Name: ${po?.supplier_name || receipt?.supplier_name || '-'}`, 14, y);
+    y += 7;
+    doc.text(`Order Placed By: ${orderPlacedBy}`, 14, y);
     y += 7;
     doc.text(`Date: ${formatDateTime(receipt?.created_at)}`, 14, y);
     y += 7;
@@ -383,9 +438,7 @@ const ExternalInventory = () => {
 
     doc.setFontSize(10);
     doc.text('Item', 14, y);
-    doc.text('Qty', 116, y, { align: 'right' });
-    doc.text('Unit Cost', 156, y, { align: 'right' });
-    doc.text('Line Total', 196, y, { align: 'right' });
+    doc.text('Amount', 196, y, { align: 'right' });
     y += 2;
     doc.line(14, y, 196, y);
 
@@ -397,8 +450,6 @@ const ExternalInventory = () => {
       }
       const itemLabel = `${line.item_sku || '-'} ${line.item_name || ''}`.trim();
       doc.text(itemLabel.slice(0, 46), 14, y);
-      doc.text(String(line.quantity_received || 0), 116, y, { align: 'right' });
-      doc.text(formatCurrency(line.unit_cost || 0).replace('₹', 'Rs '), 156, y, { align: 'right' });
       doc.text(formatCurrency(line.line_total || 0).replace('₹', 'Rs '), 196, y, { align: 'right' });
       y += 7;
     });
@@ -433,7 +484,7 @@ const ExternalInventory = () => {
     }
   };
 
-  const itemColumns = [
+  const managementItemColumns = [
     {
       key: 'image_url',
       label: 'Image',
@@ -468,45 +519,46 @@ const ExternalInventory = () => {
       label: 'Price',
       render: (value) => formatCurrency(value),
     },
-    { key: 'quantity_on_hand', label: 'On Hand' },
-    { key: 'reorder_level', label: 'Reorder Level' },
     {
       key: 'created_at',
       label: 'Added At',
       render: (value) => formatDateTime(value),
     },
+  ];
+
+  const viewerItemColumns = [
     {
-      key: 'stock_status',
-      label: 'Stock Health',
-      render: (_, row) => {
-        const low = Number(row.quantity_on_hand) <= Number(row.reorder_level);
-        return (
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-              low ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-            }`}
-          >
-            {low ? 'Low Stock' : 'Healthy'}
-          </span>
-        );
-      },
+      key: 'image_url',
+      label: 'Image',
+      sortable: false,
+      render: (value, row) => (
+        value ? (
+          <img
+            src={toAssetUrl(value)}
+            alt={row.name}
+            className="h-10 w-10 rounded-lg border border-gray-200 object-cover"
+          />
+        ) : (
+          <span className="text-xs text-gray-400">No image</span>
+        )
+      ),
+    },
+    { key: 'name', label: 'Name' },
+    { key: 'device_type', label: 'Type' },
+    {
+      key: 'price',
+      label: 'Price',
+      render: (value) => formatCurrency(value),
     },
   ];
 
+  const itemColumns = canManage ? managementItemColumns : viewerItemColumns;
+
   const poColumns = [
     { key: 'po_id', label: 'PO ID' },
-    { key: 'supplier_name', label: 'Supplier' },
+    { key: 'supplier_name', label: 'Name' },
+    { key: 'ordered_by_name', label: 'Placed By' },
     { key: 'status', label: 'Status' },
-    { key: 'line_count', label: 'Lines' },
-    {
-      key: 'total_quantity',
-      label: 'Quantity',
-      render: (value, row) =>
-        Number(
-          value ??
-            (row.lines || []).reduce((sum, line) => sum + Number(line.quantity_ordered || 0), 0)
-        ),
-    },
     {
       key: 'total_amount',
       label: 'Total',
@@ -523,14 +575,16 @@ const ExternalInventory = () => {
       sortable: false,
       render: (_, row) => (
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openReceiveModal(row)}
-            disabled={['received', 'cancelled'].includes(row.status)}
-          >
-            Submit
-          </Button>
+          {canConfirmPO && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openReceiveModal(row)}
+              disabled={['received', 'cancelled'].includes(row.status)}
+            >
+              Submit
+            </Button>
+          )}
           {['partially_received', 'received'].includes(row.status) && (
             <Button
               size="sm"
@@ -553,6 +607,7 @@ const ExternalInventory = () => {
     { key: 'item_name', label: 'Item' },
     { key: 'movement_type', label: 'Type' },
     { key: 'quantity', label: 'Qty' },
+    { key: 'notes', label: 'Details' },
     { key: 'reference_type', label: 'Reference' },
     { key: 'reference_id', label: 'Ref ID' },
     {
@@ -585,7 +640,6 @@ const ExternalInventory = () => {
                 icon={PackagePlus}
                 onClick={() => {
                   setEditingInventoryId('');
-                  setEditQuantityToAdd(0);
                   setItemForm(initialItemForm);
                   setItemImageFile(null);
                   setItemImagePreview('');
@@ -599,20 +653,22 @@ const ExternalInventory = () => {
               </Button>
             </div>
           ) : (
-            <Button variant="secondary" icon={RefreshCw} onClick={loadData}>
-              Refresh
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" icon={RefreshCw} onClick={loadData}>
+                Refresh
+              </Button>
+              <Button variant="secondary" icon={Factory} onClick={() => setShowCreatePOModal(true)}>
+                New PO
+              </Button>
+            </div>
           )}
         </div>
       </div>
 
       {canManage && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card title="Items" icon={Boxes}>
           <p className="text-2xl font-bold text-gray-900">{dashboard?.total_skus ?? 0}</p>
-        </Card>
-        <Card title="Low Stock" icon={AlertTriangle}>
-          <p className="text-2xl font-bold text-red-600">{dashboard?.low_stock_items ?? 0}</p>
         </Card>
         <Card title="Pending POs" icon={ClipboardCheck}>
           <p className="text-2xl font-bold text-amber-600">{dashboard?.pending_purchase_orders ?? 0}</p>
@@ -620,20 +676,15 @@ const ExternalInventory = () => {
         </div>
       )}
 
-      {canManage && lowStockItems.length > 0 && (
-        <Card title="Low Stock Attention" subtitle="These items are at or below reorder level">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {lowStockItems.slice(0, 6).map((item) => (
-              <div key={item.inventory_id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                <p className="text-sm font-semibold text-red-800">{item.name}</p>
-                <p className="text-xs text-red-700">
-                  {item.item_id} | {item.serial_number} | {item.quantity_on_hand} / reorder {item.reorder_level}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      <Card title="Import Guide" subtitle="How to prepare the model sheet for upload">
+        <div className="space-y-2 text-sm text-gray-700">
+          <p>1. Click Download Model to get the CSV template (opens in Excel).</p>
+          <p>2. Fill required columns: item_id, name, serial_number, device_type.</p>
+          <p>3. For device_type = Others, custom_device_type is optional and MAC/NU ID can be blank.</p>
+          <p>4. Keep the same header names and column order for smooth import.</p>
+          <p>5. Save as CSV UTF-8 and upload using Import.</p>
+        </div>
+      </Card>
 
       <Card title="Inventory Items" subtitle="Standalone external device inventory" padding={false}>
         <DataTable
@@ -641,7 +692,7 @@ const ExternalInventory = () => {
           data={items}
           loading={loading}
           emptyMessage="No external inventory items yet"
-          onRowClick={(row) => setSelectedItem(row)}
+          onRowClick={canManage ? (row) => setSelectedItem(row) : undefined}
           actions={canManage ? (
             <>
               <input
@@ -660,16 +711,22 @@ const ExternalInventory = () => {
               >
                 Import
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Download}
+                onClick={handleDownloadModel}
+              >
+                Download Model
+              </Button>
             </>
           ) : null}
         />
       </Card>
 
-      {canManage && (
-        <Card title="Purchase Orders" subtitle="Order and receiving status" padding={false}>
+      <Card title="Purchase Orders" subtitle="Order and receiving status" padding={false}>
           <DataTable columns={poColumns} data={purchaseOrders} loading={loading} emptyMessage="No purchase orders yet" />
-        </Card>
-      )}
+      </Card>
 
       {canManage && (
         <Card title="Stock Movements" subtitle="Latest material flow" padding={false}>
@@ -682,7 +739,6 @@ const ExternalInventory = () => {
         onClose={() => {
           setShowAddItemModal(false);
           setEditingInventoryId('');
-          setEditQuantityToAdd(0);
           setItemForm(initialItemForm);
           setItemImageFile(null);
           setItemImagePreview('');
@@ -695,7 +751,6 @@ const ExternalInventory = () => {
               onClick={() => {
                 setShowAddItemModal(false);
                 setEditingInventoryId('');
-                setEditQuantityToAdd(0);
                 setItemForm(initialItemForm);
                 setItemImageFile(null);
                 setItemImagePreview('');
@@ -754,11 +809,24 @@ const ExternalInventory = () => {
               onChange={(e) => setItemForm((p) => ({ ...p, device_type: e.target.value }))}
             >
               <option value="">Select type</option>
-              <option value="Normal">Normal</option>
-              <option value="Set-top Box">Set-top Box</option>
-              <option value="Other">Other</option>
+              {ITEM_TYPE_OPTIONS.map((typeOption) => (
+                <option key={typeOption} value={typeOption}>
+                  {typeOption}
+                </option>
+              ))}
             </select>
           </label>
+          {isOtherType && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">Custom Type (Optional)</span>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                value={itemForm.custom_device_type}
+                onChange={(e) => setItemForm((p) => ({ ...p, custom_device_type: e.target.value }))}
+                placeholder="Type custom device type"
+              />
+            </label>
+          )}
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Price</span>
             <input
@@ -768,53 +836,6 @@ const ExternalInventory = () => {
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
               value={itemForm.price}
               onChange={(e) => setItemForm((p) => ({ ...p, price: e.target.value }))}
-            />
-          </label>
-          {!editingInventoryId ? (
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-gray-700">Opening Qty</span>
-              <input
-                type="number"
-                min="0"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                value={itemForm.quantity_on_hand}
-                onChange={(e) => setItemForm((p) => ({ ...p, quantity_on_hand: e.target.value }))}
-              />
-            </label>
-          ) : (
-            <>
-              <label className="space-y-1">
-                <span className="text-sm font-medium text-gray-700">Current On Hand</span>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2"
-                  value={itemForm.quantity_on_hand}
-                  disabled
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm font-medium text-gray-700">New Devices To Add</span>
-                <input
-                  type="number"
-                  min="0"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                  value={editQuantityToAdd}
-                  onChange={(e) => setEditQuantityToAdd(Math.max(0, Number(e.target.value || 0)))}
-                />
-                <p className="text-xs text-gray-500">
-                  Final on hand will be {Number(itemForm.quantity_on_hand || 0) + Number(editQuantityToAdd || 0)}.
-                </p>
-              </label>
-            </>
-          )}
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">Reorder Level</span>
-            <input
-              type="number"
-              min="0"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2"
-              value={itemForm.reorder_level}
-              onChange={(e) => setItemForm((p) => ({ ...p, reorder_level: e.target.value }))}
             />
           </label>
           <label className="space-y-1">
@@ -878,21 +899,22 @@ const ExternalInventory = () => {
                 onClick={() => {
                   if (!selectedItem) return;
                   setEditingInventoryId(selectedItem.inventory_id || '');
+                  const selectedType = String(selectedItem.device_type || '').trim();
+                  const normalizedSelectedType = selectedType.toLowerCase();
+                  const isKnownType = ITEM_TYPE_OPTIONS.some((typeOption) => typeOption.toLowerCase() === normalizedSelectedType);
                   setItemForm({
                     item_id: selectedItem.item_id || '',
                     name: selectedItem.name || '',
                     serial_number: selectedItem.serial_number || '',
                     mac_id: selectedItem.mac_id || '',
-                    device_type: selectedItem.device_type || '',
+                    device_type: isKnownType ? selectedType : 'Others',
+                    custom_device_type: isKnownType ? '' : selectedType,
                     price: Number(selectedItem.price ?? 0),
                     unit: selectedItem.unit || 'pcs',
-                    quantity_on_hand: Number(selectedItem.quantity_on_hand ?? 0),
-                    reorder_level: Number(selectedItem.reorder_level ?? 0),
                     supplier_name: selectedItem.supplier_name || '',
                     location: selectedItem.location || '',
                     notes: selectedItem.notes || '',
                   });
-                  setEditQuantityToAdd(0);
                   setItemImageFile(null);
                   setItemImagePreview(selectedItem.image_url ? toAssetUrl(selectedItem.image_url) : '');
                   setSelectedItem(null);
@@ -936,8 +958,6 @@ const ExternalInventory = () => {
                   {selectedItem.mac_id || '-'}
                 </p>
                 <p><span className="font-semibold text-gray-700">Price:</span> {formatCurrency(selectedItem.price || 0)}</p>
-                <p><span className="font-semibold text-gray-700">On Hand:</span> {selectedItem.quantity_on_hand}</p>
-                <p><span className="font-semibold text-gray-700">Reorder Level:</span> {selectedItem.reorder_level}</p>
                 <p><span className="font-semibold text-gray-700">Supplier:</span> {selectedItem.supplier_name || '-'}</p>
                 <p><span className="font-semibold text-gray-700">Location:</span> {selectedItem.location || '-'}</p>
               </div>
@@ -952,7 +972,7 @@ const ExternalInventory = () => {
         )}
       </Modal>
 
-      {canManage && <Modal
+      <Modal
         isOpen={showCreatePOModal}
         onClose={() => setShowCreatePOModal(false)}
         title="Create Purchase Order"
@@ -967,12 +987,12 @@ const ExternalInventory = () => {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="space-y-1">
-              <span className="text-sm font-medium text-gray-700">Supplier Name</span>
+              <span className="text-sm font-medium text-gray-700">Name</span>
               <input
                 className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                value={poForm.supplier_name}
-                onChange={(e) => setPoForm((p) => ({ ...p, supplier_name: e.target.value }))}
-                placeholder="e.g. Netlink Supplier Ltd"
+                value={poForm.name}
+                onChange={(e) => setPoForm((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Netlink Procurement"
               />
             </label>
             <label className="space-y-1">
@@ -992,16 +1012,17 @@ const ExternalInventory = () => {
               <h4 className="text-sm font-semibold text-gray-800">PO Lines</h4>
               <Button size="sm" variant="outline" onClick={addPOLine}>Add Line</Button>
             </div>
+            <p className="text-xs text-gray-500">
+              Select one device item per line. Add multiple lines to purchase multiple devices in one order.
+            </p>
             <div className="hidden rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs font-semibold text-gray-600 md:grid md:grid-cols-12">
-              <p className="md:col-span-5">Device Item</p>
-              <p className="md:col-span-2">Quantity</p>
-              <p className="md:col-span-3">Amount Per Unit</p>
+              <p className="md:col-span-10">Device Item</p>
               <p className="md:col-span-2">Action</p>
             </div>
             {poForm.lines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 md:grid-cols-12">
                 <select
-                  className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-5"
+                  className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-10"
                   value={line.item_inventory_id}
                   onChange={(e) => updatePOLine(idx, 'item_inventory_id', e.target.value)}
                 >
@@ -1012,23 +1033,6 @@ const ExternalInventory = () => {
                     </option>
                   ))}
                 </select>
-                <input
-                  type="number"
-                  min="1"
-                  className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-2"
-                  value={line.quantity_ordered}
-                  onChange={(e) => updatePOLine(idx, 'quantity_ordered', e.target.value)}
-                  placeholder="Qty"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="rounded-lg border border-gray-300 px-3 py-2 md:col-span-3"
-                  value={line.unit_cost}
-                  onChange={(e) => updatePOLine(idx, 'unit_cost', e.target.value)}
-                  placeholder="Amount per unit"
-                />
                 <Button size="sm" variant="danger" className="md:col-span-2" onClick={() => removePOLine(idx)}>
                   Remove
                 </Button>
@@ -1036,9 +1040,9 @@ const ExternalInventory = () => {
             ))}
           </div>
         </div>
-      </Modal>}
+      </Modal>
 
-      {canManage && <Modal
+      {canConfirmPO && <Modal
         isOpen={!!receivingPO}
         onClose={() => setReceivingPO(null)}
         title={`Submit Purchase Order ${receivingPO?.po_id || ''}`}
@@ -1052,7 +1056,7 @@ const ExternalInventory = () => {
       >
         <div className="space-y-3">
           {receiptForm.lines.map((line, idx) => (
-            <div key={idx} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 md:grid-cols-3">
+            <div key={idx} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 md:grid-cols-1">
               <select
                 className="rounded-lg border border-gray-300 px-3 py-2"
                 value={line.item_inventory_id}
@@ -1071,35 +1075,6 @@ const ExternalInventory = () => {
                   </option>
                 ))}
               </select>
-              <input
-                type="number"
-                min="1"
-                className="rounded-lg border border-gray-300 px-3 py-2"
-                value={line.quantity_received}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setReceiptForm((prev) => {
-                    const next = [...prev.lines];
-                    next[idx] = { ...next[idx], quantity_received: value };
-                    return { ...prev, lines: next };
-                  });
-                }}
-              />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="rounded-lg border border-gray-300 px-3 py-2"
-                value={line.unit_cost}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setReceiptForm((prev) => {
-                    const next = [...prev.lines];
-                    next[idx] = { ...next[idx], unit_cost: value };
-                    return { ...prev, lines: next };
-                  });
-                }}
-              />
             </div>
           ))}
         </div>

@@ -176,13 +176,13 @@ const RegisterDevice = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const requiresNuid = formData.deviceType === 'Setup Box';
+    const requiresNuid = formData.deviceType === 'Set-top box';
     if (!formData.model.trim() || !formData.manufacturer.trim() || !formData.macAddress.trim() || !formData.bandType) {
       showToast('Model, Manufacturer, MAC Address and Band Type are required.', 'error');
       return;
     }
     if (requiresNuid && !formData.nuid.trim()) {
-      showToast('NUID is required for Setup Box devices.', 'error');
+      showToast('NUID is required for Set-top box devices.', 'error');
       return;
     }
 
@@ -311,7 +311,7 @@ const RegisterDevice = () => {
                   <option value="Switch">Switch</option>
                   <option value="Modem">Modem</option>
                   <option value="Access Point">Access Point</option>
-                  <option value="Setup Box">Setup Box</option>
+                  <option value="Set-top box">Set-top box</option>
                 </select>
               </div>
 
@@ -391,7 +391,7 @@ const RegisterDevice = () => {
                 />
               </div>
 
-              {formData.deviceType === 'Setup Box' && (
+              {formData.deviceType === 'Set-top box' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     NUID <span className="text-red-500">*</span>
@@ -401,7 +401,7 @@ const RegisterDevice = () => {
                     name="nuid"
                     value={formData.nuid}
                     onChange={handleChange}
-                    placeholder="Enter Setup Box NUID"
+                    placeholder="Enter Set-top box NUID"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />

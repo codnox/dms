@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Download, ChevronDown, MoreVertical } from 'lucide-react';
+import { dashboardAPI } from '../../services/api';
 
 const DataTable = ({
   columns,
@@ -13,6 +14,7 @@ const DataTable = ({
   pageSize = 10,
   searchPlaceholder = "Search...",
   getRowClassName,
+  exportTableName,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,7 +76,27 @@ const DataTable = ({
     });
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const tableName =
+      (exportTableName && String(exportTableName).trim()) ||
+      (typeof window !== 'undefined' && window.location?.pathname
+        ? window.location.pathname.replace(/^\/+/, '').replace(/[-_]/g, ' ') || 'table'
+        : 'table');
+    const normalizedTableName = tableName
+      .split(' ')
+      .filter(Boolean)
+      .join(' ');
+
+    try {
+      await dashboardAPI.trackActivity({
+        action: 'table_export',
+        description: `Exported ${normalizedTableName} table with ${filteredData.length} row(s)`,
+        context: normalizedTableName.toLowerCase().replace(/\s+/g, '_'),
+      });
+    } catch {
+      // Export should still proceed if activity tracking fails.
+    }
+
     const headers = columns.map((col) => col.label).join(',');
     const rows = filteredData.map((row) =>
       columns.map((col) => row[col.key]).join(',')

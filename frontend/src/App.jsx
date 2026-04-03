@@ -17,6 +17,8 @@ import Users from './pages/Users';
 import UserHierarchy from './pages/UserHierarchy';
 import Approvals from './pages/Approvals';
 import Reports from './pages/Reports';
+import Backup from './pages/Backup';
+import Activities from './pages/Activities';
 import Notifications from './pages/Notifications';
 import ExternalInventory from './pages/ExternalInventory';
 import Profile from './pages/Profile';
@@ -227,6 +229,24 @@ function AppRoutes() {
               <Reports />
             </ProtectedRoute>
           } 
+        />
+
+        <Route
+          path="backup"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+              <Backup />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="activities"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Activities />
+            </ProtectedRoute>
+          }
         />
 
         <Route

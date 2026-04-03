@@ -7,6 +7,7 @@ from app.middleware.auth_middleware import get_current_user, security
 from app.schemas.responses import StandardResponse
 from app.core.rate_limiter import limiter
 from app.core.audit import audit_logger
+from app.core.activity_logger import log_api_activity
 from app.config import settings
 
 router = APIRouter()
@@ -26,6 +27,14 @@ async def login(request: Request, response: Response, credentials: LoginRequest)
                 credentials.email.lower(),
                 client_ip,
             )
+            await log_api_activity(
+                method="POST",
+                path="/api/auth/login",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                actor_name=credentials.email.lower(),
+                description="Attempted login (rejected: 401)",
+                ip_address=client_ip,
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -37,6 +46,16 @@ async def login(request: Request, response: Response, credentials: LoginRequest)
                 user.get("id"),
                 user.get("email"),
                 client_ip,
+            )
+            await log_api_activity(
+                method="POST",
+                path="/api/auth/login",
+                status_code=status.HTTP_403_FORBIDDEN,
+                actor_id=str(user.get("id") or ""),
+                actor_name=str(user.get("name") or user.get("email") or credentials.email.lower()),
+                actor_role=str(user.get("role") or ""),
+                description="Attempted login (rejected: 403)",
+                ip_address=client_ip,
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -73,6 +92,17 @@ async def login(request: Request, response: Response, credentials: LoginRequest)
             user.get("email"),
             user.get("role"),
             client_ip,
+        )
+
+        await log_api_activity(
+            method="POST",
+            path="/api/auth/login",
+            status_code=status.HTTP_200_OK,
+            actor_id=str(user.get("id") or ""),
+            actor_name=str(user.get("name") or user.get("email") or "Unknown"),
+            actor_role=str(user.get("role") or ""),
+            description="User logged in",
+            ip_address=client_ip,
         )
 
         return {

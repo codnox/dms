@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 from app.database import get_db, rows_to_list
+from app.core.activity_logger import log_api_activity
 from app.services import device_service, distribution_service, defect_service, return_service, user_service, approval_service, operator_service
 
 
@@ -213,6 +214,207 @@ async def get_recent_activities(user: Dict[str, Any], limit: int = 10) -> list:
             })
 
     return activities
+
+
+async def get_admin_activities(
+    page: int = 1,
+    page_size: int = 50,
+    actor: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get unified activity stream for admin users with filtering."""
+    normalized_category = (category or "all").strip().lower()
+    activities: List[Dict[str, Any]] = []
+
+    async with get_db() as db:
+        if normalized_category in {"all", "device"}:
+            conditions = ["1=1"]
+            params: List[Any] = []
+
+            if actor:
+                conditions.append("performed_by_name LIKE ?")
+                params.append(f"%{actor}%")
+
+            if search:
+                like = f"%{search}%"
+                conditions.append("(action LIKE ? OR notes LIKE ? OR device_id LIKE ? OR performed_by_name LIKE ?)")
+                params.extend([like, like, like, like])
+
+            if start_date:
+                conditions.append("timestamp >= ?")
+                params.append(start_date)
+
+            if end_date:
+                conditions.append("timestamp <= ?")
+                params.append(end_date)
+
+            where_clause = " AND ".join(conditions)
+            cursor = await db.execute(
+                f"""SELECT id, device_id, action, notes, performed_by_name, timestamp
+                    FROM device_history
+                    WHERE {where_clause}
+                    ORDER BY timestamp DESC""",
+                params,
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                item = dict(row)
+                actor_name = item.get("performed_by_name") or "Unknown"
+                description = (
+                    item.get("notes")
+                    or f"{item.get('action', 'updated')} on device {item.get('device_id', '-')}."
+                )
+                activities.append(
+                    {
+                        "id": f"device-{item.get('id')}",
+                        "category": "device",
+                        "action": item.get("action") or "device_update",
+                        "actor": actor_name,
+                        "description": description,
+                        "date": item.get("timestamp"),
+                    }
+                )
+
+        if normalized_category in {"all", "inventory"}:
+            conditions = ["1=1"]
+            params = []
+
+            if actor:
+                conditions.append("performed_by_name LIKE ?")
+                params.append(f"%{actor}%")
+
+            if search:
+                like = f"%{search}%"
+                conditions.append("(movement_type LIKE ? OR notes LIKE ? OR item_sku LIKE ? OR item_name LIKE ? OR performed_by_name LIKE ?)")
+                params.extend([like, like, like, like, like])
+
+            if start_date:
+                conditions.append("created_at >= ?")
+                params.append(start_date)
+
+            if end_date:
+                conditions.append("created_at <= ?")
+                params.append(end_date)
+
+            where_clause = " AND ".join(conditions)
+            cursor = await db.execute(
+                f"""SELECT id, item_sku, item_name, movement_type, notes, performed_by_name, created_at
+                    FROM inventory_stock_movements
+                    WHERE {where_clause}
+                    ORDER BY created_at DESC""",
+                params,
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                item = dict(row)
+                actor_name = item.get("performed_by_name") or "Unknown"
+                description = (
+                    item.get("notes")
+                    or f"{item.get('movement_type', 'movement')} for {item.get('item_sku') or item.get('item_name') or '-'}."
+                )
+                activities.append(
+                    {
+                        "id": f"inventory-{item.get('id')}",
+                        "category": "inventory",
+                        "action": item.get("movement_type") or "movement",
+                        "actor": actor_name,
+                        "description": description,
+                        "date": item.get("created_at"),
+                    }
+                )
+
+        if normalized_category in {"all", "api"}:
+            conditions = ["1=1"]
+            params = []
+
+            # Hide legacy generic middleware rows and surface only curated business-action API logs.
+            conditions.append("description NOT LIKE ?")
+            params.append("% returned %")
+
+            if actor:
+                conditions.append("actor_name LIKE ?")
+                params.append(f"%{actor}%")
+
+            if search:
+                like = f"%{search}%"
+                conditions.append("(description LIKE ? OR path LIKE ? OR method LIKE ? OR actor_name LIKE ?)")
+                params.extend([like, like, like, like])
+
+            if start_date:
+                conditions.append("created_at >= ?")
+                params.append(start_date)
+
+            if end_date:
+                conditions.append("created_at <= ?")
+                params.append(end_date)
+
+            where_clause = " AND ".join(conditions)
+            cursor = await db.execute(
+                f"""SELECT id, actor_name, method, path, status_code, description, created_at
+                    FROM api_activity_logs
+                    WHERE {where_clause}
+                    ORDER BY created_at DESC""",
+                params,
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                item = dict(row)
+                activities.append(
+                    {
+                        "id": f"api-{item.get('id')}",
+                        "category": "api",
+                        "action": f"{item.get('method', 'API')} {item.get('path', '')}",
+                        "actor": item.get("actor_name") or "Anonymous",
+                        "description": item.get("description") or "API activity",
+                        "date": item.get("created_at"),
+                    }
+                )
+
+    activities.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+    total = len(activities)
+    start_idx = max(0, (page - 1) * page_size)
+    end_idx = start_idx + page_size
+    paged = activities[start_idx:end_idx]
+
+    return {
+        "data": paged,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": ((total + page_size - 1) // page_size) if page_size > 0 else 0,
+        },
+    }
+
+
+async def track_client_activity(
+    user: Dict[str, Any],
+    action: str,
+    description: str,
+    context: Optional[str] = None,
+) -> None:
+    """Persist explicit client-side activity events (for UI-only actions)."""
+    user_id = str(user.get("id") or user.get("_id") or user.get("user_id") or user.get("sub") or "")
+    actor_name = str(user.get("name") or user.get("email") or "Unknown")
+    actor_role = str(user.get("role") or "")
+    normalized_action = str(action or "ui_action").strip() or "ui_action"
+    final_description = str(description or "User action").strip() or "User action"
+    path = f"/ui/{normalized_action}"
+    if context:
+        path = f"{path}/{str(context).strip()[:128]}"
+
+    await log_api_activity(
+        method="UI",
+        path=path,
+        status_code=200,
+        actor_id=user_id,
+        actor_name=actor_name,
+        actor_role=actor_role,
+        description=final_description,
+    )
 
 
 async def get_distribution_chart_data() -> list:
@@ -473,7 +675,9 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             """
             SELECT u.role, d.status, COUNT(*) AS total
             FROM devices d
-            INNER JOIN users u ON u.id = CAST(d.current_holder_id AS INTEGER)
+            INNER JOIN users u
+                ON d.current_holder_id REGEXP '^[0-9]+$'
+               AND CAST(d.current_holder_id AS UNSIGNED) = u.id
             WHERE u.role IN ('sub_distributor', 'cluster', 'operator')
             GROUP BY u.role, d.status
             """
@@ -553,7 +757,11 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
         cursor = await db.execute(
             """SELECT COUNT(*) FROM defects
                WHERE resolved_at IS NOT NULL
-               AND julianday(resolved_at) - julianday(created_at) <= 60"""
+               AND TIMESTAMPDIFF(
+                   DAY,
+                   STR_TO_DATE(SUBSTRING(REPLACE(created_at, 'T', ' '), 1, 19), '%%Y-%%m-%%d %%H:%%i:%%s'),
+                   STR_TO_DATE(SUBSTRING(REPLACE(resolved_at, 'T', ' '), 1, 19), '%%Y-%%m-%%d %%H:%%i:%%s')
+               ) <= 60"""
         )
         repaired_within_sla_devices = int((await cursor.fetchone())[0])
 

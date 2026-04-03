@@ -413,7 +413,7 @@ const Distributions = () => {
                 <p className="text-2xl font-bold text-blue-900 mt-1">{distributionInsights.totalSent}</p>
               </div>
               <div className="rounded-lg border border-green-100 bg-green-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">Setup Box</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">Set-top box</p>
                 <p className="text-2xl font-bold text-green-900 mt-1">{distributionInsights.setupBoxCount}</p>
               </div>
               <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">

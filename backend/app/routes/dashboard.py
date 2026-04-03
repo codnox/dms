@@ -1,8 +1,15 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, Query, status, Depends
+from pydantic import BaseModel
 from app.services import dashboard_service
-from app.middleware.auth_middleware import get_current_user
+from app.middleware.auth_middleware import get_current_user, require_admin, require_any_role
 
 router = APIRouter()
+
+
+class ClientActivityTrackRequest(BaseModel):
+    action: str
+    description: str
+    context: str | None = None
 
 
 @router.get("/stats")
@@ -135,4 +142,66 @@ async def get_advanced_dashboard_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve advanced dashboard metrics: {str(e)}"
+        )
+
+
+@router.get("/activities")
+async def get_admin_activities(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    actor: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: dict = Depends(require_admin),
+):
+    """Get admin-wide activities with filtering."""
+    try:
+        result = await dashboard_service.get_admin_activities(
+            page=page,
+            page_size=page_size,
+            actor=actor,
+            category=category,
+            search=search,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return {
+            "success": True,
+            "message": "Activities retrieved successfully",
+            "data": result["data"],
+            "pagination": result["pagination"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve activities: {str(e)}"
+        )
+
+
+@router.post("/activities/track")
+async def track_client_activity(
+    payload: ClientActivityTrackRequest,
+    current_user: dict = Depends(require_any_role),
+):
+    """Track explicit client-side actions like local export clicks."""
+    try:
+        await dashboard_service.track_client_activity(
+            user=current_user,
+            action=payload.action,
+            description=payload.description,
+            context=payload.context,
+        )
+        return {
+            "success": True,
+            "message": "Client activity tracked",
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to track client activity: {str(e)}"
         )

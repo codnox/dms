@@ -1,16 +1,13 @@
-# Stop Distribution Management System
+# Stop Distribution Management System Docker Compose stack
 
-Write-Host "🛑 Stopping Distribution Management System..." -ForegroundColor Red
+Write-Host "Stopping Distribution Management System (Docker Compose)..." -ForegroundColor Red
 Write-Host ""
 
-# Stop backend processes
-Write-Host "Stopping backend server..." -ForegroundColor Yellow
-Get-Process | Where-Object { $_.ProcessName -like "*python*" -and $_.CommandLine -like "*uvicorn*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-
-# Stop frontend processes (Node)
-Write-Host "Stopping frontend server..." -ForegroundColor Yellow
-Get-Process | Where-Object { $_.ProcessName -eq "node" } | Stop-Process -Force -ErrorAction SilentlyContinue
+docker compose down
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to stop Docker Compose stack." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host ""
-Write-Host "✅ All servers stopped!" -ForegroundColor Green
-Write-Host ""
+Write-Host "All services stopped." -ForegroundColor Green

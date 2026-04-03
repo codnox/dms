@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
+import asyncio
 import re
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -11,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, close_pool
 from app.routes import (
     auth, users, devices, distributions, 
     defects, returns, approvals, operators,
@@ -22,6 +23,8 @@ from app.middleware.error_handler import add_exception_handlers
 from app.middleware.auth_middleware import get_current_user, require_admin
 from app.core.rate_limiter import limiter
 from app.core.audit import audit_logger
+from app.core.activity_logger import build_meaningful_activity_description, log_api_activity
+from app.services.auth_service import get_current_user_from_token
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -55,6 +58,81 @@ class HttpsEnforcementMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class ApiActivityLoggingMiddleware(BaseHTTPMiddleware):
+    """Log API request activity for admin audit timeline."""
+
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith(settings.API_V1_PREFIX):
+            return await call_next(request)
+        if request.method.upper() == "OPTIONS":
+            return await call_next(request)
+
+        actor_id = None
+        actor_name = "Anonymous"
+        actor_role = None
+
+        auth_header = request.headers.get("authorization", "")
+        token = None
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+        if not token:
+            token = request.cookies.get("access_token")
+
+        if token:
+            try:
+                user = await get_current_user_from_token(token)
+                if user:
+                    actor_id = str(user.get("id") or user.get("_id") or user.get("user_id") or user.get("sub") or "")
+                    actor_name = str(user.get("name") or user.get("email") or "Anonymous")
+                    actor_role = str(user.get("role") or "")
+            except Exception:
+                pass
+
+        ip_address = request.client.host if request.client else None
+
+        try:
+            response = await call_next(request)
+            description = build_meaningful_activity_description(
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+            )
+            if not description:
+                return response
+
+            await log_api_activity(
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                actor_role=actor_role,
+                ip_address=ip_address,
+                description=description,
+            )
+            return response
+        except Exception:
+            description = build_meaningful_activity_description(
+                method=request.method,
+                path=request.url.path,
+                status_code=500,
+            )
+            if not description:
+                raise
+
+            await log_api_activity(
+                method=request.method,
+                path=request.url.path,
+                status_code=500,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                actor_role=actor_role,
+                ip_address=ip_address,
+                description=description,
+            )
+            raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
@@ -63,11 +141,24 @@ async def lifespan(app: FastAPI):
     
     # Seed initial data
     from app.services.seed_service import seed_initial_data
+    from app.services.backup_scheduler import monthly_backup_scheduler_loop
     await seed_initial_data()
+
+    backup_task = asyncio.create_task(monthly_backup_scheduler_loop())
+    app.state.monthly_backup_task = backup_task
     
     yield
     
-    # Shutdown - nothing to clean up for SQLite
+    # Shutdown - stop monthly backup loop.
+    task = getattr(app.state, "monthly_backup_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    await close_pool()
 
 
 # Create FastAPI app
@@ -110,6 +201,7 @@ app.add_middleware(
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(HttpsEnforcementMiddleware)
+app.add_middleware(ApiActivityLoggingMiddleware)
 
 # Add exception handlers
 add_exception_handlers(app)

@@ -7,7 +7,7 @@ import { useNotifications } from '../context/NotificationContext';
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertCircle, Download, ArrowLeft } from 'lucide-react';
 
 const TEMPLATE_HEADERS = ['device_type', 'model', 'serial_number', 'mac_address', 'manufacturer', 'band_type', 'nuid', 'purchase_date', 'warranty_expiry'];
-const VALID_TYPES = ['ONU', 'ONT', 'Router', 'Switch', 'Modem', 'Access Point', 'Setup Box', 'Other'];
+const VALID_TYPES = ['ONU', 'ONT', 'Router', 'Switch', 'Modem', 'Access Point', 'Set-top box', 'Other'];
 const VALID_BANDS = ['single_band', 'dual_band'];
 
 const BulkImportDevices = () => {
@@ -65,7 +65,7 @@ const BulkImportDevices = () => {
     const rows = [
       TEMPLATE_HEADERS.join(','),
       `ONU,ZTE F660,SN1234567890,AA:BB:CC:DD:EE:01,ZTE,single_band,,2024-01-01,2026-01-01`,
-      `Setup Box,SetTop X2,SN0987654321,AA:BB:CC:DD:EE:02,Syrotech,dual_band,NUID-00021,,`,
+      `Set-top box,SetTop X2,SN0987654321,AA:BB:CC:DD:EE:02,Syrotech,dual_band,NUID-00021,,`,
     ];
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -99,7 +99,7 @@ const BulkImportDevices = () => {
             <p className="text-sm text-gray-500 mb-3">
               Use the template to fill in your device data. Required columns:{' '}
               <span className="font-medium text-gray-700">device_type, model, serial_number, mac_address, manufacturer, band_type</span>.
-              Optional: nuid (required for Setup Box), purchase_date, warranty_expiry (YYYY-MM-DD format).
+              Optional: nuid (required for Set-top box), purchase_date, warranty_expiry (YYYY-MM-DD format).
             </p>
             <p className="text-xs text-gray-400 mb-3">
               Valid device types: {VALID_TYPES.join(', ')}. Valid band_type values: {VALID_BANDS.join(', ')}

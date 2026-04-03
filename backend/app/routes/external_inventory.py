@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -18,6 +19,7 @@ from app.models.inventory import (
 from app.services import inventory_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "external_inventory"
@@ -85,14 +87,9 @@ async def create_external_inventory_item(
 ):
     try:
         item = await inventory_service.create_item(item_data=item_data, user=current_user)
-        merged_duplicate = bool(item.get("_merged_duplicate"))
         return {
             "success": True,
-            "message": (
-                "Existing inventory item quantity incremented successfully"
-                if merged_duplicate
-                else "External inventory item created successfully"
-            ),
+            "message": "External inventory item created successfully",
             "data": item,
         }
     except HTTPException:
@@ -112,8 +109,8 @@ async def bulk_upload_external_inventory_items(
     """Bulk upload external inventory items from CSV.
 
     Required columns: item_id, name, serial_number, device_type
-    Conditional column: mac_id (required for Normal and Set-top Box, optional for Other)
-    Optional columns: price, unit, quantity_on_hand, reorder_level, supplier_name, location, notes
+    Conditional column: mac_id (required for all types except Others)
+    Optional columns: custom_device_type, price, unit, supplier_name, location, notes
     """
     filename_lower = (file.filename or "").lower()
     if not filename_lower.endswith(".csv"):
@@ -145,7 +142,6 @@ async def bulk_upload_external_inventory_items(
             )
 
         created = []
-        merged = []
         errors = []
 
         for row_idx, row in enumerate(data_rows, start=2):
@@ -159,25 +155,24 @@ async def bulk_upload_external_inventory_items(
                 continue
 
             try:
+                device_type_value = row_data.get("device_type", "")
+                custom_device_type = row_data.get("custom_device_type", "")
+
                 item_payload = InventoryItemCreate(
                     item_id=row_data.get("item_id", ""),
                     name=row_data.get("name", ""),
                     serial_number=row_data.get("serial_number", ""),
                     mac_id=row_data.get("mac_id", ""),
-                    device_type=row_data.get("device_type", ""),
+                    device_type=device_type_value,
+                    custom_device_type=custom_device_type or None,
                     price=float(row_data.get("price", "0") or 0),
                     unit=row_data.get("unit", "pcs") or "pcs",
-                    quantity_on_hand=int(float(row_data.get("quantity_on_hand", "0") or 0)),
-                    reorder_level=int(float(row_data.get("reorder_level", "0") or 0)),
                     supplier_name=row_data.get("supplier_name") or None,
                     location=row_data.get("location") or None,
                     notes=row_data.get("notes") or None,
                 )
                 created_item = await inventory_service.create_item(item_data=item_payload, user=current_user)
-                if created_item.get("_merged_duplicate"):
-                    merged.append(created_item.get("inventory_id"))
-                else:
-                    created.append(created_item.get("inventory_id"))
+                created.append(created_item.get("inventory_id"))
             except Exception as e:
                 errors.append(
                     {
@@ -189,15 +184,11 @@ async def bulk_upload_external_inventory_items(
 
         return {
             "success": True,
-            "message": (
-                f"Import complete: {len(created)} created, {len(merged)} merged, {len(errors)} errors"
-            ),
+            "message": f"Import complete: {len(created)} created, {len(errors)} errors",
             "data": {
                 "created_count": len(created),
-                "merged_count": len(merged),
                 "error_count": len(errors),
                 "created": created,
-                "merged": merged,
                 "errors": errors,
             },
         }
@@ -323,14 +314,25 @@ async def get_external_inventory_purchase_orders(
     page_size: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = None,
-    current_user: dict = Depends(require_management),
+    current_user: dict = Depends(require_any_role),
 ):
     try:
+        user_role = str(current_user.get("role") or "").lower()
+        is_management_user = user_role in {"admin", "manager", "staff"}
+        user_id = str(
+            current_user.get("id")
+            or current_user.get("_id")
+            or current_user.get("user_id")
+            or current_user.get("sub")
+            or ""
+        )
+
         result = await inventory_service.get_purchase_orders(
             page=page,
             page_size=page_size,
             status_filter=status_filter,
             search=search,
+            ordered_by=None if is_management_user else user_id,
         )
         return {
             "success": True,
@@ -350,7 +352,7 @@ async def get_external_inventory_purchase_orders(
 @router.post("/purchase-orders", status_code=status.HTTP_201_CREATED)
 async def create_external_inventory_purchase_order(
     po_data: PurchaseOrderCreate,
-    current_user: dict = Depends(require_management),
+    current_user: dict = Depends(require_any_role),
 ):
     try:
         po = await inventory_service.create_purchase_order(po_data=po_data, user=current_user)
@@ -362,6 +364,7 @@ async def create_external_inventory_purchase_order(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Failed to create external inventory purchase order", exc_info=e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create purchase order: {str(e)}",

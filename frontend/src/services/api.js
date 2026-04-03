@@ -934,6 +934,64 @@ export const reportsAPI = {
     const response = await apiRequest('/reports/device-utilization');
     return response;
   },
+
+  downloadDeviceBackup: async (format = 'xlsx') => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/reports/device-backup?format=${encodeURIComponent(format)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to download device backup';
+      try {
+        const text = await response.text();
+        const parsed = text ? JSON.parse(text) : {};
+        errorMessage = parsed?.message || parsed?.detail || errorMessage;
+      } catch {
+        // Keep default message when response is not JSON.
+      }
+      throw new Error(errorMessage);
+    }
+
+    return {
+      blob: await response.blob(),
+      contentDisposition: response.headers.get('content-disposition') || '',
+    };
+  },
+
+  downloadReturnsDefectsBackup: async (format = 'xlsx') => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/reports/returns-defects-backup?format=${encodeURIComponent(format)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to download returns/defects backup';
+      try {
+        const text = await response.text();
+        const parsed = text ? JSON.parse(text) : {};
+        errorMessage = parsed?.message || parsed?.detail || errorMessage;
+      } catch {
+        // Keep default message when response is not JSON.
+      }
+      throw new Error(errorMessage);
+    }
+
+    return {
+      blob: await response.blob(),
+      contentDisposition: response.headers.get('content-disposition') || '',
+    };
+  },
 };
 
 // Dashboard API
@@ -950,6 +1008,20 @@ export const dashboardAPI = {
 
   getRecentActivities: async (limit = 10) => {
     const response = await apiRequest(`/dashboard/recent-activities?limit=${limit}`);
+    return response;
+  },
+
+  getActivities: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await apiRequest(`/dashboard/activities?${queryString}`);
+    return response;
+  },
+
+  trackActivity: async (payload) => {
+    const response = await apiRequest('/dashboard/activities/track', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
     return response;
   },
 
