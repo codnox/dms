@@ -178,8 +178,8 @@ const TrackDevice = () => {
     return entry ? entry.performed_by_name : null;
   };
 
-  const canChangeStatusDirectly = currentUser && ['admin', 'manager'].includes(currentUser.role);
-  const canRequestStatusChange = currentUser && currentUser.role === 'staff';
+  const canChangeStatusDirectly = currentUser && ['super_admin', 'manager'].includes(currentUser.role);
+  const canRequestStatusChange = currentUser && currentUser.role === 'pdic_staff';
 
   const handleRepairHolder = async () => {
     if (!searchResult) return;
@@ -262,7 +262,7 @@ const TrackDevice = () => {
 
       {/* All Devices List */}
       {!searched && (
-        <Card title={['admin','manager','staff'].includes(currentUser?.role) ? 'All Devices' : 'Devices In My Chain'} icon={Box}>
+        <Card title={['super_admin','manager','pdic_staff'].includes(currentUser?.role) ? 'All Devices' : 'Devices In My Chain'} icon={Box}>
           {devicesLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -663,3 +663,4 @@ const TrackDevice = () => {
 };
 
 export default TrackDevice;
+

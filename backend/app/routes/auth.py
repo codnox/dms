@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from app.models.auth import LoginRequest, RefreshTokenRequest, Token
-from app.models.user import PasswordChange
+from app.models.user import PasswordChange, ForcedCredentialUpdateRequest
 from app.services import auth_service
 from app.middleware.auth_middleware import get_current_user, security
 from app.schemas.responses import StandardResponse
@@ -251,4 +251,84 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to change password: {str(e)}"
+        )
+
+
+@router.post("/complete-forced-update")
+async def complete_forced_update(
+    request: Request,
+    response: Response,
+    payload: ForcedCredentialUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Complete mandatory first-login email and password rotation."""
+    try:
+        if not (current_user.get("force_email_change") or current_user.get("force_password_change")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No forced update is required for this account",
+            )
+
+        updated_user = await auth_service.complete_forced_credential_update(
+            user_id=current_user["id"],
+            current_password=payload.current_password,
+            new_email=payload.new_email,
+            new_password=payload.new_password,
+        )
+
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect",
+            )
+
+        token_data = await auth_service.create_user_token(updated_user)
+
+        is_secure_cookie = settings.ENVIRONMENT == "production"
+        response.set_cookie(
+            key="access_token",
+            value=token_data["access_token"],
+            httponly=True,
+            secure=is_secure_cookie,
+            samesite="strict",
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            path="/",
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=token_data["refresh_token"],
+            httponly=True,
+            secure=is_secure_cookie,
+            samesite="strict",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            path="/",
+        )
+
+        audit_logger.info(
+            "FORCED_CREDENTIAL_ROTATION_COMPLETE | user_id=%s | ip=%s",
+            current_user.get("id"),
+            request.client.host if request.client else "unknown",
+        )
+        await log_api_activity(
+            method="POST",
+            path="/api/auth/complete-forced-update",
+            status_code=status.HTTP_200_OK,
+            actor_id=str(current_user.get("id") or ""),
+            actor_name=str(current_user.get("name") or current_user.get("email") or "Unknown"),
+            actor_role=str(current_user.get("role") or ""),
+            description="Completed forced first-login credential rotation",
+            ip_address=request.client.host if request.client else "unknown",
+        )
+
+        return {
+            "success": True,
+            "message": "Credentials updated successfully",
+            "data": token_data,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to complete forced update: {str(e)}",
         )

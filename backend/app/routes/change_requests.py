@@ -95,7 +95,7 @@ async def submit_change_request(
         if not data.device_id:
             raise HTTPException(status_code=400, detail="defect_id is required in device_id for replacement_transfer_fix")
     elif data.request_type == "device_status_change":
-        if current_user["role"] not in ["staff", "manager"]:
+        if current_user["role"] not in ["pdic_staff", "manager"]:
             raise HTTPException(status_code=403, detail="Only staff and managers can submit device status change requests")
         if not data.device_id:
             raise HTTPException(status_code=400, detail="device_id required for device_status_change")
@@ -104,7 +104,7 @@ async def submit_change_request(
         if not data.reason:
             raise HTTPException(status_code=400, detail="reason required for device_status_change")
     else:
-        if current_user["role"] not in ["staff", "manager"]:
+        if current_user["role"] not in ["pdic_staff", "manager"]:
             raise HTTPException(status_code=403, detail="Only staff and managers can submit change requests")
         if data.request_type in ["email_change", "both"] and not data.new_email:
             raise HTTPException(status_code=400, detail="new_email required for email_change")
@@ -160,7 +160,7 @@ async def submit_change_request(
             )
 
             if data.request_type == "replacement_transfer_fix":
-                cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+                cursor = await db.execute("SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff')")
                 managers = await cursor.fetchall()
                 defect_report_id = defect.get("report_id") if defect else None
                 for row in managers:
@@ -211,7 +211,7 @@ async def get_change_requests(
 ):
     """Get change requests - admin sees all, manager sees staff requests only"""
     role = current_user["role"]
-    if role not in ["admin", "manager"]:
+    if role not in ["super_admin", "manager"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     try:
@@ -221,7 +221,7 @@ async def get_change_requests(
 
             if role == "manager":
                 # Manager sees staff requests and operator transfer-fix requests.
-                conditions.append("(requested_by_role = 'staff' OR request_type = 'replacement_transfer_fix')")
+                conditions.append("(requested_by_role = 'pdic_staff' OR request_type = 'replacement_transfer_fix')")
 
             if status_filter:
                 conditions.append("status = ?")
@@ -267,7 +267,7 @@ async def review_change_request(
 ):
     """Approve or reject a change request"""
     role = current_user["role"]
-    if role not in ["admin", "manager"]:
+    if role not in ["super_admin", "manager"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     if review.action not in ["approve", "reject"]:
@@ -287,7 +287,7 @@ async def review_change_request(
             req = row_to_dict(row)
 
             # Managers can only review staff requests
-            if role == "manager" and req["requested_by_role"] != "staff" and req["request_type"] != "replacement_transfer_fix":
+            if role == "manager" and req["requested_by_role"] != "pdic_staff" and req["request_type"] != "replacement_transfer_fix":
                 raise HTTPException(status_code=403, detail="Managers can only review staff requests")
 
             if req["status"] != "pending":
@@ -526,3 +526,4 @@ async def review_change_request(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to review change request '{request_id}': {str(e)}"
         )
+

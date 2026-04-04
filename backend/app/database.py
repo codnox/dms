@@ -153,6 +153,8 @@ CREATE_TABLE_STATEMENTS = [
         name VARCHAR(255) NOT NULL,
         password_hash TEXT NOT NULL,
         role VARCHAR(64) NOT NULL,
+        force_email_change TINYINT(1) DEFAULT 0,
+        force_password_change TINYINT(1) DEFAULT 0,
         phone VARCHAR(64),
         department VARCHAR(255),
         location VARCHAR(255),
@@ -562,6 +564,8 @@ async def init_db():
             "ALTER TABLE approval_role_routing ADD COLUMN staff_enabled TINYINT(1) DEFAULT 1",
             "ALTER TABLE users ADD COLUMN failed_login_attempts INT DEFAULT 0",
             "ALTER TABLE users ADD COLUMN locked_until VARCHAR(64)",
+            "ALTER TABLE users ADD COLUMN force_email_change TINYINT(1) DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN force_password_change TINYINT(1) DEFAULT 0",
         ]:
             try:
                 await db.execute(stmt)
@@ -582,6 +586,10 @@ async def init_db():
             "UPDATE devices SET current_holder_name = 'PDIC (Distribution)' WHERE current_holder_type = 'noc' AND (current_holder_name IS NULL OR current_holder_name = 'NOC')",
             "UPDATE defects SET report_target = 'manager_admin' WHERE report_target IS NULL OR report_target = ''",
             "UPDATE defects SET forwarded_to_management = COALESCE(forwarded_to_management, 0)",
+            "UPDATE users SET force_email_change = COALESCE(force_email_change, 0)",
+            "UPDATE users SET force_password_change = COALESCE(force_password_change, 0)",
+            "UPDATE users SET role = 'super_admin' WHERE role = 'super_admin'",
+            "UPDATE users SET role = 'pdic_staff' WHERE role = 'pdic_staff'",
         ]:
             await db.execute(stmt)
 
@@ -636,3 +644,4 @@ def row_to_dict(row):
 def rows_to_list(rows):
     """Convert list of rows to standardized dict list."""
     return [row_to_dict(r) for r in rows if r is not None]
+

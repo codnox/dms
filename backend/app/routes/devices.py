@@ -54,7 +54,7 @@ async def get_devices(
     """Get all devices with pagination and filters"""
     try:
         # Filter by holder for non-admin/manager/staff users
-        if current_user["role"] not in ["admin", "manager", "staff"]:
+        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
             holder_id = current_user["id"]
 
         result = await device_service.get_devices(
@@ -88,7 +88,7 @@ async def get_devices_for_replacement(
 ):
     """Get all devices available as replacements (status=available or returned).
     Management only — returns full stock regardless of holder. Used in the Replace Device modal."""
-    if current_user["role"] not in ["admin", "manager", "staff"]:
+    if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only management can access replacement device pool"
@@ -120,7 +120,7 @@ async def get_available_devices(
     - sub_distributor/cluster/operator: all devices they currently hold"""
     try:
         role = current_user["role"]
-        if role in ["admin", "manager", "staff"]:
+        if role in ["super_admin", "manager", "pdic_staff"]:
             devices = await device_service.get_available_devices(holder_id=None)
         else:
             # Sub-level roles can redistribute any device they hold
@@ -151,7 +151,7 @@ async def get_my_device_overview(
     - operator: only their held devices"""
     try:
         role = current_user["role"]
-        if role in ["admin", "manager", "staff"]:
+        if role in ["super_admin", "manager", "pdic_staff"]:
             result = await device_service.get_devices(page=1, page_size=2000)
             all_devices = result["data"]
             stats = await device_service.get_device_stats()
@@ -225,7 +225,7 @@ async def request_device_edit(
 ):
     """Staff: request an edit to a device. Sends an approval notification to admins/managers.
     The device is NOT modified until a manager/admin reviews and applies the change."""
-    if current_user["role"] not in ["staff", "admin", "manager"]:
+    if current_user["role"] not in ["pdic_staff", "super_admin", "manager"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only management users can request device edits"
@@ -236,7 +236,7 @@ async def request_device_edit(
         if not device:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
-        proposer_name = current_user.get("name") or current_user.get("email", "Staff")
+        proposer_name = current_user.get("name") or current_user.get("email", "pdic_staff")
         changes_summary = ", ".join(
             f"{k}: '{v}'" for k, v in payload.items()
             if k not in ("_edit_note",) and v
@@ -250,7 +250,7 @@ async def request_device_edit(
         from app.database import get_db, rows_to_list
         async with get_db() as db:
             cursor = await db.execute(
-                "SELECT id FROM users WHERE role IN ('admin', 'manager')"
+                "SELECT id FROM users WHERE role IN ('super_admin', 'manager')"
             )
             rows = await cursor.fetchall()
             admin_ids = [str(row[0]) for row in rows]
@@ -438,7 +438,7 @@ async def bulk_upload_devices(
         header_set = set(normalized_headers)
 
         sb_required = {"vendor", "device_type", "model", "nuid", "box_type"}
-        regular_required = {"vendor", "device_type", "model", "mac_address", "serial_number", "band_type"}
+        regular_required = {"vendor", "device_type", "model", "mac_address", "serial_number"}
 
         has_sb_schema = sb_required.issubset(header_set)
         has_regular_schema = regular_required.issubset(header_set)
@@ -448,7 +448,7 @@ async def bulk_upload_devices(
                 detail=(
                     "Missing required columns. Expected either SB schema "
                     "(vendor, device_type, model, nuid, box_type) or regular schema "
-                    "(vendor, device_type, model, mac_address, serial_number, band_type)."
+                    "(vendor, device_type, model, mac_address, serial_number)."
                 )
             )
 
@@ -469,6 +469,9 @@ async def bulk_upload_devices(
         created, skipped, errors = [], [], []
 
         for row_idx, row in enumerate(iter_data_rows(), start=2):
+            if row is None:
+                row = ()
+
             row_data = {
                 normalized_headers[i]: (str(row[i]).strip() if i < len(row) and row[i] is not None else "")
                 for i in range(len(normalized_headers))
@@ -519,8 +522,8 @@ async def bulk_upload_devices(
                     errors.append({"row": row_idx, "serial": serial, "error": "Missing mac_address"})
                     continue
                 raw_band = row_data.get("band_type", "").lower()
-                band_type_val = valid_bands.get(raw_band)
-                if not band_type_val:
+                band_type_val = valid_bands.get(raw_band) if raw_band else None
+                if raw_band and not band_type_val:
                     errors.append({"row": row_idx, "serial": serial, "error": f"Invalid band_type '{row_data.get('band_type')}'"})
                     continue
 
@@ -545,6 +548,9 @@ async def bulk_upload_devices(
                     created_by=current_user["id"],
                     created_by_name=current_user["name"]
                 )
+                if not device:
+                    errors.append({"row": row_idx, "serial": serial or nuid, "error": "Device was not created"})
+                    continue
                 created.append(device["device_id"])
             except ValueError as e:
                 skipped.append({"row": row_idx, "serial": serial or nuid, "reason": str(e)})
@@ -728,3 +734,4 @@ async def update_device_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update status for device '{device_id}': {str(e)}"
         )
+

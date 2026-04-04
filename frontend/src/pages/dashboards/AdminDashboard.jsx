@@ -152,7 +152,7 @@ const AdminDashboard = () => {
   }), [charts.device_status]);
 
   const userRoleData = useMemo(() => ({
-    labels: ['Staff', 'Sub Distributor', 'Cluster', 'Operator', 'Manager', 'Admin'],
+    labels: ['pdic_staff', 'Sub Distributor', 'Cluster', 'Operator', 'Manager', 'super_admin'],
     datasets: [{
       label: 'Users',
       data: [
@@ -543,3 +543,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+

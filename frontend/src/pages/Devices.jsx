@@ -78,11 +78,11 @@ const Devices = () => {
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  const isManagement = ['admin', 'manager', 'staff'].includes(user?.role);
+  const isManagement = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const hasHierarchy = ['sub_distributor', 'cluster'].includes(user?.role);
-  const canRegister = ['admin', 'manager', 'staff'].includes(user?.role);
-  const isStaff = user?.role === 'staff';
-  const isAdminOrManager = ['admin', 'manager'].includes(user?.role);
+  const canRegister = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
+  const isStaff = user?.role === 'pdic_staff';
+  const isAdminOrManager = ['super_admin', 'manager'].includes(user?.role);
 
   useEffect(() => {
     fetchDevices();
@@ -1393,3 +1393,4 @@ const Devices = () => {
 };
 
 export default Devices;
+

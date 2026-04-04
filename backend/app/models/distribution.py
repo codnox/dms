@@ -17,7 +17,7 @@ class DistributionStatus(str, Enum):
 
 class UserType(str, Enum):
     NOC = "noc"
-    STAFF = "staff"
+    STAFF = "pdic_staff"
     SUB_DISTRIBUTOR = "sub_distributor"
     CLUSTER = "cluster"
     OPERATOR = "operator"
@@ -91,3 +91,4 @@ class DistributionResponse(BaseModel):
 class DistributionStatusUpdate(BaseModel):
     status: DistributionStatus
     notes: Optional[str] = None
+

@@ -6,6 +6,7 @@ from app.database import get_db, row_to_dict, rows_to_list
 from app.models.user import UserCreate, UserUpdate, UserRole, UserStatus
 from app.utils.security import get_password_hash
 from app.utils.helpers import get_pagination
+from app.utils.roles import normalize_role
 
 
 def escape_like(value: str) -> str:
@@ -67,6 +68,7 @@ async def get_users(
         # Remove password hashes and parse permissions
         for user in users:
             user.pop("password_hash", None)
+            user["role"] = normalize_role(user.get("role"))
             if user.get("permissions"):
                 try:
                     user["permissions"] = json.loads(user["permissions"])
@@ -87,6 +89,7 @@ async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         if row:
             user = row_to_dict(row)
             user.pop("password_hash", None)
+            user["role"] = normalize_role(user.get("role"))
             if user.get("permissions"):
                 try:
                     user["permissions"] = json.loads(user["permissions"])
@@ -106,7 +109,7 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def create_user(user_data: UserCreate, creator_role: str = "admin") -> Dict[str, Any]:
+async def create_user(user_data: UserCreate, creator_role: str = "super_admin") -> Dict[str, Any]:
     """Create a new user"""
     async with get_db() as db:
         # Check if email exists
@@ -235,12 +238,13 @@ async def get_users_by_role(role: str) -> List[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT * FROM users WHERE role = ? AND status = 'active'",
-            (role,)
+            (normalize_role(role),)
         )
         rows = await cursor.fetchall()
         users = rows_to_list(rows)
         for user in users:
             user.pop("password_hash", None)
+            user["role"] = normalize_role(user.get("role"))
         return users
 
 
@@ -288,4 +292,5 @@ async def get_children_users(parent_id: str) -> List[Dict[str, Any]]:
         users = rows_to_list(rows)
         for user in users:
             user.pop("password_hash", None)
+            user["role"] = normalize_role(user.get("role"))
         return users

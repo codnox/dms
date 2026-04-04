@@ -4,8 +4,16 @@ from typing import Optional, List
 
 from app.services.auth_service import get_current_user_from_token
 from app.utils.permissions import check_permission
+from app.utils.roles import normalize_role
 
 security = HTTPBearer(auto_error=False)
+
+FORCED_UPDATE_ALLOWLIST = {
+    "/api/auth/me",
+    "/api/auth/refresh",
+    "/api/auth/logout",
+    "/api/auth/complete-forced-update",
+}
 
 
 async def get_current_user(
@@ -44,6 +52,15 @@ async def get_current_user(
             detail="User account is not active"
         )
 
+    user["role"] = normalize_role(user.get("role"))
+
+    requires_forced_update = bool(user.get("force_email_change")) or bool(user.get("force_password_change"))
+    if requires_forced_update and request.url.path not in FORCED_UPDATE_ALLOWLIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="FORCED_CREDENTIAL_UPDATE_REQUIRED",
+        )
+
     return user
 
 
@@ -69,7 +86,7 @@ class RoleChecker:
         self.allowed_roles = allowed_roles
     
     async def __call__(self, user: dict = Depends(get_current_user)):
-        if user.get("role") not in self.allowed_roles:
+        if normalize_role(user.get("role")) not in {normalize_role(r) for r in self.allowed_roles}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions"
@@ -93,7 +110,16 @@ class PermissionChecker:
 
 
 # Pre-defined role checkers
-require_admin = RoleChecker(["admin"])
-require_admin_or_manager = RoleChecker(["admin", "manager"])
-require_management = RoleChecker(["admin", "manager", "staff"])
-require_any_role = RoleChecker(["admin", "manager", "staff", "sub_distributor", "cluster", "operator"])
+require_admin = RoleChecker(["super_admin"])
+require_admin_or_manager = RoleChecker(["super_admin", "manager"])
+require_management = RoleChecker(["super_admin", "manager", "pdic_staff"])
+require_any_role = RoleChecker([
+    "super_admin",
+    "md_director",
+    "manager",
+    "pdic_staff",
+    "sub_distribution_manager",
+    "sub_distributor",
+    "cluster",
+    "operator",
+])

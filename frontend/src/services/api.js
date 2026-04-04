@@ -169,6 +169,18 @@ export const authAPI = {
       throw error;
     }
   },
+
+  completeForcedUpdate: async (currentPassword, newEmail, newPassword) => {
+    const response = await apiRequest('/auth/complete-forced-update', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_email: newEmail,
+        new_password: newPassword,
+      }),
+    });
+    return response;
+  },
 };
 
 // Users API

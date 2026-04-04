@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { getStoredUser, saveStoredUser, clearStoredUser } from '../utils/authStorage';
+import { normalizeRole } from '../utils/roles';
 
 const AuthContext = createContext(null);
 
@@ -82,6 +83,7 @@ export const AuthProvider = ({ children }) => {
           const response = await authAPI.getCurrentUser();
           if (response.success) {
             const validatedUser = response.data;
+            validatedUser.role = normalizeRole(validatedUser.role);
             // Preserve the token from the existing stored session
             validatedUser.token = storedToken;
             // Add avatar initials
@@ -126,6 +128,7 @@ export const AuthProvider = ({ children }) => {
       
       if (response.success) {
         const { user: userData, access_token } = response.data;
+        userData.role = normalizeRole(userData.role);
         
         // Add avatar initials
         userData.avatar = userData.name.split(' ').map(n => n[0]).join('').toUpperCase();
@@ -170,6 +173,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const completeForcedCredentialUpdate = async (currentPassword, newEmail, newPassword) => {
+    const response = await authAPI.completeForcedUpdate(currentPassword, newEmail, newPassword);
+    if (!response.success) {
+      return { success: false, error: 'Forced credential update failed' };
+    }
+
+    const { user: updatedUser, access_token } = response.data;
+    updatedUser.role = normalizeRole(updatedUser.role);
+    updatedUser.token = access_token;
+    updatedUser.avatar = updatedUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+    saveStoredUser(updatedUser);
+    setUser(updatedUser);
+    return { success: true, user: updatedUser };
+  };
+
   const hasRole = (roles) => {
     if (!user) return false;
     if (Array.isArray(roles)) {
@@ -181,7 +200,7 @@ export const AuthProvider = ({ children }) => {
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ user, setUser, login, logout, loading, hasRole, isAuthenticated }}>
+    <AuthContext.Provider value={{ user, setUser, login, logout, loading, hasRole, isAuthenticated, completeForcedCredentialUpdate }}>
       {children}
     </AuthContext.Provider>
   );

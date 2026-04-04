@@ -6,9 +6,11 @@ from enum import Enum
 
 
 class UserRole(str, Enum):
-    ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
+    MD_DIRECTOR = "md_director"
     MANAGER = "manager"
-    STAFF = "staff"
+    PDIC_STAFF = "pdic_staff"
+    SUB_DISTRIBUTION_MANAGER = "sub_distribution_manager"
     SUB_DISTRIBUTOR = "sub_distributor"
     CLUSTER = "cluster"
     OPERATOR = "operator"
@@ -84,6 +86,25 @@ class UserResponse(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password_strength(cls, value: str) -> str:
+        if not re.search(r"[A-Z]", value):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[a-z]", value):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"[0-9]", value):
+            raise ValueError("Password must contain at least one digit")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", value):
+            raise ValueError("Password must contain at least one special character")
+        return value
+
+
+class ForcedCredentialUpdateRequest(BaseModel):
+    current_password: str
+    new_email: EmailStr
     new_password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("new_password")

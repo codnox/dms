@@ -97,12 +97,12 @@ const BulkImportDevices = () => {
             <h3 className="font-semibold text-gray-800 mb-1">Download Template</h3>
             <p className="text-sm text-gray-500 mb-3">
               Upload either of these two formats:{' '}
-              <span className="font-medium text-gray-700">Regular: Vendor, device_type, model, mac_address, serial_number, band_type</span>{' '}
+              <span className="font-medium text-gray-700">Regular: Vendor, device_type, model, mac_address, serial_number (band_type optional)</span>{' '}
               or{' '}
               <span className="font-medium text-gray-700">SB: vendor, device_type, model, nuid, box_type</span>.
             </p>
             <p className="text-xs text-gray-400 mb-3">
-              Valid device types: {VALID_TYPES.join(', ')}. Valid band_type values for regular devices: {VALID_BANDS.join(', ')}.
+              Valid device types: {VALID_TYPES.join(', ')}. If provided, valid band_type values are: {VALID_BANDS.join(', ')}.
               SB rows do not need Serial Number or MAC Address. For SB, box_type must be HD or OTT.
             </p>
             <Button variant="outline" icon={Download} onClick={downloadTemplate}>

@@ -39,7 +39,7 @@ const defaultPOLine = { item_inventory_id: '' };
 const ExternalInventory = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
-  const canManage = ['admin', 'manager', 'staff'].includes(user?.role);
+  const canManage = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const canConfirmPO = canManage;
 
   const [dashboard, setDashboard] = useState(null);
@@ -1091,3 +1091,4 @@ const ExternalInventory = () => {
 };
 
 export default ExternalInventory;
+

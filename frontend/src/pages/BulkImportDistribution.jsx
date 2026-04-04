@@ -55,7 +55,7 @@ const BulkImportDistribution = () => {
   const [allOperators, setAllOperators] = useState([]);
 
   const role = user?.role;
-  const isManagement = ['admin', 'manager', 'staff'].includes(role);
+  const isManagement = ['super_admin', 'manager', 'pdic_staff'].includes(role);
   const allowedTypes = ALLOWED_RECIPIENT_TYPES[role] || [];
 
   useEffect(() => {
@@ -473,3 +473,4 @@ const BulkImportDistribution = () => {
 };
 
 export default BulkImportDistribution;
+

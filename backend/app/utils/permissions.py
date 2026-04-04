@@ -1,140 +1,95 @@
-from typing import List, Optional
-from app.models.user import UserRole
+from typing import List
 
-# Define role hierarchy and permissions
-ROLE_HIERARCHY = {
-    UserRole.ADMIN: 6,
-    UserRole.MANAGER: 5,
-    UserRole.STAFF: 4,
-    UserRole.SUB_DISTRIBUTOR: 3,
-    UserRole.CLUSTER: 2,
-    UserRole.OPERATOR: 1
-}
+from app.utils.roles import (
+    ROLE_HIERARCHY,
+    SUPER_ADMIN,
+    MD_DIRECTOR,
+    MANAGER,
+    PDIC_STAFF,
+    SUB_DISTRIBUTION_MANAGER,
+    SUB_DISTRIBUTOR,
+    CLUSTER,
+    OPERATOR,
+    normalize_role,
+)
 
-# Default permission definitions
 PERMISSIONS = {
-    # User management
-    "users:read": [UserRole.ADMIN, UserRole.MANAGER],
-    "users:create": [UserRole.ADMIN],
-    "users:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "users:delete": [UserRole.ADMIN],
-    "users:set_permissions": [UserRole.ADMIN],
-    
-    # Device management
-    "devices:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "devices:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF],
-    "devices:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "devices:delete": [UserRole.ADMIN],
-    
-    # Distribution management
-    "distributions:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "distributions:create": [UserRole.ADMIN, UserRole.MANAGER],
-    "distributions:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "distributions:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "distributions:approve": [UserRole.ADMIN, UserRole.MANAGER],
-    
-    # Sub-distribution management
-    "sub_distributors:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF],
-    "sub_distributors:create": [UserRole.ADMIN, UserRole.MANAGER],
-    "sub_distributors:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "sub_distributors:delete": [UserRole.ADMIN],
-    
-    # Cluster management
-    "clusters:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR],
-    "clusters:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
-    "clusters:update": [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUB_DISTRIBUTOR],
-    "clusters:delete": [UserRole.ADMIN],
-    
-    # Operator management
-    "operators:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER],
-    "operators:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.CLUSTER],
-    "operators:update": [UserRole.ADMIN, UserRole.MANAGER, UserRole.CLUSTER],
-    "operators:delete": [UserRole.ADMIN],
-    
-    # Defect management
-    "defects:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "defects:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "defects:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "defects:delete": [UserRole.ADMIN],
-    "defects:resolve": [UserRole.ADMIN, UserRole.MANAGER],
-    
-    # Return management
-    "returns:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "returns:create": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    "returns:update": [UserRole.ADMIN, UserRole.MANAGER],
-    "returns:delete": [UserRole.ADMIN, UserRole.MANAGER],
-    "returns:approve": [UserRole.ADMIN, UserRole.MANAGER],
-    
-    # Approval management
-    "approvals:read": [UserRole.ADMIN, UserRole.MANAGER],
-    "approvals:approve": [UserRole.ADMIN, UserRole.MANAGER],
-    "approvals:reject": [UserRole.ADMIN, UserRole.MANAGER],
-    
-    # Reports
-    "reports:read": [UserRole.ADMIN, UserRole.MANAGER],
-    "reports:export": [UserRole.ADMIN, UserRole.MANAGER],
-    
-    # Dashboard
-    "dashboard:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
-    
-    # Notifications
-    "notifications:read": [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.SUB_DISTRIBUTOR, UserRole.CLUSTER, UserRole.OPERATOR],
+    "users:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER],
+    "users:create": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER],
+    "users:update": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER],
+    "users:delete": [SUPER_ADMIN],
+    "users:set_permissions": [SUPER_ADMIN],
+
+    "devices:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "devices:create": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+    "devices:update": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER],
+    "devices:delete": [SUPER_ADMIN],
+
+    "distributions:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "distributions:create": [SUPER_ADMIN, MANAGER, PDIC_STAFF, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "distributions:update": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER],
+    "distributions:delete": [SUPER_ADMIN],
+    "distributions:approve": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+
+    "defects:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "defects:create": [SUPER_ADMIN, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "defects:update": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER],
+    "defects:delete": [SUPER_ADMIN],
+    "defects:resolve": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+
+    "returns:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "returns:create": [SUPER_ADMIN, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "returns:update": [SUPER_ADMIN, MANAGER, SUB_DISTRIBUTION_MANAGER],
+    "returns:delete": [SUPER_ADMIN],
+    "returns:approve": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+
+    "approvals:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF],
+    "approvals:approve": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+    "approvals:reject": [SUPER_ADMIN, MANAGER, PDIC_STAFF],
+
+    "reports:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF],
+    "reports:export": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF],
+
+    "dashboard:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
+    "notifications:read": [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
 }
 
 
 def check_permission(user_role: str, permission: str, user_permissions: dict = None) -> bool:
-    """Check if a user role has a specific permission.
-    If user has custom permissions set by admin, those override defaults."""
-    # Admin always has all permissions
-    if user_role == "admin":
+    role = normalize_role(user_role)
+
+    if role == SUPER_ADMIN:
         return True
-    
-    # Check custom user-level permissions if set
+
     if user_permissions and permission in user_permissions:
-        return user_permissions[permission]
-    
-    # Fall back to role-based defaults
-    try:
-        role = UserRole(user_role)
-        allowed_roles = PERMISSIONS.get(permission, [])
-        return role in allowed_roles
-    except ValueError:
-        return False
+        return bool(user_permissions[permission])
+
+    return role in PERMISSIONS.get(permission, [])
 
 
 def get_user_permissions(user_role: str) -> List[str]:
-    """Get all permissions for a user role"""
-    permissions = []
-    try:
-        role = UserRole(user_role)
-        for perm, roles in PERMISSIONS.items():
-            if role in roles:
-                permissions.append(perm)
-    except ValueError:
-        pass
-    return permissions
+    role = normalize_role(user_role)
+    return [perm for perm, roles in PERMISSIONS.items() if role in roles]
 
 
 def is_higher_role(role1: str, role2: str) -> bool:
-    """Check if role1 is higher than role2 in hierarchy"""
-    try:
-        r1 = UserRole(role1)
-        r2 = UserRole(role2)
-        return ROLE_HIERARCHY.get(r1, 0) > ROLE_HIERARCHY.get(r2, 0)
-    except ValueError:
-        return False
+    return ROLE_HIERARCHY.get(normalize_role(role1), 0) > ROLE_HIERARCHY.get(normalize_role(role2), 0)
 
 
 def can_manage_user(manager_role: str, target_role: str) -> bool:
-    """Check if a manager can manage a target user based on role hierarchy"""
-    return is_higher_role(manager_role, target_role)
+    manager = normalize_role(manager_role)
+    target = normalize_role(target_role)
+
+    if manager in {MD_DIRECTOR, PDIC_STAFF}:
+        return False
+    if manager == MANAGER and target in {SUPER_ADMIN, MD_DIRECTOR}:
+        return False
+    if manager == SUB_DISTRIBUTION_MANAGER and target in {SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF}:
+        return False
+    return is_higher_role(manager, target)
 
 
-def get_viewable_roles(user_role: str) -> List[UserRole]:
-    """Get roles that a user can view based on their role"""
-    try:
-        role = UserRole(user_role)
-        user_level = ROLE_HIERARCHY.get(role, 0)
-        return [r for r, level in ROLE_HIERARCHY.items() if level <= user_level]
-    except ValueError:
-        return []
+def get_viewable_roles(user_role: str) -> List[str]:
+    role = normalize_role(user_role)
+    user_level = ROLE_HIERARCHY.get(role, 0)
+    return [r for r, level in ROLE_HIERARCHY.items() if level <= user_level]

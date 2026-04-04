@@ -96,9 +96,9 @@ const DefectReports = () => {
   }, []);
 
   const canReport = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
-  const canReview = ['admin', 'manager', 'staff'].includes(user?.role);
+  const canReview = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const canForwardToManagement = user?.role === 'sub_distributor';
-  const canReplace = ['admin', 'manager', 'staff'].includes(user?.role);
+  const canReplace = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const canConfirmReplacement = ['operator', 'cluster', 'sub_distributor'].includes(user?.role);
 
   useEffect(() => {
@@ -1293,3 +1293,4 @@ const DefectReports = () => {
 };
 
 export default DefectReports;
+

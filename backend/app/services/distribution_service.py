@@ -365,7 +365,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
                 raise ValueError(
                     f"Device {device['device_id']} is marked defective and cannot be transferred"
                 )
-            if from_role in ["admin", "manager", "staff"]:
+            if from_role in ["super_admin", "manager", "pdic_staff"]:
                 # Management distributes from PDIC stock — must be available
                 if device["status"] != DeviceStatus.AVAILABLE.value:
                     raise ValueError(f"Device {device['device_id']} is not available")
@@ -392,7 +392,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
             validated_devices.append(device)
         
         role_to_type = {
-            "admin": "noc", "manager": "noc", "staff": "staff",
+            "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         
@@ -410,7 +410,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
                 len(dist_data.device_ids), from_user_id, from_user["name"],
                 role_to_type.get(from_user["role"], "noc"),
                 str(to_user["id"]), to_user["name"],
-                role_to_type.get(to_user["role"], "staff"),
+                role_to_type.get(to_user["role"], "pdic_staff"),
                 DistributionStatus.PENDING_RECEIPT.value, now, now,
                 from_user_id, from_user["name"],
                 dist_data.notes, from_user_id, now, now
@@ -467,7 +467,7 @@ async def update_distribution_status(
     user_id = str(user.get("id", user.get("_id", "")))
     user_role = str(user.get("role", "")).lower()
 
-    if status in {DistributionStatus.APPROVED.value, DistributionStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+    if status in {DistributionStatus.APPROVED.value, DistributionStatus.REJECTED.value} and user_role in {"super_admin", "manager", "pdic_staff"}:
         allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "distribution")
         if not allowed:
             raise PermissionError(f"{user_role.capitalize()} role is not allowed to process distribution approvals")
@@ -547,7 +547,7 @@ async def confirm_receipt(
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     role_to_type = {
-        "admin": "noc", "manager": "noc", "staff": "staff",
+        "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
         "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
     }
 
@@ -581,7 +581,7 @@ async def confirm_receipt(
                 (notes, now, int(distribution_id))
             )
             cursor = await db.execute(
-                "SELECT id FROM users WHERE role IN ('admin', 'manager') AND status = 'active'"
+                "SELECT id FROM users WHERE role IN ('super_admin', 'manager') AND status = 'active'"
             )
             admin_rows = await cursor.fetchall()
             await db.commit()
@@ -613,7 +613,7 @@ async def confirm_receipt(
         device_status_for_recipient = (
             DeviceStatus.IN_USE.value if to_user_role == "operator" else DeviceStatus.DISTRIBUTED.value
         )
-        holder_type = role_to_type.get(to_user_role, "staff")
+        holder_type = role_to_type.get(to_user_role, "pdic_staff")
         device_ids = dist.get("device_ids", [])
         for dev_id in device_ids:
             try:
@@ -652,7 +652,7 @@ async def cancel_distribution(distribution_id: str, user: dict) -> bool:
     if not dist:
         return False
     user_id = str(user.get("id", user.get("_id", "")))
-    if dist["created_by"] != user_id and user.get("role") not in ["admin", "manager"]:
+    if dist["created_by"] != user_id and user.get("role") not in ["super_admin", "manager"]:
         raise ValueError("Only the creator can cancel this distribution")
     if dist["status"] == DistributionStatus.CANCELLED.value:
         raise ValueError("Distribution is already cancelled")
@@ -680,7 +680,7 @@ async def get_distribution_manifest_file(distribution_id: str, user: Dict[str, A
 
     role = user.get("role")
     user_id = str(user.get("id", user.get("_id", "")))
-    if role not in ["admin", "manager", "staff"]:
+    if role not in ["super_admin", "manager", "pdic_staff"]:
         if user_id not in [str(dist.get("from_user_id", "")), str(dist.get("to_user_id", ""))]:
             raise ValueError("You are not allowed to access this distribution manifest")
 
@@ -711,7 +711,7 @@ async def get_distribution_mac_nuid_export(
     role = str(user.get("role", "")).lower()
     user_id = str(user.get("id", user.get("_id", "")))
 
-    if role not in ["admin", "manager", "staff"]:
+    if role not in ["super_admin", "manager", "pdic_staff"]:
         if user_id not in [str(dist.get("from_user_id", "")), str(dist.get("to_user_id", ""))]:
             raise ValueError("You are not allowed to access this distribution export")
 
@@ -796,7 +796,7 @@ async def sync_approved_distributions(user: Dict[str, Any]) -> Dict[str, Any]:
                 await device_service.update_device_holder(
                     device_id=dev_id, holder_id=dist["to_user_id"],
                     holder_name=dist["to_user_name"],
-                    holder_type=dist.get("to_user_type", "staff"),
+                    holder_type=dist.get("to_user_type", "pdic_staff"),
                     location=dist["to_user_name"],
                     status=DeviceStatus.DISTRIBUTED.value,
                     performed_by=user_id, performed_by_name=user.get("name", "System"),
@@ -809,3 +809,4 @@ async def sync_approved_distributions(user: Dict[str, Any]) -> Dict[str, Any]:
                 errors.append(f"Device {dev_id}: {str(e)}")
     
     return {"total_distributions": len(distributions), "devices_synced": synced_count, "errors": errors}
+

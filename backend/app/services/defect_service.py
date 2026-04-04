@@ -164,7 +164,7 @@ async def _get_report_scope_user_ids(db, user: Dict[str, Any]) -> Optional[Set[s
     user_id = str(user.get("id") or user.get("_id"))
 
     # Management roles can see all replacement mappings.
-    if role in ["admin", "manager", "staff"]:
+    if role in ["super_admin", "manager", "pdic_staff"]:
         return None
 
     scoped_ids: Set[str] = {user_id}
@@ -302,7 +302,7 @@ async def get_defects(
         if visibility_user:
             role = visibility_user.get("role")
             user_id = str(visibility_user.get("id") or visibility_user.get("_id"))
-            if role in ["admin", "manager", "staff"]:
+            if role in ["super_admin", "manager", "pdic_staff"]:
                 conditions.append(
                     "(COALESCE(report_target, 'manager_admin') != 'sub_distributor' OR COALESCE(forwarded_to_management, 0) = 1)"
                 )
@@ -447,7 +447,7 @@ async def create_defect(
             recipient_ids = await _resolve_sub_distributor_targets_for_operator(db, reporter_id)
 
         if not recipient_ids:
-            cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+            cursor = await db.execute("SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff')")
             recipient_ids = [str(dict(row)["id"]) for row in await cursor.fetchall()]
 
         for recipient_id in recipient_ids:
@@ -543,7 +543,7 @@ async def forward_defect_to_management(
         )
         await db.commit()
 
-        cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        cursor = await db.execute("SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff')")
         management_users = await cursor.fetchall()
 
     for row in management_users:
@@ -624,7 +624,7 @@ async def update_defect_status(
 ) -> Optional[Dict[str, Any]]:
     """Update defect status. When approved, automatically creates a return request."""
     user_role = str(user.get("role", "")).lower()
-    if status in {DefectStatus.APPROVED.value, DefectStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+    if status in {DefectStatus.APPROVED.value, DefectStatus.REJECTED.value} and user_role in {"super_admin", "manager", "pdic_staff"}:
         allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "defect")
         if not allowed:
             raise PermissionError(f"{user_role.capitalize()} role is not allowed to process defect approvals")
@@ -692,7 +692,7 @@ async def update_defect_status(
         if status == DefectStatus.APPROVED.value:
             enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
             if not enabled_roles:
-                enabled_roles = ["admin"]
+                enabled_roles = ["super_admin"]
             role_placeholders = ", ".join(["?"] * len(enabled_roles))
             async with get_db() as db:
                 cursor = await db.execute(
@@ -1029,7 +1029,7 @@ async def confirm_replacement_receipt(
 
     # Notify management that receipt was confirmed
     async with get_db() as db:
-        cursor = await db.execute("SELECT id FROM users WHERE role IN ('admin', 'manager', 'staff')")
+        cursor = await db.execute("SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff')")
         recipients = await cursor.fetchall()
 
     for row in recipients:
@@ -1083,7 +1083,7 @@ async def enquire_replacement_status(
         if enquirer_id not in allowed_ids:
             raise ValueError("Only the operator involved in this defect can send an enquiry")
 
-        cursor = await db.execute("SELECT id FROM users WHERE role IN ('staff', 'manager', 'admin')")
+        cursor = await db.execute("SELECT id FROM users WHERE role IN ('pdic_staff', 'manager', 'super_admin')")
         management_users = await cursor.fetchall()
 
     for manager_row in management_users:
@@ -1342,3 +1342,4 @@ async def get_defect_stats() -> Dict[str, Any]:
                 "low": low
             }
         }
+

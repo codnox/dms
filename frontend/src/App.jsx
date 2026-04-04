@@ -25,6 +25,7 @@ import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import Unauthorized from './pages/Unauthorized';
+import ForcedCredentialUpdate from './pages/ForcedCredentialUpdate';
 
 import ChangeRequests from './pages/ChangeRequests';
 
@@ -35,10 +36,12 @@ import PendingReplacements from './pages/PendingReplacements';
 
 import BulkImportDevices from './pages/BulkImportDevices';
 import BulkImportDistribution from './pages/BulkImportDistribution';
+import { normalizeRole, isForcedCredentialUpdateRequired } from './utils/roles';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, isAuthenticated, loading } = useAuth();
+  const normalizedUserRole = normalizeRole(user?.role);
 
   if (loading) {
     return (
@@ -55,7 +58,11 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
+  if (isForcedCredentialUpdateRequired(user) && window.location.pathname !== '/force-update-credentials') {
+    return <Navigate to="/force-update-credentials" replace />;
+  }
+
+  if (allowedRoles.length > 0 && !allowedRoles.map(normalizeRole).includes(normalizedUserRole)) {
     return <Navigate to="/unauthorized" replace />;
   }
 
@@ -97,6 +104,14 @@ function AppRoutes() {
         } 
       />
       <Route path="/unauthorized" element={<Unauthorized />} />
+      <Route
+        path="/force-update-credentials"
+        element={
+          <ProtectedRoute>
+            <ForcedCredentialUpdate />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Protected Routes with Layout */}
       <Route
@@ -115,7 +130,7 @@ function AppRoutes() {
         <Route 
           path="devices/register" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff']}>
               <RegisterDevice />
             </ProtectedRoute>
           } 
@@ -124,7 +139,7 @@ function AppRoutes() {
         <Route
           path="devices/bulk-import"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff']}>
               <BulkImportDevices />
             </ProtectedRoute>
           }
@@ -135,7 +150,7 @@ function AppRoutes() {
         <Route 
           path="distributions/create" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <CreateDistribution />
             </ProtectedRoute>
           } 
@@ -143,7 +158,7 @@ function AppRoutes() {
         <Route
           path="distributions/bulk-upload"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <BulkImportDistribution />
             </ProtectedRoute>
           }
@@ -155,7 +170,7 @@ function AppRoutes() {
         <Route
           path="replacements"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <Replacements />
             </ProtectedRoute>
           }
@@ -163,7 +178,7 @@ function AppRoutes() {
         <Route
           path="replacements/pending"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <PendingReplacements />
             </ProtectedRoute>
           }
@@ -177,7 +192,7 @@ function AppRoutes() {
         <Route 
           path="users" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'sub_distributor', 'cluster']}>
               <Users />
             </ProtectedRoute>
           } 
@@ -185,7 +200,7 @@ function AppRoutes() {
         <Route
           path="users/hierarchy"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'sub_distributor', 'cluster']}>
               <UserHierarchy />
             </ProtectedRoute>
           }
@@ -195,7 +210,7 @@ function AppRoutes() {
         <Route 
           path="approvals" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor']}>
               <Approvals />
             </ProtectedRoute>
           } 
@@ -225,7 +240,7 @@ function AppRoutes() {
         <Route 
           path="reports" 
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff']}>
               <Reports />
             </ProtectedRoute>
           } 
@@ -234,7 +249,7 @@ function AppRoutes() {
         <Route
           path="backup"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager']}>
               <Backup />
             </ProtectedRoute>
           }
@@ -243,7 +258,7 @@ function AppRoutes() {
         <Route
           path="activities"
           element={
-            <ProtectedRoute allowedRoles={['admin']}>
+            <ProtectedRoute allowedRoles={['super_admin']}>
               <Activities />
             </ProtectedRoute>
           }
@@ -252,7 +267,7 @@ function AppRoutes() {
         <Route
           path="external-inventory"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <ExternalInventory />
             </ProtectedRoute>
           }
@@ -261,7 +276,7 @@ function AppRoutes() {
         <Route
           path="notifications"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <Notifications />
             </ProtectedRoute>
           }
@@ -271,7 +286,7 @@ function AppRoutes() {
         <Route
           path="change-requests"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager']}>
               <ChangeRequests />
             </ProtectedRoute>
           }
@@ -303,3 +318,4 @@ function App() {
 }
 
 export default App;
+

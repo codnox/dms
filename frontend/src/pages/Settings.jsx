@@ -306,7 +306,7 @@ const Settings = () => {
       </Card>
 
       {/* Admin-only System Settings */}
-      {hasRole(['admin']) && (
+      {hasRole(['super_admin']) && (
         <Card title="System Settings (Admin Only)" icon={SettingsIcon}>
           <div className="space-y-4">
             <div className="flex items-center justify-between py-3 border-b border-gray-100">
@@ -408,3 +408,4 @@ const Settings = () => {
 };
 
 export default Settings;
+

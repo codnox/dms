@@ -20,7 +20,7 @@ async def get_returns(
     try:
         # Filter by requester for non-admin/manager
         requested_by = None
-        if current_user["role"] not in ["admin", "manager", "staff"]:
+        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
             requested_by = current_user["id"]
 
         result = await return_service.get_returns(
@@ -186,3 +186,4 @@ async def cancel_return(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel return request '{return_id}': {str(e)}"
         )
+
