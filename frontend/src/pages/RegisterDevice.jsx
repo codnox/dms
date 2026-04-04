@@ -189,10 +189,6 @@ const RegisterDevice = () => {
       showToast('Model and Vendor are required.', 'error');
       return;
     }
-    if (requiresMacSerial && !formData.bandType) {
-      showToast('Band Type is required for non-SB devices.', 'error');
-      return;
-    }
     if (requiresMacSerial && (!formData.macAddress.trim() || !formData.serialNumber.trim())) {
       showToast('MAC Address and Serial Number are required for non-SB devices.', 'error');
       return;
@@ -339,14 +335,14 @@ const RegisterDevice = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {isSbType(formData.deviceType) ? 'Box Type' : 'Band Type'} <span className="text-red-500">*</span>
+                  {isSbType(formData.deviceType) ? 'Box Type' : 'Band Type'} {isSbType(formData.deviceType) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(Optional)</span>}
                 </label>
                 <select
                   name={isSbType(formData.deviceType) ? 'boxType' : 'bandType'}
                   value={isSbType(formData.deviceType) ? formData.boxType : formData.bandType}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
+                  required={isSbType(formData.deviceType)}
                 >
                   {isSbType(formData.deviceType) ? (
                     <>

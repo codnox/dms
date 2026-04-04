@@ -59,17 +59,17 @@ const Returns = () => {
       }
     };
 
-    if (['admin', 'manager', 'staff'].includes(user?.role)) {
+    if (['super_admin', 'manager', 'pdic_staff'].includes(user?.role)) {
       loadRoleRoutingConfig();
     }
   }, [user?.role]);
 
   const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
-  const reviewRole = ['admin', 'manager', 'staff'].includes(user?.role) ? user.role : null;
+  const reviewRole = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) ? user.role : null;
   const isReturnApprovalEnabledForRole =
     !reviewRole || Boolean(routingConfig?.return?.[reviewRole]);
-  const canApprove = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
-  const canConfirmReceipt = ['admin', 'manager', 'staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
+  const canApprove = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
+  const canConfirmReceipt = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
 
   const pendingReceiptReturns = returnRequests.filter((r) => ['pending', 'approved'].includes(r.status));
 
@@ -423,3 +423,4 @@ const Returns = () => {
 };
 
 export default Returns;
+

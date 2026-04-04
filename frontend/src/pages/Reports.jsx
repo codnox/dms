@@ -12,7 +12,7 @@ import {
 
 const LOCATION_LABELS = {
   noc: 'PDIC / NOC',
-  staff: 'Staff',
+  staff: 'pdic_staff',
   sub_distributor: 'Sub-Distributors',
   cluster: 'Clusters',
   operator: 'Operators',
@@ -208,7 +208,7 @@ const Reports = () => {
   ];
 
   const visibleReportTypes = reportTypes.filter(t => {
-    if (t.id === 'account_changes') return ['staff', 'manager'].includes(user?.role);
+    if (t.id === 'account_changes') return ['pdic_staff', 'manager'].includes(user?.role);
     return true;
   });
 
@@ -640,3 +640,4 @@ const Reports = () => {
 };
 
 export default Reports;
+

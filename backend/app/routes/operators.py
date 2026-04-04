@@ -112,7 +112,7 @@ async def create_operator(
 ):
     """Create a new operator"""
     # Only clusters, sub-distributors and above can create operators
-    if current_user["role"] not in ["admin", "manager", "staff", "sub_distributor", "cluster"]:
+    if current_user["role"] not in ["super_admin", "manager", "pdic_staff", "sub_distributor", "cluster"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to create operators"
@@ -201,7 +201,7 @@ async def delete_operator(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only delete your own operators"
             )
-    elif current_user["role"] not in ["admin", "manager", "staff"]:
+    elif current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to delete operators"
@@ -227,3 +227,4 @@ async def delete_operator(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete operator '{operator_id}': {str(e)}"
         )
+

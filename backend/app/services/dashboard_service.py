@@ -65,7 +65,7 @@ async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
 
     stats = {}
 
-    if role in ["admin", "manager", "staff"]:
+    if role in ["super_admin", "manager", "pdic_staff"]:
         device_stats = await device_service.get_device_stats()
         dist_stats = await distribution_service.get_distribution_stats()
         defect_stats = await defect_service.get_defect_stats()
@@ -188,7 +188,7 @@ async def get_recent_activities(user: Dict[str, Any], limit: int = 10) -> list:
     activities = []
 
     async with get_db() as db:
-        if role in ["admin", "manager", "staff"]:
+        if role in ["super_admin", "manager", "pdic_staff"]:
             cursor = await db.execute(
                 "SELECT * FROM device_history ORDER BY timestamp DESC LIMIT ?", (limit,)
             )
@@ -477,7 +477,7 @@ async def get_system_alerts(user: Dict[str, Any]) -> list:
     role = user.get("role")
     alerts = []
 
-    if role in ["admin", "manager", "staff"]:
+    if role in ["super_admin", "manager", "pdic_staff"]:
         async with get_db() as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM defects WHERE severity = 'critical' AND status != 'resolved'"
@@ -519,7 +519,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
     role = user.get("role")
     user_id = str(user.get("_id", user.get("id", "")))
 
-    if role not in ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"]:
+    if role not in ["super_admin", "manager", "pdic_staff", "sub_distributor", "cluster", "operator"]:
         return {"kpis": {}, "charts": {}, "alerts": [], "reliability": {"summary": {}, "trend": []}}
 
     # Role-scoped advanced payload for non-management dashboards.
@@ -796,7 +796,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
         "active_devices": active_devices,
         "inactive_devices": inactive_devices,
         "total_users": int(user_stats.get("total", 0)),
-        "total_staff": int(role_counts.get("staff", 0)),
+        "total_staff": int(role_counts.get("pdic_staff", 0)),
         "total_operators": int(role_counts.get("operator", 0)),
         "total_sub_distributors": int(role_counts.get("sub_distributor", 0)),
         "total_clusters": int(role_counts.get("cluster", 0)),
@@ -823,12 +823,12 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             "inactive": inactive_devices,
         },
         "user_roles": {
-            "staff": int(role_counts.get("staff", 0)),
+            "pdic_staff": int(role_counts.get("pdic_staff", 0)),
             "sub_distributor": int(role_counts.get("sub_distributor", 0)),
             "cluster": int(role_counts.get("cluster", 0)),
             "operator": int(role_counts.get("operator", 0)),
             "manager": int(role_counts.get("manager", 0)),
-            "admin": int(role_counts.get("admin", 0)),
+            "super_admin": int(role_counts.get("super_admin", 0)),
         },
         "defect_severity": {
             "critical": int(defect_stats.get("by_severity", {}).get("critical", 0)),
@@ -869,8 +869,8 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
     }
 
     # Staff should not get governance-only user-role visibility for admin/manager counts.
-    if role == "staff":
-        charts["user_roles"].pop("admin", None)
+    if role == "pdic_staff":
+        charts["user_roles"].pop("super_admin", None)
         charts["user_roles"].pop("manager", None)
 
     return {
@@ -888,3 +888,4 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
             "trend": defect_trend,
         },
     }
+

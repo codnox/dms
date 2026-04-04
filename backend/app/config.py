@@ -3,6 +3,7 @@ from pydantic import field_validator
 from typing import List
 import os
 import secrets
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,14 +40,40 @@ class Settings(BaseSettings):
     ENFORCE_HTTPS: bool = os.getenv("ENFORCE_HTTPS", "false").lower() == "true"
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3002"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,http://0.0.0.0:5173,"
+        "http://localhost:3002,http://127.0.0.1:3002,http://0.0.0.0:3002"
+    )
+    CORS_ORIGIN_REGEX: str = r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$"
     
     # API
     API_V1_PREFIX: str = "/api"
     
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        expanded: List[str] = []
+
+        for origin in origins:
+            expanded.append(origin)
+            parsed = urlsplit(origin)
+            if not parsed.scheme or not parsed.netloc:
+                continue
+
+            host = parsed.hostname
+            port = parsed.port
+            if host not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                continue
+
+            peer_hosts = {"localhost", "127.0.0.1", "0.0.0.0"} - {host}
+            for peer in peer_hosts:
+                if port is not None:
+                    expanded.append(f"{parsed.scheme}://{peer}:{port}")
+                else:
+                    expanded.append(f"{parsed.scheme}://{peer}")
+
+        # Keep insertion order while removing duplicates.
+        return list(dict.fromkeys(expanded))
 
     @field_validator("SECRET_KEY")
     @classmethod

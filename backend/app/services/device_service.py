@@ -164,8 +164,11 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
                                   performed_by_name=created_by_name, status_after=DeviceStatus.AVAILABLE.value,
                                   location="PDIC", notes="Device registered in system")
         await db.commit()
-        
-        return await get_device_by_id(new_id)
+
+        created_device = await get_device_by_id(new_id)
+        if not created_device:
+            raise ValueError("Failed to load newly created device")
+        return created_device
 
 
 async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[Dict[str, Any]]:
@@ -626,7 +629,7 @@ async def repair_device_holder_from_history(device_id: str) -> Optional[Dict[str
         recipient = row_to_dict(user_row)
 
         role_to_type = {
-            "admin": "noc", "manager": "noc", "staff": "staff",
+            "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         holder_type   = role_to_type.get(recipient["role"], "noc")
@@ -678,3 +681,4 @@ async def get_device_stats() -> Dict[str, int]:
                 cursor = await db.execute("SELECT COUNT(*) FROM devices WHERE status = ?", (key,))
             stats[key] = (await cursor.fetchone())[0]
         return stats
+

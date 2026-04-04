@@ -167,10 +167,10 @@ const normalizeNotificationLink = (link) => {
 
 const isAuthorizedForPath = (role, path) => {
   if (path.startsWith('/change-requests')) {
-    return ['admin', 'manager'].includes(role);
+    return ['super_admin', 'manager'].includes(role);
   }
   if (path.startsWith('/reports')) {
-    return ['admin', 'manager', 'staff'].includes(role);
+    return ['super_admin', 'manager', 'pdic_staff'].includes(role);
   }
   if (path.startsWith('/delivery-confirmations')) {
     return ['sub_distributor', 'cluster', 'operator'].includes(role);
@@ -179,7 +179,7 @@ const isAuthorizedForPath = (role, path) => {
     return role === 'operator';
   }
   if (path.startsWith('/approvals')) {
-    return ['admin', 'manager', 'staff', 'sub_distributor'].includes(role);
+    return ['super_admin', 'manager', 'pdic_staff', 'sub_distributor'].includes(role);
   }
   return true;
 };
@@ -428,3 +428,4 @@ const Notifications = () => {
 };
 
 export default Notifications;
+

@@ -28,7 +28,7 @@ const SubDistributionDetail = () => {
   const [subDistribution, setSubDistribution] = useState(null);
   const [operators, setOperators] = useState([]);
 
-  const canManage = ['admin', 'manager'].includes(user?.role);
+  const canManage = ['super_admin', 'manager'].includes(user?.role);
 
   useEffect(() => {
     fetchSubDistribution();
@@ -269,3 +269,4 @@ const SubDistributionDetail = () => {
 };
 
 export default SubDistributionDetail;
+

@@ -93,7 +93,7 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
             raise ValueError("Device not found")
         device = dict(device)
 
-        cursor = await db.execute("SELECT * FROM users WHERE role IN ('admin', 'manager') LIMIT 1")
+        cursor = await db.execute("SELECT * FROM users WHERE role IN ('super_admin', 'manager') LIMIT 1")
         return_to_user = await cursor.fetchone()
         if not return_to_user:
             raise ValueError("No admin/manager found to process return")
@@ -143,7 +143,7 @@ async def create_return(return_data: ReturnCreate, requester: Dict[str, Any]) ->
     # Notify only enabled approval roles for return requests.
     enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
     if not enabled_roles:
-        enabled_roles = ["admin"]
+        enabled_roles = ["super_admin"]
     role_placeholders = ", ".join(["?"] * len(enabled_roles))
     async with get_db() as db:
         cursor = await db.execute(
@@ -176,7 +176,7 @@ async def update_return_status(
 ) -> Optional[Dict[str, Any]]:
     """Update return request status"""
     user_role = str(user.get("role", "")).lower()
-    if status in {ReturnStatus.APPROVED.value, ReturnStatus.REJECTED.value} and user_role in {"admin", "manager", "staff"}:
+    if status in {ReturnStatus.APPROVED.value, ReturnStatus.REJECTED.value} and user_role in {"super_admin", "manager", "pdic_staff"}:
         allowed = await approval_service.is_role_allowed_for_approval_type(user_role, "return")
         if not allowed:
             raise PermissionError(f"{user_role.capitalize()} role is not allowed to process return approvals")
@@ -264,7 +264,7 @@ async def update_return_status(
     if status == ReturnStatus.APPROVED.value:
         enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
         if not enabled_roles:
-            enabled_roles = ["admin"]
+            enabled_roles = ["super_admin"]
         role_placeholders = ", ".join(["?"] * len(enabled_roles))
         acting_user_id = str(user.get("_id") or user.get("id"))
         async with get_db() as db:
@@ -378,7 +378,7 @@ async def auto_create_defect_return(
         if existing:
             return await get_return_by_id(str(dict(existing)["id"]))
 
-        cursor = await db.execute("SELECT * FROM users WHERE role IN ('admin', 'manager') LIMIT 1")
+        cursor = await db.execute("SELECT * FROM users WHERE role IN ('super_admin', 'manager') LIMIT 1")
         return_to_user = await cursor.fetchone()
         if not return_to_user:
             raise ValueError("No admin/manager found to process return")
@@ -428,7 +428,7 @@ async def auto_create_defect_return(
     # Notify only enabled approval roles for return requests.
     enabled_roles = await approval_service.get_routing_enabled_roles_for_approval_type("return")
     if not enabled_roles:
-        enabled_roles = ["admin"]
+        enabled_roles = ["super_admin"]
     role_placeholders = ", ".join(["?"] * len(enabled_roles))
     async with get_db() as db:
         cursor = await db.execute(
@@ -471,3 +471,4 @@ async def auto_create_defect_return(
     )
 
     return await get_return_by_id(str(return_row_id))
+

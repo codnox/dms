@@ -25,6 +25,7 @@ import {
   ArrowLeftRight,
   Database
 } from 'lucide-react';
+import { normalizeRole, ROLE_LABELS, ROLES } from '../../utils/roles';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useAuth();
@@ -43,13 +44,14 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // Define menu items based on user role
   const getMenuItems = () => {
+    const role = normalizeRole(user?.role);
     const commonItems = [
       { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
       { path: '/devices/track', icon: Search, label: 'Track Device' },
     ];
 
     const roleMenus = {
-      admin: [
+      [ROLES.SUPER_ADMIN]: [
         ...commonItems,
         {
           key: 'users',
@@ -92,7 +94,19 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
         { path: '/settings', icon: Settings, label: 'Settings' },
       ],
-      manager: [
+      [ROLES.MD_DIRECTOR]: [
+        ...commonItems,
+        { path: '/users', icon: Users, label: 'Users (Read Only)' },
+        { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
+        { path: '/devices', icon: Box, label: 'All Devices' },
+        { path: '/distributions', icon: Truck, label: 'All Distributions' },
+        { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/returns', icon: RotateCcw, label: 'Returns' },
+        { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/activities', icon: FileText, label: 'Activities' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
+      ],
+      [ROLES.MANAGER]: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
@@ -126,7 +140,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/change-requests', icon: UserCog, label: 'Change Requests' },
       ],
-      staff: [
+      [ROLES.PDIC_STAFF]: [
         ...commonItems,
         {
           key: 'devices',
@@ -155,7 +169,16 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/reports', icon: BarChart3, label: 'Reports' },
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
       ],
-      sub_distributor: [
+      [ROLES.SUB_DISTRIBUTION_MANAGER]: [
+        ...commonItems,
+        { path: '/users', icon: Users, label: 'Scoped Users' },
+        { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
+        { path: '/devices', icon: Box, label: 'Scoped Devices' },
+        { path: '/distributions', icon: Truck, label: 'Scoped Distributions' },
+        { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
+      ],
+      [ROLES.SUB_DISTRIBUTOR]: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
@@ -171,7 +194,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
       ],
-      cluster: [
+      [ROLES.CLUSTER]: [
         ...commonItems,
         { path: '/users', icon: Users, label: 'My Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
@@ -186,7 +209,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
       ],
-      operator: [
+      [ROLES.OPERATOR]: [
         ...commonItems,
         { path: '/devices', icon: Box, label: 'My Devices' },
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
@@ -203,7 +226,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ],
     };
 
-    return roleMenus[user?.role] || commonItems;
+    return roleMenus[role] || commonItems;
   };
 
   const menuItems = getMenuItems();
@@ -316,7 +339,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             <div className="glass-panel rounded-lg p-3">
               <div className="text-xs text-gray-500 uppercase tracking-wider">Logged in as</div>
               <div className="text-sm font-medium text-gray-800 capitalize mt-1">
-                {user?.role?.replace(/[-_]/g, ' ')}
+                {ROLE_LABELS[normalizeRole(user?.role)] || normalizeRole(user?.role)}
               </div>
             </div>
           </div>

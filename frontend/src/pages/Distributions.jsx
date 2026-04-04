@@ -103,7 +103,7 @@ const Distributions = () => {
     }
   };
 
-  const canCreate = ['admin', 'manager', 'staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
+  const canCreate = ['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
   const canRecipientSubDistributorDownload =
     user?.role === 'sub_distributor' &&
     selectedDist &&
@@ -568,3 +568,4 @@ const Distributions = () => {
 };
 
 export default Distributions;
+

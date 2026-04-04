@@ -1,4 +1,4 @@
-ï»¿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -51,7 +51,7 @@ const CreateDistribution = () => {
   const [formData, setFormData] = useState({ toDistributor: '', notes: '' });
 
   const role = user?.role;
-  const isManagement = ['admin', 'manager', 'staff'].includes(role);
+  const isManagement = ['super_admin', 'manager', 'pdic_staff'].includes(role);
   const allowedTypes = ALLOWED_RECIPIENT_TYPES[role] || [];
 
   useEffect(() => {
@@ -440,7 +440,7 @@ const CreateDistribution = () => {
         <Card title="Select Recipient">
           <div className="space-y-4">
 
-            {/* Recipient Type selector â€” only shown when there are multiple options */}
+            {/* Recipient Type selector — only shown when there are multiple options */}
             {allowedTypes.length > 1 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -467,7 +467,7 @@ const CreateDistribution = () => {
               </div>
             )}
 
-            {/* Sub-Distributor filter â€” management only, when distributing to cluster/operator */}
+            {/* Sub-Distributor filter — management only, when distributing to cluster/operator */}
             {isManagement && (currentType === 'cluster' || currentType === 'operator') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -487,13 +487,13 @@ const CreateDistribution = () => {
               </div>
             )}
 
-            {/* Cluster filter â€” for distributing to operators (management & sub_distributor) */}
+            {/* Cluster filter — for distributing to operators (management & sub_distributor) */}
             {currentType === 'operator' && (isManagement || role === 'sub_distributor') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Filter by Cluster
                   <span className="text-xs text-gray-400 ml-2">
-                    (optional â€” {visibleClusters.length} cluster{visibleClusters.length !== 1 ? 's' : ''})
+                    (optional — {visibleClusters.length} cluster{visibleClusters.length !== 1 ? 's' : ''})
                   </span>
                 </label>
                 <select
@@ -531,7 +531,7 @@ const CreateDistribution = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     required
                   >
-                    <option value="">Select {ROLE_LABELS[currentType]}â€¦</option>
+                    <option value="">Select {ROLE_LABELS[currentType]}…</option>
                     {finalRecipients.map(r => (
                       <option key={r._id || r.id} value={r._id || r.id}>{r.name}</option>
                     ))}
@@ -540,7 +540,7 @@ const CreateDistribution = () => {
               </div>
             )}
 
-            {/* Breadcrumb â€” shows the hierarchy path to the selected recipient */}
+            {/* Breadcrumb — shows the hierarchy path to the selected recipient */}
             {selectedRecipient && (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg text-sm flex-wrap">
                 {selectedRecipient.role === 'cluster' && (() => {
@@ -642,3 +642,4 @@ const CreateDistribution = () => {
 };
 
 export default CreateDistribution;
+

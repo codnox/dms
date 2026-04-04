@@ -25,7 +25,7 @@ const ViewBatches = () => {
     description: ''
   });
 
-  const canManage = ['admin', 'distributor'].includes(user?.role);
+  const canManage = ['super_admin', 'distributor'].includes(user?.role);
 
   useEffect(() => {
     loadBatches();
@@ -331,3 +331,4 @@ const ViewBatches = () => {
 };
 
 export default ViewBatches;
+

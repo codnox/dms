@@ -211,7 +211,7 @@ async def get_distributions(
     try:
         # Filter by user for non-admin/manager/staff
         user_id = None
-        if current_user["role"] not in ["admin", "manager", "staff"]:
+        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
             user_id = current_user["id"]
 
         result = await distribution_service.get_distributions(
@@ -513,3 +513,4 @@ async def cancel_distribution(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel distribution '{distribution_id}': {str(e)}"
         )
+

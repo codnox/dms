@@ -38,7 +38,7 @@ const Approvals = () => {
   const [selectedRoutingRole, setSelectedRoutingRole] = useState('manager');
 
   // Admin, manager, and staff can access approvals.
-  const canAccessApprovals = hasRole(['admin', 'manager', 'staff']);
+  const canAccessApprovals = hasRole(['super_admin', 'manager', 'pdic_staff']);
 
   if (!canAccessApprovals) {
     return (
@@ -53,7 +53,7 @@ const Approvals = () => {
     );
   }
 
-  const currentRoleKey = ['admin', 'manager', 'staff'].includes(user?.role) ? user.role : null;
+  const currentRoleKey = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) ? user.role : null;
 
   const isTypeEnabledForCurrentRole = (type) => {
     if (!currentRoleKey) return true;
@@ -332,7 +332,7 @@ const Approvals = () => {
           >
             <Eye className="w-4 h-4 text-gray-500" />
           </button>
-          {hasRole(['admin', 'manager', 'staff']) && isTypeEnabledForCurrentRole(row.type) && (
+          {hasRole(['super_admin', 'manager', 'pdic_staff']) && isTypeEnabledForCurrentRole(row.type) && (
             <>
               <button
                 onClick={() => { setSelectedItem(row); setShowApproveModal(true); }}
@@ -369,11 +369,11 @@ const Approvals = () => {
         <p className="text-gray-500 mt-1">Review and manage pending requests</p>
       </div>
 
-      {hasRole(['admin']) && (
+      {hasRole(['super_admin']) && (
         <Card title="Role Assignment" subtitle="Assign which request categories are handled by Manager and Admin">
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              {['manager', 'admin', 'staff'].map((role) => (
+              {['manager', 'super_admin', 'pdic_staff'].map((role) => (
                 <button
                   key={role}
                   onClick={() => setSelectedRoutingRole(role)}
@@ -560,7 +560,7 @@ const Approvals = () => {
               </div>
             )}
 
-            {hasRole(['admin', 'manager', 'staff']) && isTypeEnabledForCurrentRole(selectedItem.type) && (
+            {hasRole(['super_admin', 'manager', 'pdic_staff']) && isTypeEnabledForCurrentRole(selectedItem.type) && (
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button 
                   variant="danger" 
@@ -650,3 +650,4 @@ const Approvals = () => {
 };
 
 export default Approvals;
+

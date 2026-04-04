@@ -7,7 +7,7 @@ import { authAPI, usersAPI } from '../services/api';
 import { updateStoredUser } from '../utils/authStorage';
 import { 
   User, Mail, Phone, Building, MapPin, Lock, 
-  Save, Eye, EyeOff 
+  Save, Eye, EyeOff, Bell, Palette
 } from 'lucide-react';
 
 const Profile = () => {
@@ -24,6 +24,10 @@ const Profile = () => {
     phone: user?.phone || '',
     department: user?.department || '',
     location: user?.location || '',
+    theme: user?.theme || 'light',
+    compact_mode: Boolean(user?.compact_mode),
+    email_notifications: user?.email_notifications !== false,
+    push_notifications: user?.push_notifications !== false,
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -36,11 +40,16 @@ const Profile = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = {};
-      if (profileData.name)       payload.name = profileData.name;
-      if (profileData.phone)      payload.phone = profileData.phone;
-      if (profileData.department) payload.department = profileData.department;
-      if (profileData.location)   payload.location = profileData.location;
+      const payload = {
+        name: profileData.name,
+        phone: profileData.phone,
+        department: profileData.department,
+        location: profileData.location,
+        theme: profileData.theme,
+        compact_mode: profileData.compact_mode,
+        email_notifications: profileData.email_notifications,
+        push_notifications: profileData.push_notifications,
+      };
 
       const response = await usersAPI.updateUser(user.id, payload);
       // Update auth context with new user data
@@ -81,9 +90,9 @@ const Profile = () => {
 
   const getRoleBadgeColor = (role) => {
     switch (role) {
-      case 'admin': return 'bg-red-100 text-red-800';
+      case 'super_admin': return 'bg-red-100 text-red-800';
       case 'manager': return 'bg-purple-100 text-purple-800';
-      case 'staff': return 'bg-blue-100 text-blue-800';
+      case 'pdic_staff': return 'bg-blue-100 text-blue-800';
       case 'sub_distributor': return 'bg-indigo-100 text-indigo-800';
       case 'cluster': return 'bg-teal-100 text-teal-800';
       case 'operator': return 'bg-green-100 text-green-800';
@@ -208,6 +217,59 @@ const Profile = () => {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <Palette className="w-4 h-4 inline mr-2" />Theme
+                </label>
+                <select
+                  value={profileData.theme}
+                  onChange={(e) => setProfileData({ ...profileData, theme: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3 mt-7">
+                <input
+                  id="compact_mode"
+                  type="checkbox"
+                  checked={profileData.compact_mode}
+                  onChange={(e) => setProfileData({ ...profileData, compact_mode: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="compact_mode" className="text-sm font-medium text-gray-700">
+                  Enable compact layout mode
+                </label>
+              </div>
+
+              <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">
+                  <Bell className="w-4 h-4 inline mr-2" />Notification Preferences
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={profileData.email_notifications}
+                      onChange={(e) => setProfileData({ ...profileData, email_notifications: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    Email notifications
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={profileData.push_notifications}
+                      onChange={(e) => setProfileData({ ...profileData, push_notifications: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    Push notifications
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t">
@@ -284,3 +346,4 @@ const Profile = () => {
 };
 
 export default Profile;
+

@@ -105,7 +105,7 @@ async def get_defects(
             # Sub distributor visibility is handled by service-side hierarchy filters.
             # Do not set reported_by here, otherwise results are over-filtered to self-only.
             pass
-        elif role not in ["admin", "manager", "staff"]:
+        elif role not in ["super_admin", "manager", "pdic_staff"]:
             # Any other non-management role: show only their own reported defects
             reported_by = user_id_str
 
@@ -551,3 +551,4 @@ async def mark_replacement_waiting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to mark replacement waiting for defect '{defect_id}': {str(e)}"
         )
+

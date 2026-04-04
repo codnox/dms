@@ -16,6 +16,7 @@ from app.utils.security import (
     verify_token_type,
 )
 from app.config import settings
+from app.utils.roles import normalize_role
 
 
 MAX_FAILED_LOGIN_ATTEMPTS = 5
@@ -45,6 +46,7 @@ async def authenticate_user(email: str, password: str) -> Optional[dict]:
             return None
         
         user = row_to_dict(row)
+        user["role"] = normalize_role(user.get("role"))
 
         locked_until_raw = user.get("locked_until")
         if locked_until_raw:
@@ -94,10 +96,11 @@ async def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 async def create_user_token(user: dict) -> dict:
     """Create access and refresh tokens for user"""
+    role = normalize_role(user.get("role"))
     token_data = {
         "sub": str(user["id"]),
         "email": user["email"],
-        "role": user["role"],
+        "role": role,
         "name": user["name"]
     }
     
@@ -117,7 +120,9 @@ async def create_user_token(user: dict) -> dict:
             "id": str(user["id"]),
             "email": user["email"],
             "name": user["name"],
-            "role": user["role"]
+            "role": role,
+            "force_email_change": bool(user.get("force_email_change")),
+            "force_password_change": bool(user.get("force_password_change")),
         }
     }
 
@@ -150,6 +155,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[dict]:
             return None
 
         user = row_to_dict(row)
+        user["role"] = normalize_role(user.get("role"))
         if user.get("status") != "active":
             return None
 
@@ -245,6 +251,7 @@ async def get_current_user_from_token(token: str) -> Optional[dict]:
             return None
         
         user = row_to_dict(row)
+        user["role"] = normalize_role(user.get("role"))
 
         if token_data.role and user.get("role") != token_data.role:
             return None
@@ -262,6 +269,70 @@ async def get_current_user_from_token(token: str) -> Optional[dict]:
         user.pop("password_hash", None)
         
         return user
+
+
+async def complete_forced_credential_update(
+    user_id: str,
+    current_password: str,
+    new_email: str,
+    new_password: str,
+) -> Optional[dict]:
+    """Atomically update email and password for a force-change user."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE id = ?",
+            (int(user_id),),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        user = row_to_dict(row)
+        if not verify_password(current_password, user["password_hash"]):
+            return None
+
+        normalized_email = new_email.lower().strip()
+        if normalized_email == user.get("email", "").lower().strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email must be changed from the seeded default",
+            )
+
+        email_cursor = await db.execute(
+            "SELECT id FROM users WHERE email = ? AND id != ?",
+            (normalized_email, int(user_id)),
+        )
+        existing = await email_cursor.fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use",
+            )
+
+        if verify_password(new_password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from current password",
+            )
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        await db.execute(
+            """UPDATE users
+            SET email = ?, password_hash = ?, force_email_change = 0, force_password_change = 0, updated_at = ?
+            WHERE id = ?""",
+            (normalized_email, get_password_hash(new_password), now, int(user_id)),
+        )
+        await db.commit()
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),))
+        updated_row = await cursor.fetchone()
+        if not updated_row:
+            return None
+        updated_user = row_to_dict(updated_row)
+        updated_user["role"] = normalize_role(updated_user.get("role"))
+        updated_user.pop("password_hash", None)
+        return updated_user
 
 
 async def change_user_password(user_id: str, current_password: str, new_password: str) -> bool:

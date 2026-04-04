@@ -32,30 +32,50 @@ def generate_secure_password(length: int = 16) -> str:
 
 
 async def seed_initial_data():
-    """Seed initial admin account"""
+    """Seed initial super admin account"""
     async with get_db() as db:
-        # Check if admin already exists
-        cursor = await db.execute("SELECT id FROM users WHERE role = 'admin'")
+        # Check if a super admin role or reserved admin email already exists.
+        cursor = await db.execute(
+            "SELECT id, email, role FROM users WHERE role IN ('super_admin', 'super_admin') OR email = ? LIMIT 1",
+            ("admin@dms.com",),
+        )
         existing_admin = await cursor.fetchone()
         if existing_admin:
-            print("📦 Admin already exists, skipping seed")
+            # Normalize legacy elevated role values from previous deployments.
+            if (
+                existing_admin.get("email") == "admin@dms.com"
+                and existing_admin.get("role") != "super_admin"
+            ):
+                now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+                await db.execute(
+                    """UPDATE users
+                    SET role = ?, force_email_change = 1, force_password_change = 1, updated_at = ?
+                    WHERE id = ?""",
+                    ("super_admin", now, existing_admin.get("id")),
+                )
+                await db.commit()
+                print("Existing seeded account normalized to super_admin")
+            else:
+                print("Super admin seed skipped (account already exists)")
             return
         
-        print("🌱 Creating admin account...")
-        admin_password = os.getenv("ADMIN_INITIAL_PASSWORD") or generate_secure_password()
+        print("Creating default super admin account...")
+        admin_password = os.getenv("ADMIN_INITIAL_PASSWORD") or "Admin@123"
         
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         
-        await db.execute(
-            """INSERT INTO users (email, password_hash, name, role, phone, department, location,
+        insert_cursor = await db.execute(
+            """INSERT OR IGNORE INTO users (email, password_hash, name, role, force_email_change, force_password_change, phone, department, location,
                 status, permissions, theme, compact_mode, email_notifications,
                 push_notifications, is_verified, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 "admin@dms.com",
                 get_password_hash(admin_password),
-                "System Administrator",
-                "admin",
+                "System Super Admin",
+                "super_admin",
+                1,
+                1,
                 "+8801700000001",
                 "IT",
                 "Head Office",
@@ -70,25 +90,31 @@ async def seed_initial_data():
                 now
             )
         )
+
+        if insert_cursor.rowcount == 0:
+            print("Super admin seed skipped (record already present)")
+            await db.rollback()
+            return
+
         await db.commit()
         
-        print("✅ Admin account created")
+        print("Default super admin account created")
         if settings.ENVIRONMENT == "development":
-            print("\n📋 Admin Credentials:")
+            print("\nDefault Super Admin Credentials:")
             print("=" * 45)
             print(f"{'Role':<15} {'Email':<25} {'Password'}")
             print("-" * 45)
-            print(f"{'Admin':<15} {'admin@dms.com':<25} {admin_password}")
+            print(f"{'Super Admin':<15} {'admin@dms.com':<25} {admin_password}")
             print("=" * 45)
-            print("⚠️  Change this password immediately after first login!")
+            print("First login requires email and password update.")
         else:
-            print("ℹ️  Initial admin account created. Set ADMIN_INITIAL_PASSWORD to control first-run credentials.")
-        print("🎉 Admin account setup complete!")
-        print("ℹ️  Login as admin to create managers, staff, and other users.")
+            print("Initial super admin account created. Set ADMIN_INITIAL_PASSWORD to override default password.")
+        print("Super admin account setup complete")
+        print("Login as super admin to create users.")
 
 
 async def reset_and_seed():
-    """Drop all tables and re-seed admin account"""
+    """Drop all tables and re-seed default super admin account"""
     async with get_db() as db:
         print("🗑️  Clearing all database tables...")
         
@@ -118,7 +144,7 @@ async def reset_and_seed():
         await db.commit()
         print("✅ All tables cleared")
     
-    # Re-seed admin
+    # Re-seed super admin
     await seed_initial_data()
     
     return {
@@ -126,3 +152,4 @@ async def reset_and_seed():
         "users_created": 1,
         "tables_cleared": len(tables)
     }
+

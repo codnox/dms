@@ -29,7 +29,7 @@ const DistributionDetail = () => {
   const [distribution, setDistribution] = useState(null);
   const [subDistributions, setSubDistributions] = useState([]);
 
-  const canManage = ['admin', 'manager'].includes(user?.role);
+  const canManage = ['super_admin', 'manager'].includes(user?.role);
 
   useEffect(() => {
     fetchDistribution();
@@ -261,3 +261,4 @@ const DistributionDetail = () => {
 };
 
 export default DistributionDetail;
+

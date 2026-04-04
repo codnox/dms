@@ -162,7 +162,7 @@ async def get_user_activity_report() -> Dict[str, Any]:
     """Generate user activity report"""
     async with get_db() as db:
         by_role = {}
-        for role in ["admin", "manager", "staff", "sub_distributor", "cluster", "operator"]:
+        for role in ["super_admin", "manager", "pdic_staff", "sub_distributor", "cluster", "operator"]:
             by_role[role] = await _count(db, "users", "role = ?", (role,))
 
         thirty_days_ago = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)).isoformat()
@@ -562,3 +562,4 @@ async def get_returns_defects_backup_export(file_format: str = "xlsx") -> Dict[s
         defects_rows=defects_rows,
         file_format=file_format,
     )
+

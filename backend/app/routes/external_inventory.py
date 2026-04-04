@@ -318,7 +318,7 @@ async def get_external_inventory_purchase_orders(
 ):
     try:
         user_role = str(current_user.get("role") or "").lower()
-        is_management_user = user_role in {"admin", "manager", "staff"}
+        is_management_user = user_role in {"super_admin", "manager", "pdic_staff"}
         user_id = str(
             current_user.get("id")
             or current_user.get("_id")
@@ -455,3 +455,4 @@ async def get_external_inventory_movements(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve stock movements: {str(e)}",
         )
+

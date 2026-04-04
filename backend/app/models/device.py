@@ -32,7 +32,7 @@ class DeviceStatus(str, Enum):
 
 class HolderType(str, Enum):
     NOC = "noc"
-    STAFF = "staff"
+    STAFF = "pdic_staff"
     SUB_DISTRIBUTOR = "sub_distributor"
     CLUSTER = "cluster"
     OPERATOR = "operator"
@@ -75,8 +75,6 @@ class DeviceBase(BaseModel):
                 raise ValueError("Serial number is required for non-SB devices")
             if not mac:
                 raise ValueError("MAC address is required for non-SB devices")
-            if self.band_type is None:
-                raise ValueError("Band type is required for non-SB devices")
             self.box_type = None
 
         return self
@@ -187,3 +185,4 @@ class DeviceHistoryCreate(BaseModel):
     notes: Optional[str] = None
     performed_by: str
     performed_by_name: str
+
