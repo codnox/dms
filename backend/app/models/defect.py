@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -93,11 +93,30 @@ class DefectReport(BaseModel):
 class ReplacementDeviceCreate(BaseModel):
     device_type: DeviceType
     model: str = Field(..., min_length=1, max_length=100)
-    serial_number: str = Field(..., min_length=1, max_length=100)
-    mac_address: str = Field(..., min_length=1, max_length=50)
+    serial_number: Optional[str] = None
+    mac_address: Optional[str] = None
     manufacturer: str = Field(..., min_length=1, max_length=100)
-    band_type: DeviceBand = DeviceBand.SINGLE_BAND
+    band_type: Optional[DeviceBand] = None
+    box_type: Optional[str] = None
     nuid: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_sb_fields(self):
+        is_sb = self.device_type == DeviceType.SETUP_BOX
+        if is_sb:
+            box_type = str(self.box_type or "").strip().upper()
+            if box_type not in {"HD", "OTT"}:
+                raise ValueError("box_type is required for SB replacement and must be HD or OTT")
+            if not str(self.nuid or "").strip():
+                raise ValueError("NUID is required for SB replacement")
+            self.box_type = box_type
+        else:
+            if not str(self.serial_number or "").strip() or not str(self.mac_address or "").strip():
+                raise ValueError("Serial number and MAC address are required for non-SB replacement")
+            if self.band_type is None:
+                self.band_type = DeviceBand.SINGLE_BAND
+            self.box_type = None
+        return self
 
 
 class ReplaceDeviceRequest(BaseModel):

@@ -393,7 +393,7 @@ const TrackDevice = () => {
                     </div>
                     <div>
                       <DeviceIdentity device={searchResult} />
-                      <p className="text-gray-500 mt-1">{searchResult.manufacturer || 'Unknown Manufacturer'}</p>
+                      <p className="text-gray-500 mt-1">{searchResult.manufacturer || 'Unknown Vendor'}</p>
                       <div className="flex gap-2 mt-2">
                         <StatusBadge status={searchResult.status} />
                       </div>
@@ -403,15 +403,15 @@ const TrackDevice = () => {
                   <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-4 lg:border-l lg:border-gray-200 lg:pl-6">
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">MAC Address</p>
-                      <p className="font-mono font-medium text-gray-800">{searchResult.mac_address}</p>
+                      <p className="font-mono font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'sb' || String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'N/A' : searchResult.mac_address}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Serial Number</p>
-                      <p className="font-medium text-gray-800">{searchResult.serial_number}</p>
+                      <p className="font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'sb' || String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'N/A' : searchResult.serial_number}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Device Type</p>
-                      <p className="font-medium text-gray-800">{searchResult.device_type}</p>
+                      <p className="font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'SB' : searchResult.device_type}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Device ID</p>

@@ -17,7 +17,7 @@ const toDisplayLabel = (value, fallback = 'Unknown') => {
 
 const isSetupBoxType = (deviceType) => {
   const normalized = String(deviceType || '').toLowerCase();
-  return normalized.includes('setup') || normalized.includes('set top') || normalized.includes('stb');
+  return normalized.includes('setup') || normalized.includes('set top') || normalized.includes('stb') || normalized === 'sb';
 };
 
 const Distributions = () => {
@@ -413,7 +413,7 @@ const Distributions = () => {
                 <p className="text-2xl font-bold text-blue-900 mt-1">{distributionInsights.totalSent}</p>
               </div>
               <div className="rounded-lg border border-green-100 bg-green-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">Set-top box</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">SB</p>
                 <p className="text-2xl font-bold text-green-900 mt-1">{distributionInsights.setupBoxCount}</p>
               </div>
               <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
@@ -445,7 +445,7 @@ const Distributions = () => {
               <div className="rounded-lg border border-gray-200 p-4 bg-white">
                 <div className="flex items-center gap-2 mb-3">
                   <Factory className="w-4 h-4 text-rose-600" />
-                  <h4 className="text-sm font-semibold text-gray-800">By Manufacturer</h4>
+                  <h4 className="text-sm font-semibold text-gray-800">By Vendor</h4>
                 </div>
                 {distributionInsights.manufacturers.length > 0 ? (
                   <div className="space-y-2">
@@ -457,7 +457,7 @@ const Distributions = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">No manufacturer data available.</p>
+                  <p className="text-sm text-gray-500">No vendor data available.</p>
                 )}
               </div>
             </div>
@@ -484,7 +484,7 @@ const Distributions = () => {
                               Type: {toDisplayLabel(device.device_type)}
                             </span>
                             <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
-                              Manufacturer: {toDisplayLabel(device.manufacturer)}
+                              Vendor: {toDisplayLabel(device.manufacturer)}
                             </span>
                           </div>
                         </div>

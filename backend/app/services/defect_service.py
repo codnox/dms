@@ -777,7 +777,12 @@ async def replace_defect_device(
     pre_created_device: Optional[Dict[str, Any]] = None
 
     if register_device:
-        register_device.setdefault("band_type", "single_band")
+        raw_type = str(register_device.get("device_type") or "").strip().lower()
+        is_sb = raw_type in {"sb", "set-top box", "set top box", "stb"}
+        if not is_sb:
+            register_device.setdefault("band_type", "single_band")
+        else:
+            register_device["band_type"] = None
         create_payload = DeviceCreate(**register_device)
         pre_created_device = await device_service.create_device(
             device_data=create_payload,

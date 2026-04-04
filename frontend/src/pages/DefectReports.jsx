@@ -21,7 +21,7 @@ const DEVICE_TYPE_OPTIONS = [
   'Switch',
   'Modem',
   'Access Point',
-  'Set-top box',
+  'SB',
   'Other',
 ];
 
@@ -30,13 +30,19 @@ const BAND_TYPE_OPTIONS = [
   { value: 'dual_band', label: 'Dual Band' },
 ];
 
+const BOX_TYPE_OPTIONS = ['HD', 'OTT'];
+
 const normalizeDeviceType = (deviceType) => {
   if (!deviceType) return 'ONT';
+  const normalized = String(deviceType).trim().toLowerCase();
+  if (normalized === 'set-top box' || normalized === 'set top box' || normalized === 'sb' || normalized === 'stb') {
+    return 'SB';
+  }
   const match = DEVICE_TYPE_OPTIONS.find((option) => option.toLowerCase() === String(deviceType).toLowerCase());
   return match || 'Other';
 };
 
-const isSetupBoxType = (deviceType) => String(deviceType || '').toLowerCase() === 'Set-top box';
+const isSetupBoxType = (deviceType) => normalizeDeviceType(deviceType) === 'SB';
 
 const DefectReports = () => {
   const { user } = useAuth();
@@ -64,6 +70,7 @@ const DefectReports = () => {
     serial_number: '',
     mac_address: '',
     band_type: 'single_band',
+    box_type: 'HD',
     nuid: ''
   });
   const [activeEnquiryDefectId, setActiveEnquiryDefectId] = useState(null);
@@ -218,6 +225,7 @@ const DefectReports = () => {
       serial_number: '',
       mac_address: '',
       band_type: 'single_band',
+      box_type: 'HD',
       nuid: ''
     });
     setShowReplaceModal(true);
@@ -472,7 +480,10 @@ const DefectReports = () => {
     }
 
     if (replacementMode === 'new') {
-      const requiredFields = ['device_type', 'model', 'manufacturer', 'serial_number', 'mac_address'];
+      const requiredFields = ['device_type', 'model', 'manufacturer'];
+      if (!isSetupBoxType(newDeviceData.device_type)) {
+        requiredFields.push('serial_number', 'mac_address');
+      }
       const missingField = requiredFields.find((field) => !newDeviceData[field]);
       if (missingField) {
         showToast('Fill all required fields for new device registration', 'error');
@@ -480,7 +491,11 @@ const DefectReports = () => {
       }
 
       if (isSetupBoxType(newDeviceData.device_type) && !String(newDeviceData.nuid || '').trim()) {
-        showToast('NUID is required for Set-top box replacement devices', 'error');
+        showToast('NUID is required for SB replacement devices', 'error');
+        return;
+      }
+      if (isSetupBoxType(newDeviceData.device_type) && !BOX_TYPE_OPTIONS.includes(String(newDeviceData.box_type || '').toUpperCase())) {
+        showToast('Box Type must be HD or OTT for SB replacement devices', 'error');
         return;
       }
     }
@@ -489,8 +504,10 @@ const DefectReports = () => {
       ...newDeviceData,
       model: String(newDeviceData.model || '').trim(),
       manufacturer: String(newDeviceData.manufacturer || '').trim(),
-      serial_number: String(newDeviceData.serial_number || '').trim(),
-      mac_address: String(newDeviceData.mac_address || '').trim(),
+      serial_number: isSetupBoxType(newDeviceData.device_type) ? '' : String(newDeviceData.serial_number || '').trim(),
+      mac_address: isSetupBoxType(newDeviceData.device_type) ? '' : String(newDeviceData.mac_address || '').trim(),
+      band_type: isSetupBoxType(newDeviceData.device_type) ? null : newDeviceData.band_type,
+      box_type: isSetupBoxType(newDeviceData.device_type) ? String(newDeviceData.box_type || '').toUpperCase() : null,
       nuid: String(newDeviceData.nuid || '').trim() || undefined,
     };
 
@@ -1100,7 +1117,7 @@ const DefectReports = () => {
                           <StatusBadge status={device.status} size="sm" />
                         </div>
                         <DeviceIdentity device={device} className="mt-1" />
-                        <p className="text-gray-600 mt-0.5">{device.manufacturer || 'Unknown Manufacturer'}</p>
+                        <p className="text-gray-600 mt-0.5">{device.manufacturer || 'Unknown Vendor'}</p>
                         {device.nuid && <p className="text-gray-500 text-xs">NUID: {device.nuid}</p>}
                       </div>
                     </label>
@@ -1114,9 +1131,16 @@ const DefectReports = () => {
                   <p className="text-xs text-blue-600 uppercase tracking-wider font-semibold mb-2">🟢 Selected Replacement Details</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                     <div><span className="text-gray-500">Device ID:</span> <span className="font-semibold text-blue-900">{selectedReplacementDevice.device_id}</span></div>
-                    <div><span className="text-gray-500">Manufacturer:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.manufacturer || 'N/A'}</span></div>
+                    <div><span className="text-gray-500">Vendor:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.manufacturer || 'N/A'}</span></div>
                     <div className="col-span-2"><DeviceIdentity device={selectedReplacementDevice} /></div>
-                    <div><span className="text-gray-500">Band:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.band_type || 'N/A'}</span></div>
+                    <div>
+                      <span className="text-gray-500">{isSetupBoxType(selectedReplacementDevice.device_type) ? 'Box Type:' : 'Band:'}</span>{' '}
+                      <span className="font-medium text-blue-900">
+                        {isSetupBoxType(selectedReplacementDevice.device_type)
+                          ? (selectedReplacementDevice.box_type || selectedReplacementDevice.metadata?.box_type || 'N/A')
+                          : (selectedReplacementDevice.band_type || 'N/A')}
+                      </span>
+                    </div>
                     <div><span className="text-gray-500">NUID:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.nuid || 'N/A'}</span></div>
                     <div><span className="text-gray-500">Status:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.status}</span></div>
                     <div><span className="text-gray-500">Current Holder:</span> <span className="font-medium text-blue-900">{selectedReplacementDevice.current_holder_name || 'PDIC (Stock)'}</span></div>
@@ -1148,6 +1172,7 @@ const DefectReports = () => {
                   </select>
                 </div>
 
+                {!isSetupBoxType(newDeviceData.device_type) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Band Type <span className="text-red-500">*</span></label>
                   <select
@@ -1160,6 +1185,22 @@ const DefectReports = () => {
                     ))}
                   </select>
                 </div>
+                )}
+
+                {isSetupBoxType(newDeviceData.device_type) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Box Type <span className="text-red-500">*</span></label>
+                  <select
+                    value={newDeviceData.box_type}
+                    onChange={(e) => setNewDeviceData(prev => ({ ...prev, box_type: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {BOX_TYPE_OPTIONS.map((boxType) => (
+                      <option key={boxType} value={boxType}>{boxType}</option>
+                    ))}
+                  </select>
+                </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Model <span className="text-red-500">*</span></label>
@@ -1173,7 +1214,7 @@ const DefectReports = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={newDeviceData.manufacturer}
@@ -1183,6 +1224,7 @@ const DefectReports = () => {
                   />
                 </div>
 
+                {!isSetupBoxType(newDeviceData.device_type) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number <span className="text-red-500">*</span></label>
                   <input
@@ -1193,7 +1235,9 @@ const DefectReports = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                )}
 
+                {!isSetupBoxType(newDeviceData.device_type) && (
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">MAC Address <span className="text-red-500">*</span></label>
                   <input
@@ -1204,6 +1248,7 @@ const DefectReports = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                )}
 
                 {isSetupBoxType(newDeviceData.device_type) && (
                   <div className="md:col-span-2">

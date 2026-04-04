@@ -373,9 +373,12 @@ async def bulk_upload_devices(
     current_user: dict = Depends(require_management)
 ):
     """Bulk upload devices from an Excel file.
-    
-    Required columns: device_type, model, serial_number, mac_address, manufacturer, band_type
-    Optional columns: nuid, purchase_date, warranty_expiry
+
+    Supported schemas (case-insensitive headers):
+    - SB sheet: vendor, device_type, model, nuid, box_type
+    - Regular sheet: vendor, device_type, model, mac_address, serial_number, band_type
+
+    Alias support: manufacturer -> vendor, SB/set-top box/set top box/stb -> Set-top box
     """
     filename_lower = file.filename.lower()
     if not filename_lower.endswith(('.xlsx', '.xls', '.csv')):
@@ -412,24 +415,49 @@ async def bulk_upload_devices(
                     padded = row + [''] * (len(headers) - len(row))
                     yield tuple(padded[:len(headers)])
         else:
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
-            ws = wb.active
-            headers = [str(cell.value).strip().lower() if cell.value else "" for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+            if filename_lower.endswith('.xls'):
+                import xlrd
+                wb = xlrd.open_workbook(file_contents=contents)
+                ws = wb.sheet_by_index(0)
+                headers = [str(ws.cell_value(0, col)).strip().lower() for col in range(ws.ncols)]
 
-            def iter_data_rows():
-                for row in ws.iter_rows(min_row=2, values_only=True):
-                    yield row
+                def iter_data_rows():
+                    for row_idx in range(1, ws.nrows):
+                        yield tuple(ws.cell_value(row_idx, col) for col in range(ws.ncols))
+            else:
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+                ws = wb.active
+                headers = [str(cell.value).strip().lower() if cell.value else "" for cell in next(ws.iter_rows(min_row=1, max_row=1))]
 
-        required = {"device_type", "model", "serial_number", "mac_address", "manufacturer", "band_type"}
-        missing = required - set(headers)
-        if missing:
+                def iter_data_rows():
+                    for row in ws.iter_rows(min_row=2, values_only=True):
+                        yield row
+
+        normalized_headers = ["vendor" if h == "manufacturer" else h for h in headers]
+        header_set = set(normalized_headers)
+
+        sb_required = {"vendor", "device_type", "model", "nuid", "box_type"}
+        regular_required = {"vendor", "device_type", "model", "mac_address", "serial_number", "band_type"}
+
+        has_sb_schema = sb_required.issubset(header_set)
+        has_regular_schema = regular_required.issubset(header_set)
+        if not has_sb_schema and not has_regular_schema:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Missing required columns: {', '.join(missing)}"
+                detail=(
+                    "Missing required columns. Expected either SB schema "
+                    "(vendor, device_type, model, nuid, box_type) or regular schema "
+                    "(vendor, device_type, model, mac_address, serial_number, band_type)."
+                )
             )
 
         valid_types = {t.value.lower(): t.value for t in DeviceType}
+        valid_types.update({
+            "sb": DeviceType.SETUP_BOX.value,
+            "set top box": DeviceType.SETUP_BOX.value,
+            "stb": DeviceType.SETUP_BOX.value,
+        })
         valid_bands = {
             "single_band": "single_band",
             "single band": "single_band",
@@ -441,39 +469,76 @@ async def bulk_upload_devices(
         created, skipped, errors = [], [], []
 
         for row_idx, row in enumerate(iter_data_rows(), start=2):
-            row_data = {headers[i]: (str(row[i]).strip() if row[i] is not None else "") for i in range(len(headers))}
+            row_data = {
+                normalized_headers[i]: (str(row[i]).strip() if i < len(row) and row[i] is not None else "")
+                for i in range(len(normalized_headers))
+            }
 
             # Skip completely empty rows
             if not any(row_data.values()):
-                continue
-
-            serial = row_data.get("serial_number", "")
-            if not serial:
-                errors.append({"row": row_idx, "error": "Missing serial_number"})
                 continue
 
             # Normalise device_type
             raw_type = row_data.get("device_type", "").lower()
             device_type_val = valid_types.get(raw_type)
             if not device_type_val:
-                errors.append({"row": row_idx, "serial": serial, "error": f"Invalid device_type '{row_data.get('device_type')}'"})
+                errors.append({"row": row_idx, "error": f"Invalid device_type '{row_data.get('device_type')}'"})
                 continue
 
-            raw_band = row_data.get("band_type", "").lower()
-            band_type_val = valid_bands.get(raw_band)
-            if not band_type_val:
-                errors.append({"row": row_idx, "serial": serial, "error": f"Invalid band_type '{row_data.get('band_type')}'"})
+            is_sb_row = device_type_val == DeviceType.SETUP_BOX.value
+            vendor = row_data.get("vendor", "")
+            model = row_data.get("model", "")
+            nuid = row_data.get("nuid", "")
+            serial = row_data.get("serial_number", "")
+            mac = row_data.get("mac_address", "")
+
+            if not vendor:
+                errors.append({"row": row_idx, "serial": serial or nuid or "", "error": "Missing vendor"})
                 continue
+            if not model:
+                errors.append({"row": row_idx, "serial": serial or nuid or "", "error": "Missing model"})
+                continue
+
+            if is_sb_row:
+                if not nuid:
+                    errors.append({"row": row_idx, "error": "Missing nuid for SB row"})
+                    continue
+                box_type = str(row_data.get("box_type", "")).strip().upper()
+                if not box_type:
+                    errors.append({"row": row_idx, "error": "Missing box_type for SB row"})
+                    continue
+                if box_type not in {"HD", "OTT"}:
+                    errors.append({"row": row_idx, "error": "Invalid box_type. Use HD or OTT"})
+                    continue
+                band_type_val = None
+            else:
+                if not serial:
+                    errors.append({"row": row_idx, "error": "Missing serial_number"})
+                    continue
+                if not mac:
+                    errors.append({"row": row_idx, "serial": serial, "error": "Missing mac_address"})
+                    continue
+                raw_band = row_data.get("band_type", "").lower()
+                band_type_val = valid_bands.get(raw_band)
+                if not band_type_val:
+                    errors.append({"row": row_idx, "serial": serial, "error": f"Invalid band_type '{row_data.get('band_type')}'"})
+                    continue
 
             try:
                 device_data = DeviceCreate(
                     device_type=device_type_val,
-                    model=row_data.get("model", ""),
-                    serial_number=serial,
-                    mac_address=row_data.get("mac_address", ""),
-                    manufacturer=row_data.get("manufacturer", ""),
+                    model=model,
+                    serial_number=None if is_sb_row else serial,
+                    mac_address=None if is_sb_row else mac,
+                    manufacturer=vendor,
                     band_type=band_type_val,
-                    nuid=row_data.get("nuid", "") or None,
+                    box_type=box_type if is_sb_row else None,
+                    nuid=nuid or None,
+                    metadata=(
+                        {"box_type": box_type}
+                        if is_sb_row and box_type
+                        else None
+                    ),
                 )
                 device = await device_service.create_device(
                     device_data=device_data,
@@ -482,9 +547,9 @@ async def bulk_upload_devices(
                 )
                 created.append(device["device_id"])
             except ValueError as e:
-                skipped.append({"row": row_idx, "serial": serial, "reason": str(e)})
+                skipped.append({"row": row_idx, "serial": serial or nuid, "reason": str(e)})
             except Exception as e:
-                errors.append({"row": row_idx, "serial": serial, "error": str(e)})
+                errors.append({"row": row_idx, "serial": serial or nuid, "error": str(e)})
 
         return {
             "success": True,

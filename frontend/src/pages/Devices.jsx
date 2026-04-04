@@ -10,6 +10,32 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { Plus, Eye, Edit, Trash2, Box, Upload, Loader2, Users, Send, ArrowDownToLine, Link2, AlertTriangle, CheckCircle2, Save, Filter, Building2, Network, Factory } from 'lucide-react';
 
+const normalizeDeviceType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'set-top box' || normalized === 'set top box' || normalized === 'sb' || normalized === 'stb') {
+    return 'SB';
+  }
+  return value;
+};
+
+const isSbDeviceType = (value) => normalizeDeviceType(value) === 'SB';
+
+const extractBoxType = (device) => {
+  if (device?.box_type) return String(device.box_type).toUpperCase();
+  if (device?.metadata && typeof device.metadata === 'object' && device.metadata.box_type) {
+    return String(device.metadata.box_type).toUpperCase();
+  }
+  if (typeof device?.metadata === 'string') {
+    try {
+      const parsed = JSON.parse(device.metadata);
+      if (parsed?.box_type) return String(parsed.box_type).toUpperCase();
+    } catch {
+      // Ignore invalid JSON metadata
+    }
+  }
+  return null;
+};
+
 const Devices = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
@@ -32,7 +58,7 @@ const Devices = () => {
     cluster_id: '',
   });
 
-  const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'Set-top box', 'Other'];
+  const deviceTypeOptions = ['ONT', 'ONU', 'Router', 'Switch', 'Modem', 'Access Point', 'SB', 'Other'];
   const bandTypeOptions = [
     { value: 'single_band', label: 'Single Band' },
     { value: 'dual_band', label: 'Dual Band' },
@@ -46,6 +72,7 @@ const Devices = () => {
     mac_address: '',
     device_type: 'ONT',
     band_type: 'single_band',
+    box_type: 'HD',
     nuid: '',
     current_location: '',
   });
@@ -366,8 +393,9 @@ const Devices = () => {
       manufacturer: device.manufacturer || '',
       serial_number: device.serial_number || '',
       mac_address: device.mac_address || '',
-      device_type: device.device_type || 'ONT',
+      device_type: normalizeDeviceType(device.device_type) || 'ONT',
       band_type: device.band_type || 'single_band',
+      box_type: extractBoxType(device) || 'HD',
       nuid: device.nuid || '',
       current_location: device.current_location || '',
     });
@@ -385,25 +413,41 @@ const Devices = () => {
       current_location: editForm.current_location?.trim() || '',
     };
 
-    if (!trimmedForm.model || !trimmedForm.manufacturer || !trimmedForm.serial_number || !trimmedForm.mac_address || !trimmedForm.band_type) {
-      showToast('Model, Manufacturer, Serial Number, MAC Address, and Band Type are required.', 'error');
+    if (!trimmedForm.model || !trimmedForm.manufacturer) {
+      showToast('Model and Vendor are required.', 'error');
       return;
     }
 
-    if (trimmedForm.device_type === 'Set-top box' && !trimmedForm.nuid) {
-      showToast('NUID is required for Set-top box devices.', 'error');
+    if (!isSbDeviceType(trimmedForm.device_type) && !trimmedForm.band_type) {
+      showToast('Band Type is required for non-SB devices.', 'error');
+      return;
+    }
+
+    if (!isSbDeviceType(trimmedForm.device_type) && (!trimmedForm.serial_number || !trimmedForm.mac_address)) {
+      showToast('Serial Number and MAC Address are required for non-SB devices.', 'error');
+      return;
+    }
+
+    if (isSbDeviceType(trimmedForm.device_type) && !trimmedForm.nuid) {
+      showToast('NUID is required for SB devices.', 'error');
+      return;
+    }
+    if (isSbDeviceType(trimmedForm.device_type) && !['HD', 'OTT'].includes(String(trimmedForm.box_type || '').toUpperCase())) {
+      showToast('Box Type must be HD or OTT for SB devices.', 'error');
       return;
     }
 
     const updatePayload = {
       model: trimmedForm.model,
       manufacturer: trimmedForm.manufacturer,
-      serial_number: trimmedForm.serial_number,
-      mac_address: trimmedForm.mac_address,
+      serial_number: isSbDeviceType(trimmedForm.device_type) ? null : trimmedForm.serial_number,
+      mac_address: isSbDeviceType(trimmedForm.device_type) ? null : trimmedForm.mac_address,
       device_type: trimmedForm.device_type,
-      band_type: trimmedForm.band_type,
-      nuid: trimmedForm.device_type === 'Set-top box' ? trimmedForm.nuid : null,
+      band_type: isSbDeviceType(trimmedForm.device_type) ? null : trimmedForm.band_type,
+      box_type: isSbDeviceType(trimmedForm.device_type) ? String(trimmedForm.box_type || '').toUpperCase() : null,
+      nuid: isSbDeviceType(trimmedForm.device_type) ? trimmedForm.nuid : null,
       current_location: trimmedForm.current_location,
+      metadata: isSbDeviceType(trimmedForm.device_type) ? { box_type: String(trimmedForm.box_type || '').toUpperCase() } : undefined,
     };
 
     const hasChanges = Object.entries(updatePayload).some(([key, value]) => {
@@ -437,14 +481,14 @@ const Devices = () => {
   };
 
   const columns = [
-    { key: 'mac_address', label: 'MAC Address' },
-    { key: 'serial_number', label: 'Serial Number' },
+    { key: 'mac_address', label: 'MAC Address', render: (value, row) => (isSbDeviceType(row.device_type) ? 'N/A' : value) },
+    { key: 'serial_number', label: 'Serial Number', render: (value, row) => (isSbDeviceType(row.device_type) ? 'N/A' : value) },
     { key: 'model', label: 'Model' },
-    { key: 'manufacturer', label: 'Manufacturer' },
+    { key: 'manufacturer', label: 'Vendor' },
     {
       key: 'device_type',
       label: 'Type',
-      render: (value) => <StatusBadge status={value} size="sm" />
+      render: (value) => <StatusBadge status={normalizeDeviceType(value)} size="sm" />
     },
     {
       key: 'status',
@@ -755,10 +799,10 @@ const Devices = () => {
             <Card className="!p-4 xl:col-span-2">
               <div className="flex items-center gap-2 mb-4">
                 <Factory className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-base font-semibold text-gray-800">Manufacturer Insights</h3>
+                <h3 className="text-base font-semibold text-gray-800">Vendor Insights</h3>
               </div>
               {manufacturerSummary.length === 0 ? (
-                <p className="text-sm text-gray-500">No manufacturer data found.</p>
+                <p className="text-sm text-gray-500">No vendor data found.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[30rem] overflow-y-auto pr-1">
                   {manufacturerSummary.map((item) => (
@@ -817,7 +861,7 @@ const Devices = () => {
                   onChange={(e) => setTableFilters((prev) => ({ ...prev, manufacturer: e.target.value }))}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 >
-                  <option value="">All Manufacturers</option>
+                  <option value="">All Vendors</option>
                   {filterOptions.manufacturers.map((manufacturer) => (
                     <option key={manufacturer} value={manufacturer}>{manufacturer}</option>
                   ))}
@@ -987,19 +1031,25 @@ const Devices = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">MAC Address</label>
-                <p className="font-medium text-gray-800 font-mono">{selectedDevice.mac_address}</p>
+                <p className="font-medium text-gray-800 font-mono">{isSbDeviceType(selectedDevice.device_type) ? 'N/A' : selectedDevice.mac_address}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Serial Number</label>
-                <p className="font-medium text-gray-800">{selectedDevice.serial_number}</p>
+                <p className="font-medium text-gray-800">{isSbDeviceType(selectedDevice.device_type) ? 'N/A' : selectedDevice.serial_number}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Device Type</label>
-                <p className="font-medium text-gray-800">{selectedDevice.device_type}</p>
+                <p className="font-medium text-gray-800">{normalizeDeviceType(selectedDevice.device_type)}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider">Band Type</label>
-                <p className="font-medium text-gray-800">{selectedDevice.band_type ? selectedDevice.band_type.replace('_', ' ') : 'N/A'}</p>
+                <label className="text-xs text-gray-500 uppercase tracking-wider">
+                  {(isSbDeviceType(selectedDevice.device_type) || Boolean(extractBoxType(selectedDevice))) ? 'Box Type' : 'Band Type'}
+                </label>
+                <p className="font-medium text-gray-800">
+                  {(isSbDeviceType(selectedDevice.device_type) || Boolean(extractBoxType(selectedDevice)))
+                    ? (extractBoxType(selectedDevice) || 'N/A')
+                    : (selectedDevice.band_type ? selectedDevice.band_type.replace('_', ' ') : 'N/A')}
+                </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">NUID</label>
@@ -1176,7 +1226,7 @@ const Devices = () => {
             <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Editing Device</p>
               <p className="font-semibold text-gray-800">{selectedDevice.device_id}</p>
-              <p className="text-sm text-gray-600">{selectedDevice.device_type} · {selectedDevice.serial_number}</p>
+              <p className="text-sm text-gray-600">{normalizeDeviceType(selectedDevice.device_type)} · {isSbDeviceType(selectedDevice.device_type) ? 'NUID' : (selectedDevice.serial_number || 'N/A')}</p>
             </div>
 
             <div>
@@ -1194,6 +1244,7 @@ const Devices = () => {
               </select>
             </div>
 
+            {!isSbDeviceType(editForm.device_type) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Band Type
@@ -1208,7 +1259,25 @@ const Devices = () => {
                 ))}
               </select>
             </div>
+            )}
 
+            {isSbDeviceType(editForm.device_type) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Box Type
+              </label>
+              <select
+                value={editForm.box_type}
+                onChange={(e) => setEditForm(prev => ({ ...prev, box_type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="HD">HD</option>
+                <option value="OTT">OTT</option>
+              </select>
+            </div>
+            )}
+
+            {!isSbDeviceType(editForm.device_type) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Serial Number
@@ -1221,7 +1290,9 @@ const Devices = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            )}
 
+            {!isSbDeviceType(editForm.device_type) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 MAC Address
@@ -1234,6 +1305,7 @@ const Devices = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1248,7 +1320,7 @@ const Devices = () => {
               />
             </div>
 
-            {editForm.device_type === 'Set-top box' && (
+            {isSbDeviceType(editForm.device_type) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   NUID
@@ -1257,7 +1329,7 @@ const Devices = () => {
                   type="text"
                   value={editForm.nuid}
                   onChange={(e) => setEditForm(prev => ({ ...prev, nuid: e.target.value }))}
-                  placeholder={selectedDevice.nuid || 'Enter Set-top box NUID'}
+                  placeholder={selectedDevice.nuid || 'Enter SB NUID'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1265,7 +1337,7 @@ const Devices = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Manufacturer
+                Vendor
               </label>
               <input
                 type="text"

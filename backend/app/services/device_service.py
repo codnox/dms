@@ -7,6 +7,28 @@ from app.models.device import DeviceCreate, DeviceUpdate, DeviceStatus, HolderTy
 from app.utils.helpers import get_pagination, generate_device_id
 
 
+def _augment_device_record(device: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not device:
+        return device
+    metadata_raw = device.get("metadata")
+    metadata_obj = None
+    if isinstance(metadata_raw, str) and metadata_raw.strip():
+        try:
+            metadata_obj = json.loads(metadata_raw)
+        except Exception:
+            metadata_obj = None
+    elif isinstance(metadata_raw, dict):
+        metadata_obj = metadata_raw
+
+    box_type = None
+    if isinstance(metadata_obj, dict):
+        raw_box = str(metadata_obj.get("box_type") or "").strip().upper()
+        if raw_box in {"HD", "OTT"}:
+            box_type = raw_box
+    device["box_type"] = box_type
+    return device
+
+
 async def get_devices(
     page: int = 1,
     page_size: int = 20,
@@ -45,8 +67,9 @@ async def get_devices(
         )
         rows = await cursor.fetchall()
         
+        devices = [_augment_device_record(item) for item in rows_to_list(rows)]
         return {
-            "data": rows_to_list(rows),
+            "data": devices,
             "pagination": get_pagination(page, page_size, total)
         }
 
@@ -56,7 +79,7 @@ async def get_device_by_id(device_id: str) -> Optional[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM devices WHERE id = ?", (int(device_id),))
         row = await cursor.fetchone()
-        return row_to_dict(row)
+        return _augment_device_record(row_to_dict(row))
 
 
 async def get_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
@@ -64,28 +87,47 @@ async def get_device_by_serial(serial_number: str) -> Optional[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM devices WHERE serial_number = ?", (serial_number,))
         row = await cursor.fetchone()
-        return row_to_dict(row)
+        return _augment_device_record(row_to_dict(row))
 
 
 async def create_device(device_data: DeviceCreate, created_by: str, created_by_name: str) -> Dict[str, Any]:
     """Create a new device"""
     async with get_db() as db:
-        if device_data.device_type.value == "Set-top box" and not (device_data.nuid and device_data.nuid.strip()):
-            raise ValueError("NUID is required for Set-top box devices")
+        is_sb = device_data.device_type.value == "Set-top box"
+        if is_sb and not (device_data.nuid and device_data.nuid.strip()):
+            raise ValueError("NUID is required for SB devices")
+
+        serial_number = (device_data.serial_number or "").strip()
+        mac_address = (device_data.mac_address or "").strip()
+        box_type = (device_data.box_type or "").strip().upper() if is_sb else None
+
+        # SB devices do not have physical serial/MAC. Generate unique internal placeholders.
+        if is_sb:
+            normalized_nuid = device_data.nuid.strip()
+            serial_number = serial_number or f"SB-SN-{normalized_nuid}"
+            mac_address = mac_address or f"SB-MAC-{normalized_nuid}"
+        else:
+            if not serial_number:
+                raise ValueError("Serial number is required for non-SB devices")
+            if not mac_address:
+                raise ValueError("MAC address is required for non-SB devices")
 
         # Check if serial number exists
-        cursor = await db.execute("SELECT id FROM devices WHERE serial_number = ?", (device_data.serial_number,))
+        cursor = await db.execute("SELECT id FROM devices WHERE serial_number = ?", (serial_number,))
         if await cursor.fetchone():
             raise ValueError("Serial number already exists")
         
         # Check if MAC address exists
-        cursor = await db.execute("SELECT id FROM devices WHERE mac_address = ?", (device_data.mac_address,))
+        cursor = await db.execute("SELECT id FROM devices WHERE mac_address = ?", (mac_address,))
         if await cursor.fetchone():
             raise ValueError("MAC address already exists")
         
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         dev_id = generate_device_id(device_data.device_type.value)
-        metadata_json = json.dumps(device_data.metadata) if device_data.metadata else None
+        metadata_payload = dict(device_data.metadata or {})
+        if is_sb and box_type in {"HD", "OTT"}:
+            metadata_payload["box_type"] = box_type
+        metadata_json = json.dumps(metadata_payload) if metadata_payload else None
         purchase_date = device_data.purchase_date.isoformat() if device_data.purchase_date else None
         warranty_expiry = device_data.warranty_expiry.isoformat() if device_data.warranty_expiry else None
         
@@ -96,9 +138,17 @@ async def create_device(device_data: DeviceCreate, created_by: str, created_by_n
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 dev_id, device_data.device_type.value, device_data.model,
-                device_data.serial_number, device_data.mac_address,
+                serial_number, mac_address,
                 device_data.manufacturer,
-                device_data.band_type.value if hasattr(device_data.band_type, "value") else device_data.band_type,
+                (
+                    None
+                    if is_sb
+                    else (
+                        device_data.band_type.value
+                        if hasattr(device_data.band_type, "value")
+                        else (device_data.band_type or "single_band")
+                    )
+                ),
                 device_data.nuid,
                 DeviceStatus.AVAILABLE.value,
                 "PDIC", None, "PDIC (Distribution)", HolderType.NOC.value,
@@ -136,13 +186,21 @@ async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[D
         if hasattr(next_device_type, "value"):
             next_device_type = next_device_type.value
         next_nuid = data.get("nuid", current_device.get("nuid"))
+        next_box_type = data.get("box_type", current_device.get("box_type"))
         if next_device_type == "Set-top box" and not (next_nuid and str(next_nuid).strip()):
-            raise ValueError("NUID is required for Set-top box devices")
+            raise ValueError("NUID is required for SB devices")
+        if next_device_type == "Set-top box":
+            normalized_box = str(next_box_type or "").strip().upper()
+            if normalized_box not in {"HD", "OTT"}:
+                raise ValueError("box_type is required for SB devices and must be HD or OTT")
 
         if "serial_number" in data and data["serial_number"] is not None:
             serial_number = str(data["serial_number"]).strip()
             if not serial_number:
-                raise ValueError("Serial number cannot be empty")
+                if next_device_type == "Set-top box":
+                    serial_number = current_device.get("serial_number") or f"SB-SN-{str(next_nuid).strip()}"
+                else:
+                    raise ValueError("Serial number cannot be empty")
             cursor = await db.execute(
                 "SELECT id FROM devices WHERE serial_number = ? AND id != ?",
                 (serial_number, int(device_id))
@@ -155,7 +213,10 @@ async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[D
         if "mac_address" in data and data["mac_address"] is not None:
             mac_address = str(data["mac_address"]).strip()
             if not mac_address:
-                raise ValueError("MAC address cannot be empty")
+                if next_device_type == "Set-top box":
+                    mac_address = current_device.get("mac_address") or f"SB-MAC-{str(next_nuid).strip()}"
+                else:
+                    raise ValueError("MAC address cannot be empty")
             cursor = await db.execute(
                 "SELECT id FROM devices WHERE mac_address = ? AND id != ?",
                 (mac_address, int(device_id))
@@ -179,12 +240,35 @@ async def update_device(device_id: str, device_data: DeviceUpdate) -> Optional[D
         if "band_type" in data and data["band_type"] is not None:
             update_fields.append("band_type = ?")
             params.append(data["band_type"].value if hasattr(data["band_type"], "value") else data["band_type"])
+        elif next_device_type == "Set-top box":
+            update_fields.append("band_type = ?")
+            params.append(None)
         if "warranty_expiry" in data and data["warranty_expiry"] is not None:
             update_fields.append("warranty_expiry = ?")
             params.append(data["warranty_expiry"].isoformat() if hasattr(data["warranty_expiry"], "isoformat") else data["warranty_expiry"])
         if "metadata" in data and data["metadata"] is not None:
-            update_fields.append("metadata = ?")
-            params.append(json.dumps(data["metadata"]))
+            base_metadata = data["metadata"] if isinstance(data["metadata"], dict) else {}
+        else:
+            existing_metadata = current_device.get("metadata")
+            if isinstance(existing_metadata, str) and existing_metadata.strip():
+                try:
+                    base_metadata = json.loads(existing_metadata)
+                except Exception:
+                    base_metadata = {}
+            elif isinstance(existing_metadata, dict):
+                base_metadata = dict(existing_metadata)
+            else:
+                base_metadata = {}
+
+        if next_device_type == "Set-top box":
+            normalized_box = str(data.get("box_type", next_box_type) or "").strip().upper()
+            if normalized_box:
+                base_metadata["box_type"] = normalized_box
+        else:
+            base_metadata.pop("box_type", None)
+
+        update_fields.append("metadata = ?")
+        params.append(json.dumps(base_metadata) if base_metadata else None)
         
         if not update_fields:
             return await get_device_by_id(device_id)
@@ -305,7 +389,7 @@ async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[st
                 (DeviceStatus.AVAILABLE.value,)
             )
         rows = await cursor.fetchall()
-        return rows_to_list(rows)
+        return [_augment_device_record(item) for item in rows_to_list(rows)]
 
 
 async def get_devices_for_replacement(exclude_device_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -324,7 +408,7 @@ async def get_devices_for_replacement(exclude_device_id: Optional[str] = None) -
                 statuses
             )
         rows = await cursor.fetchall()
-        return rows_to_list(rows)
+        return [_augment_device_record(item) for item in rows_to_list(rows)]
 
 
 async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
@@ -335,7 +419,7 @@ async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
             (holder_id,)
         )
         rows = await cursor.fetchall()
-        return rows_to_list(rows)
+        return [_augment_device_record(item) for item in rows_to_list(rows)]
 
 
 async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, Any]:

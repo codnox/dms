@@ -7,6 +7,11 @@ import { devicesAPI } from '../services/api';
 import { Box, Save, X, Camera, XCircle, AlertCircle } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
+const isSbType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'sb' || normalized === 'set-top box' || normalized === 'set top box' || normalized === 'stb';
+};
+
 const RegisterDevice = () => {
   const navigate = useNavigate();
   const { showToast } = useNotifications();
@@ -20,6 +25,7 @@ const RegisterDevice = () => {
     model: '',
     manufacturer: '',
     bandType: 'single_band',
+    boxType: 'HD',
     nuid: '',
     hardwareVersion: '',
     firmwareVersion: '',
@@ -176,13 +182,27 @@ const RegisterDevice = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const requiresNuid = formData.deviceType === 'Set-top box';
-    if (!formData.model.trim() || !formData.manufacturer.trim() || !formData.macAddress.trim() || !formData.bandType) {
-      showToast('Model, Manufacturer, MAC Address and Band Type are required.', 'error');
+    const requiresNuid = isSbType(formData.deviceType);
+    const requiresMacSerial = !requiresNuid;
+
+    if (!formData.model.trim() || !formData.manufacturer.trim()) {
+      showToast('Model and Vendor are required.', 'error');
+      return;
+    }
+    if (requiresMacSerial && !formData.bandType) {
+      showToast('Band Type is required for non-SB devices.', 'error');
+      return;
+    }
+    if (requiresMacSerial && (!formData.macAddress.trim() || !formData.serialNumber.trim())) {
+      showToast('MAC Address and Serial Number are required for non-SB devices.', 'error');
       return;
     }
     if (requiresNuid && !formData.nuid.trim()) {
-      showToast('NUID is required for Set-top box devices.', 'error');
+      showToast('NUID is required for SB devices.', 'error');
+      return;
+    }
+    if (requiresNuid && !['HD', 'OTT'].includes(String(formData.boxType || '').toUpperCase())) {
+      showToast('Box Type must be HD or OTT for SB devices.', 'error');
       return;
     }
 
@@ -195,12 +215,14 @@ const RegisterDevice = () => {
       const deviceData = {
         device_type: formData.deviceType,
         model: formData.model.trim(),
-        serial_number: formData.serialNumber.trim(),
-        mac_address: formData.macAddress.trim(),
+        serial_number: requiresMacSerial ? formData.serialNumber.trim() : null,
+        mac_address: requiresMacSerial ? formData.macAddress.trim() : null,
         manufacturer: formData.manufacturer.trim(),
-        band_type: formData.bandType,
+        band_type: requiresMacSerial ? formData.bandType : null,
+        box_type: requiresNuid ? String(formData.boxType || '').toUpperCase() : null,
         nuid: formData.nuid.trim() || null,
         metadata: {
+          ...(requiresNuid ? { box_type: String(formData.boxType || '').toUpperCase() } : {}),
           hardware_version: formData.hardwareVersion.trim(),
           firmware_version: formData.firmwareVersion.trim(),
           condition: formData.condition,
@@ -311,26 +333,36 @@ const RegisterDevice = () => {
                   <option value="Switch">Switch</option>
                   <option value="Modem">Modem</option>
                   <option value="Access Point">Access Point</option>
-                  <option value="Set-top box">Set-top box</option>
+                  <option value="SB">SB</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Band Type <span className="text-red-500">*</span>
+                  {isSbType(formData.deviceType) ? 'Box Type' : 'Band Type'} <span className="text-red-500">*</span>
                 </label>
                 <select
-                  name="bandType"
-                  value={formData.bandType}
+                  name={isSbType(formData.deviceType) ? 'boxType' : 'bandType'}
+                  value={isSbType(formData.deviceType) ? formData.boxType : formData.bandType}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
                 >
-                  <option value="single_band">Single Band</option>
-                  <option value="dual_band">Dual Band</option>
+                  {isSbType(formData.deviceType) ? (
+                    <>
+                      <option value="HD">HD</option>
+                      <option value="OTT">OTT</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="single_band">Single Band</option>
+                      <option value="dual_band">Dual Band</option>
+                    </>
+                  )}
                 </select>
               </div>
 
+              {!isSbType(formData.deviceType) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   MAC Address <span className="text-red-500">*</span>
@@ -345,7 +377,9 @@ const RegisterDevice = () => {
                   required
                 />
               </div>
+              )}
 
+              {!isSbType(formData.deviceType) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Serial Number <span className="text-red-500">*</span>
@@ -360,6 +394,7 @@ const RegisterDevice = () => {
                   required
                 />
               </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -378,7 +413,7 @@ const RegisterDevice = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Manufacturer <span className="text-red-500">*</span>
+                  Vendor <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -391,7 +426,7 @@ const RegisterDevice = () => {
                 />
               </div>
 
-              {formData.deviceType === 'Set-top box' && (
+              {isSbType(formData.deviceType) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     NUID <span className="text-red-500">*</span>
@@ -401,7 +436,7 @@ const RegisterDevice = () => {
                     name="nuid"
                     value={formData.nuid}
                     onChange={handleChange}
-                    placeholder="Enter Set-top box NUID"
+                    placeholder="Enter SB NUID"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />

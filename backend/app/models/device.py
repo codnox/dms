@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator, field_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -41,11 +41,45 @@ class HolderType(str, Enum):
 class DeviceBase(BaseModel):
     device_type: DeviceType
     model: str = Field(..., min_length=1, max_length=100)
-    serial_number: str = Field(..., min_length=1, max_length=100)
-    mac_address: str = Field(..., min_length=1, max_length=50)
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    mac_address: Optional[str] = Field(default=None, max_length=50)
     manufacturer: str = Field(..., min_length=1, max_length=100)
-    band_type: DeviceBand
+    band_type: Optional[DeviceBand] = None
+    box_type: Optional[str] = None
     nuid: Optional[str] = Field(default=None, max_length=100)
+
+    @field_validator("device_type", mode="before")
+    @classmethod
+    def normalize_device_type(cls, value):
+        normalized = str(value or "").strip().lower()
+        if normalized in {"sb", "set-top box", "set top box", "stb"}:
+            return DeviceType.SETUP_BOX
+        return value
+
+    @model_validator(mode="after")
+    def validate_identity_fields(self):
+        is_sb = self.device_type == DeviceType.SETUP_BOX
+        serial = str(self.serial_number or "").strip()
+        mac = str(self.mac_address or "").strip()
+        nuid = str(self.nuid or "").strip()
+        box_type = str(self.box_type or "").strip().upper()
+
+        if is_sb:
+            if not nuid:
+                raise ValueError("NUID is required for SB devices")
+            if box_type not in {"HD", "OTT"}:
+                raise ValueError("box_type is required for SB devices and must be HD or OTT")
+            self.box_type = box_type
+        else:
+            if not serial:
+                raise ValueError("Serial number is required for non-SB devices")
+            if not mac:
+                raise ValueError("MAC address is required for non-SB devices")
+            if self.band_type is None:
+                raise ValueError("Band type is required for non-SB devices")
+            self.box_type = None
+
+        return self
 
 
 class DeviceCreate(DeviceBase):
@@ -61,11 +95,22 @@ class DeviceUpdate(BaseModel):
     model: Optional[str] = None
     manufacturer: Optional[str] = None
     band_type: Optional[DeviceBand] = None
+    box_type: Optional[str] = None
     nuid: Optional[str] = None
     status: Optional[DeviceStatus] = None
     current_location: Optional[str] = None
     warranty_expiry: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None
+
+    @field_validator("device_type", mode="before")
+    @classmethod
+    def normalize_device_type(cls, value):
+        if value is None:
+            return value
+        normalized = str(value or "").strip().lower()
+        if normalized in {"sb", "set-top box", "set top box", "stb"}:
+            return DeviceType.SETUP_BOX
+        return value
 
 
 class Device(DeviceBase):
@@ -95,7 +140,8 @@ class DeviceResponse(BaseModel):
     serial_number: str
     mac_address: str
     manufacturer: str
-    band_type: DeviceBand
+    band_type: Optional[DeviceBand] = None
+    box_type: Optional[str] = None
     nuid: Optional[str] = None
     status: DeviceStatus
     current_location: Optional[str] = None
