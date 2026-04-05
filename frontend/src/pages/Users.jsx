@@ -269,7 +269,7 @@ const Users = () => {
           >
             <Eye className="w-4 h-4 text-gray-500" />
           </button>
-          {currentUser?.role === 'super_admin' && (
+          {['super_admin', 'sub_distribution_manager'].includes(currentUser?.role) && (
             <button
               onClick={() => { setDetailUser(row); setDetailForm({ ...row }); setNewPassword(''); }}
               className="p-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200"
@@ -278,9 +278,9 @@ const Users = () => {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {currentUser?.role === 'super_admin' && (
+          {['super_admin', 'sub_distribution_manager'].includes(currentUser?.role) && (
             <>
-              {row.id !== currentUser.id && (
+              {String(row.id) !== String(currentUser.id) && (
                 <button
                   onClick={() => { setSelectedUser(row); setShowDeleteModal(true); }}
                   className="p-1 hover:bg-gray-100 rounded"

@@ -18,8 +18,8 @@ const PendingDues = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
 
   const role = String(user?.role || '').toLowerCase();
-  const isManagementView = ['super_admin', 'manager', 'pdic_staff'].includes(role);
-  const canConfirmPayment = isManagementView;
+  const isManagementView = ['super_admin', 'md_director', 'manager', 'pdic_staff'].includes(role);
+  const canConfirmPayment = ['super_admin', 'manager', 'pdic_staff'].includes(role);
 
   const fetchUsers = async () => {
     try {

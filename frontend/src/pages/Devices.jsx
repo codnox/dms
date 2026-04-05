@@ -79,7 +79,7 @@ const Devices = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const isManagement = ['super_admin', 'md_director', 'manager', 'pdic_staff'].includes(user?.role);
-  const hasHierarchy = ['sub_distributor', 'cluster'].includes(user?.role);
+  const hasHierarchy = ['sub_distribution_manager', 'sub_distributor', 'cluster'].includes(user?.role);
   const canRegister = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const isStaff = user?.role === 'pdic_staff';
   const isAdminOrManager = ['super_admin', 'manager'].includes(user?.role);

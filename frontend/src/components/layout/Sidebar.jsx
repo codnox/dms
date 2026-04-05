@@ -181,10 +181,13 @@ const Sidebar = ({ isOpen, onClose }) => {
         ...commonItems,
         { path: '/users', icon: Users, label: 'Scoped Users' },
         { path: '/users/hierarchy', icon: Network, label: 'User Hierarchy' },
-        { path: '/devices', icon: Box, label: 'Scoped Devices' },
+        { path: '/devices', icon: Box, label: 'My Devices' },
+        { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
         { path: '/distributions', icon: Truck, label: 'Scoped Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
-        { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
+        { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
       ],
       [ROLES.SUB_DISTRIBUTOR]: [
         ...commonItems,
@@ -201,7 +204,6 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
         { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
-        { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
       ],
       [ROLES.CLUSTER]: [
         ...commonItems,
