@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     DB_USER: str = os.getenv("DB_USER", "dms_user")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "dms_password")
     DB_NAME: str = os.getenv("DB_NAME", "distribution_management_system")
+    DB_SSL: bool = os.getenv("DB_SSL", "false").lower() == "true"
+    DB_SSL_VERIFY: bool = os.getenv("DB_SSL_VERIFY", "true").lower() == "true"
+    DB_SSL_CA: str | None = os.getenv("DB_SSL_CA")
     
     # Security
     SECRET_KEY: str = secrets.token_urlsafe(64)

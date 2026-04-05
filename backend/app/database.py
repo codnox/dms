@@ -1,4 +1,5 @@
 import re
+import ssl
 from contextlib import asynccontextmanager
 from typing import Any, Iterable, Optional
 
@@ -111,12 +112,20 @@ class MySQLDB:
 async def _ensure_pool() -> aiomysql.Pool:
     global _pool
     if _pool is None:
+        ssl_context = None
+        if settings.DB_SSL:
+            ssl_context = ssl.create_default_context(cafile=settings.DB_SSL_CA)
+            if not settings.DB_SSL_VERIFY:
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
         _pool = await aiomysql.create_pool(
             host=settings.DB_HOST,
             port=settings.DB_PORT,
             user=settings.DB_USER,
             password=settings.DB_PASSWORD,
             db=settings.DB_NAME,
+            ssl=ssl_context,
             autocommit=False,
             minsize=1,
             maxsize=10,

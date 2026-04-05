@@ -23,6 +23,12 @@ services:
         sync: false
       - key: DB_NAME
         sync: false
+      - key: DB_SSL
+        value: true
+      - key: DB_SSL_VERIFY
+        value: true
+      - key: DB_SSL_CA
+        value: /etc/ssl/certs/ca-certificates.crt
       - key: SECRET_KEY
         sync: false
       - key: ADMIN_INITIAL_PASSWORD
