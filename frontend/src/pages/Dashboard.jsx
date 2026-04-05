@@ -3,20 +3,24 @@ import AdminDashboard from './dashboards/AdminDashboard';
 import ManagerDashboard from './dashboards/ManagerDashboard';
 import SubDistributorDashboard from './dashboards/SubDistributorDashboard';
 import OperatorDashboard from './dashboards/OperatorDashboard';
+import { normalizeRole } from '../utils/roles';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const role = normalizeRole(user?.role);
 
   const dashboardComponents = {
-    admin: AdminDashboard,
+    super_admin: AdminDashboard,
+    md_director: AdminDashboard,
     manager: ManagerDashboard,
-    staff: ManagerDashboard,
+    pdic_staff: ManagerDashboard,
+    sub_distribution_manager: SubDistributorDashboard,
     sub_distributor: SubDistributorDashboard,
     cluster: SubDistributorDashboard,
     operator: OperatorDashboard,
   };
 
-  const DashboardComponent = dashboardComponents[user?.role] || AdminDashboard;
+  const DashboardComponent = dashboardComponents[role] || AdminDashboard;
 
   return <DashboardComponent />;
 };

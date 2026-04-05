@@ -22,9 +22,9 @@ const ROLE_LABELS = {
 };
 
 const ALLOWED_RECIPIENT_TYPES = {
-  admin: ['sub_distributor', 'cluster', 'operator'],
+  super_admin: ['sub_distributor', 'cluster', 'operator'],
   manager: ['sub_distributor', 'cluster', 'operator'],
-  staff: ['sub_distributor', 'cluster', 'operator'],
+  pdic_staff: ['sub_distributor', 'cluster', 'operator'],
   sub_distributor: ['cluster', 'operator'],
   cluster: ['operator'],
   operator: ['operator'],

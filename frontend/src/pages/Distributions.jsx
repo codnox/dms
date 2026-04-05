@@ -12,12 +12,21 @@ import { Plus, Eye, Truck, CheckCircle, Loader2, AlertTriangle, PackageCheck, XC
 
 const toDisplayLabel = (value, fallback = 'Unknown') => {
   if (!value) return fallback;
-  return String(value).trim() || fallback;
+  const normalized = String(value).trim();
+  const normalizedKey = normalized.toLowerCase().replace(/[-_\s]+/g, '');
+  if (['settopbox', 'setupbox', 'sb', 'stb'].includes(normalizedKey)) return 'SB';
+  return normalized || fallback;
 };
 
 const isSetupBoxType = (deviceType) => {
   const normalized = String(deviceType || '').toLowerCase();
   return normalized.includes('setup') || normalized.includes('set top') || normalized.includes('stb') || normalized === 'sb';
+};
+
+const getSenderDisplayName = (dist) => {
+  const senderType = String(dist?.from_user_type || '').toLowerCase();
+  if (senderType === 'noc' || senderType === 'pdic_staff') return 'PDIC';
+  return dist?.from_user_name || 'Unknown';
 };
 
 const Distributions = () => {
@@ -104,6 +113,7 @@ const Distributions = () => {
   };
 
   const canCreate = ['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator'].includes(user?.role);
+  const canConfirmDisputedReturn = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const canRecipientSubDistributorDownload =
     user?.role === 'sub_distributor' &&
     selectedDist &&
@@ -136,6 +146,19 @@ const Distributions = () => {
       showToast(`Downloaded ${format.toUpperCase()} MAC/NUID export`, 'success');
     } catch (error) {
       showToast(error.message || 'Failed to download MAC/NUID export', 'error');
+    }
+  };
+
+  const handleConfirmDisputedReturn = async (dist) => {
+    try {
+      await distributionsAPI.confirmDisputedReturn(
+        dist._id || dist.id,
+        'PDIC confirmed devices are physically back with sender'
+      );
+      showToast('Disputed return confirmed and devices unlocked for redistribution', 'success');
+      fetchDistributions();
+    } catch (error) {
+      showToast(error.message || 'Failed to confirm disputed return', 'error');
     }
   };
 
@@ -213,6 +236,18 @@ const Distributions = () => {
               title="Confirm or dispute receipt"
             >
               <PackageCheck className="w-4 h-4" />
+            </button>
+          )}
+          {row.status === 'disputed' && canConfirmDisputedReturn && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleConfirmDisputedReturn(row);
+              }}
+              className="p-1 text-red-700 hover:bg-red-50 rounded"
+              title="Confirm devices are back"
+            >
+              <CheckCircle className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -356,7 +391,7 @@ const Distributions = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-800">{selectedDist.distribution_id}</h3>
-                <p className="text-gray-500">{selectedDist.from_user_name} → {selectedDist.to_user_name}</p>
+                <p className="text-gray-500">{getSenderDisplayName(selectedDist)} → {selectedDist.to_user_name}</p>
                 <StatusBadge status={selectedDist.status} />
               </div>
               {canRecipientSubDistributorDownload && (
@@ -477,8 +512,14 @@ const Distributions = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p className="font-medium text-gray-800">{device.model || device.device_type}</p>
-                          <p className="text-sm text-gray-500 font-mono">{device.serial_number}</p>
-                          <p className="text-xs text-gray-400">{device.mac_address || 'No MAC'}</p>
+                          {isSetupBoxType(device.device_type) ? (
+                            <p className="text-sm text-gray-500 font-mono">NUID: {device.nuid || 'N/A'}</p>
+                          ) : (
+                            <>
+                              <p className="text-sm text-gray-500 font-mono">{device.serial_number}</p>
+                              <p className="text-xs text-gray-400">{device.mac_address || 'No MAC'}</p>
+                            </>
+                          )}
                           <div className="mt-1 flex flex-wrap gap-2">
                             <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
                               Type: {toDisplayLabel(device.device_type)}
@@ -515,7 +556,7 @@ const Distributions = () => {
               Distribution: <span className="font-mono">{selectedDist?.distribution_id}</span>
             </p>
             <p className="text-sm text-orange-800 mt-1">
-              Sent by <strong>{selectedDist?.from_user_name}</strong> — {selectedDist?.device_count || 0} device(s)
+              Sent by <strong>{getSenderDisplayName(selectedDist)}</strong> — {selectedDist?.device_count || 0} device(s)
             </p>
           </div>
 

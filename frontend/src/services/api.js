@@ -489,6 +489,14 @@ export const distributionsAPI = {
     });
     return response;
   },
+
+  confirmDisputedReturn: async (distributionId, notes = '') => {
+    const response = await apiRequest(`/distributions/${distributionId}/confirm-return`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+    return response;
+  },
 };
 
 // Defects API

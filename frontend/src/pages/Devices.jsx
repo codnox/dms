@@ -11,8 +11,8 @@ import { useNotifications } from '../context/NotificationContext';
 import { Plus, Eye, Edit, Trash2, Box, Upload, Loader2, Users, Send, ArrowDownToLine, Link2, AlertTriangle, CheckCircle2, Save, Filter, Building2, Network, Factory } from 'lucide-react';
 
 const normalizeDeviceType = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'set-top box' || normalized === 'set top box' || normalized === 'sb' || normalized === 'stb') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  if (normalized === 'settopbox' || normalized === 'setupbox' || normalized === 'sb' || normalized === 'stb') {
     return 'SB';
   }
   return value;
@@ -78,7 +78,7 @@ const Devices = () => {
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  const isManagement = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
+  const isManagement = ['super_admin', 'md_director', 'manager', 'pdic_staff'].includes(user?.role);
   const hasHierarchy = ['sub_distributor', 'cluster'].includes(user?.role);
   const canRegister = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role);
   const isStaff = user?.role === 'pdic_staff';
@@ -481,8 +481,8 @@ const Devices = () => {
   };
 
   const columns = [
-    { key: 'mac_address', label: 'MAC Address', render: (value, row) => (isSbDeviceType(row.device_type) ? 'N/A' : value) },
-    { key: 'serial_number', label: 'Serial Number', render: (value, row) => (isSbDeviceType(row.device_type) ? 'N/A' : value) },
+    { key: 'mac_address', label: 'MAC Address', render: (value, row) => (isSbDeviceType(row.device_type) ? (row.nuid || 'N/A') : value) },
+    { key: 'serial_number', label: 'Serial Number', render: (value, row) => (isSbDeviceType(row.device_type) ? (row.nuid || 'N/A') : value) },
     { key: 'model', label: 'Model' },
     { key: 'manufacturer', label: 'Vendor' },
     {
@@ -1031,11 +1031,11 @@ const Devices = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">MAC Address</label>
-                <p className="font-medium text-gray-800 font-mono">{isSbDeviceType(selectedDevice.device_type) ? 'N/A' : selectedDevice.mac_address}</p>
+                <p className="font-medium text-gray-800 font-mono">{isSbDeviceType(selectedDevice.device_type) ? (selectedDevice.nuid || 'N/A') : selectedDevice.mac_address}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Serial Number</label>
-                <p className="font-medium text-gray-800">{isSbDeviceType(selectedDevice.device_type) ? 'N/A' : selectedDevice.serial_number}</p>
+                <p className="font-medium text-gray-800">{isSbDeviceType(selectedDevice.device_type) ? (selectedDevice.nuid || 'N/A') : selectedDevice.serial_number}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Device Type</label>
@@ -1113,8 +1113,14 @@ const Devices = () => {
                     {linkedDefect.defective_device ? (
                       <>
                         <p className="text-sm font-semibold text-red-900">{linkedDefect.defective_device.device_id}</p>
-                        <p className="text-xs text-red-800">Serial: {linkedDefect.defective_device.serial_number}</p>
-                        <p className="text-xs text-red-800">MAC: {linkedDefect.defective_device.mac_address}</p>
+                        {isSbDeviceType(linkedDefect.defective_device.device_type) ? (
+                          <p className="text-xs text-red-800">NUID: {linkedDefect.defective_device.nuid || 'N/A'}</p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-red-800">Serial: {linkedDefect.defective_device.serial_number}</p>
+                            <p className="text-xs text-red-800">MAC: {linkedDefect.defective_device.mac_address}</p>
+                          </>
+                        )}
                         <p className="text-xs text-red-800">Type: {linkedDefect.defective_device.device_type}</p>
                         <p className="text-xs text-red-800">Status: {linkedDefect.defective_device.status}</p>
                       </>
@@ -1129,8 +1135,14 @@ const Devices = () => {
                     {linkedDefect.replacement_device ? (
                       <>
                         <p className="text-sm font-semibold text-emerald-900">{linkedDefect.replacement_device.device_id}</p>
-                        <p className="text-xs text-emerald-800">Serial: {linkedDefect.replacement_device.serial_number}</p>
-                        <p className="text-xs text-emerald-800">MAC: {linkedDefect.replacement_device.mac_address}</p>
+                        {isSbDeviceType(linkedDefect.replacement_device.device_type) ? (
+                          <p className="text-xs text-emerald-800">NUID: {linkedDefect.replacement_device.nuid || 'N/A'}</p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-emerald-800">Serial: {linkedDefect.replacement_device.serial_number}</p>
+                            <p className="text-xs text-emerald-800">MAC: {linkedDefect.replacement_device.mac_address}</p>
+                          </>
+                        )}
                         <p className="text-xs text-emerald-800">Type: {linkedDefect.replacement_device.device_type}</p>
                         <p className="text-xs text-emerald-800">
                           Status: {linkedDefect.status === 'resolved' ? '✅ Confirmed & Active' : '⏳ Awaiting Confirmation'}

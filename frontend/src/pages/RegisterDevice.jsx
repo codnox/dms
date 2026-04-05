@@ -8,8 +8,8 @@ import { Box, Save, X, Camera, XCircle, AlertCircle } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const isSbType = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'sb' || normalized === 'set-top box' || normalized === 'set top box' || normalized === 'stb';
+  const normalized = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  return normalized === 'sb' || normalized === 'stb' || normalized === 'settopbox' || normalized === 'setupbox';
 };
 
 const RegisterDevice = () => {

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, Response
 from app.services import report_service
-from app.middleware.auth_middleware import require_admin_or_manager
+from app.middleware.auth_middleware import require_admin_or_manager_or_md
 
 router = APIRouter()
 
 
 @router.get("/inventory")
 async def get_inventory_report(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get device inventory report"""
     try:
@@ -29,7 +29,7 @@ async def get_inventory_report(
 
 @router.get("/distribution-summary")
 async def get_distribution_summary(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get distribution summary report"""
     try:
@@ -51,7 +51,7 @@ async def get_distribution_summary(
 
 @router.get("/defect-summary")
 async def get_defect_summary(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get defect summary report"""
     try:
@@ -73,7 +73,7 @@ async def get_defect_summary(
 
 @router.get("/return-summary")
 async def get_return_summary(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get return summary report"""
     try:
@@ -95,7 +95,7 @@ async def get_return_summary(
 
 @router.get("/user-activity")
 async def get_user_activity_report(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get user activity report"""
     try:
@@ -117,7 +117,7 @@ async def get_user_activity_report(
 
 @router.get("/device-utilization")
 async def get_device_utilization_report(
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Get device utilization report"""
     try:
@@ -140,7 +140,7 @@ async def get_device_utilization_report(
 @router.post("/export")
 async def export_report(
     export_data: dict,
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Export report (placeholder for actual export functionality)"""
     try:
@@ -168,7 +168,7 @@ async def export_report(
 @router.get("/device-backup")
 async def download_device_backup(
     format: str = Query("xlsx", pattern="^(csv|xlsx)$"),
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Download full device backup including each device journey path."""
     try:
@@ -197,7 +197,7 @@ async def download_device_backup(
 @router.get("/returns-defects-backup")
 async def download_returns_defects_backup(
     format: str = Query("xlsx", pattern="^(csv|xlsx)$"),
-    current_user: dict = Depends(require_admin_or_manager)
+    current_user: dict = Depends(require_admin_or_manager_or_md)
 ):
     """Download backup for returned devices and defect reports."""
     try:

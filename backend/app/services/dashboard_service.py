@@ -61,11 +61,11 @@ async def _get_device_status_counts_for_holder(db, holder_id: str) -> Dict[str, 
 async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
     """Get dashboard statistics based on user role"""
     role = user.get("role")
-    user_id = str(user.get("_id"))
+    user_id = str(user.get("_id", user.get("id", "")))
 
     stats = {}
 
-    if role in ["super_admin", "manager", "pdic_staff"]:
+    if role in ["super_admin", "md_director", "manager", "pdic_staff"]:
         device_stats = await device_service.get_device_stats()
         dist_stats = await distribution_service.get_distribution_stats()
         defect_stats = await defect_service.get_defect_stats()
@@ -183,12 +183,12 @@ async def get_dashboard_stats(user: Dict[str, Any]) -> Dict[str, Any]:
 async def get_recent_activities(user: Dict[str, Any], limit: int = 10) -> list:
     """Get recent activities based on user role"""
     role = user.get("role")
-    user_id = str(user.get("_id"))
+    user_id = str(user.get("_id", user.get("id", "")))
 
     activities = []
 
     async with get_db() as db:
-        if role in ["super_admin", "manager", "pdic_staff"]:
+        if role in ["super_admin", "md_director", "manager", "pdic_staff"]:
             cursor = await db.execute(
                 "SELECT * FROM device_history ORDER BY timestamp DESC LIMIT ?", (limit,)
             )
@@ -477,7 +477,7 @@ async def get_system_alerts(user: Dict[str, Any]) -> list:
     role = user.get("role")
     alerts = []
 
-    if role in ["super_admin", "manager", "pdic_staff"]:
+    if role in ["super_admin", "md_director", "manager", "pdic_staff"]:
         async with get_db() as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM defects WHERE severity = 'critical' AND status != 'resolved'"
@@ -519,7 +519,7 @@ async def get_advanced_dashboard_metrics(user: Dict[str, Any]) -> Dict[str, Any]
     role = user.get("role")
     user_id = str(user.get("_id", user.get("id", "")))
 
-    if role not in ["super_admin", "manager", "pdic_staff", "sub_distributor", "cluster", "operator"]:
+    if role not in ["super_admin", "md_director", "manager", "pdic_staff", "sub_distributor", "cluster", "operator"]:
         return {"kpis": {}, "charts": {}, "alerts": [], "reliability": {"summary": {}, "trend": []}}
 
     # Role-scoped advanced payload for non-management dashboards.

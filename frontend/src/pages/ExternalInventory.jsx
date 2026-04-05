@@ -32,7 +32,12 @@ const initialItemForm = {
   notes: '',
 };
 
-const ITEM_TYPE_OPTIONS = ['OTT Box', 'OLT', 'Remote', 'Set-top Box', 'Adapter', 'Others'];
+const ITEM_TYPE_OPTIONS = ['OTT Box', 'OLT', 'Remote', 'SB', 'Adapter', 'Others'];
+
+const toTypeLabel = (value) => {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  return ['settopbox', 'setupbox', 'sb', 'stb'].includes(normalized) ? 'SB' : (value || '-');
+};
 
 const defaultPOLine = { item_inventory_id: '' };
 
@@ -62,8 +67,8 @@ const ExternalInventory = () => {
   const [itemForm, setItemForm] = useState(initialItemForm);
   const [editingInventoryId, setEditingInventoryId] = useState('');
 
-  const normalizedItemType = String(itemForm.device_type || '').trim().toLowerCase();
-  const isSetTopBoxType = normalizedItemType === 'set-top box' || normalizedItemType === 'sb';
+  const normalizedItemType = String(itemForm.device_type || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  const isSetTopBoxType = ['settopbox', 'setupbox', 'sb', 'stb'].includes(normalizedItemType);
   const isOtherType = normalizedItemType === 'others';
   const idFieldLabel = isSetTopBoxType ? 'NU ID' : 'MAC ID';
   const isIdRequired = !isOtherType;
@@ -509,12 +514,12 @@ const ExternalInventory = () => {
       key: 'mac_id',
       label: 'Identifier',
       render: (value, row) => {
-        const normalizedType = String(row?.device_type || '').trim().toLowerCase();
-        const isSetTop = normalizedType === 'set-top box' || normalizedType === 'sb';
+        const normalizedType = String(row?.device_type || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+        const isSetTop = ['settopbox', 'setupbox', 'sb', 'stb'].includes(normalizedType);
         return `${isSetTop ? 'NU ID' : 'MAC ID'}: ${value || '-'}`;
       },
     },
-    { key: 'device_type', label: 'Type' },
+    { key: 'device_type', label: 'Type', render: (value) => toTypeLabel(value) },
     {
       key: 'price',
       label: 'Price',
@@ -545,7 +550,7 @@ const ExternalInventory = () => {
       ),
     },
     { key: 'name', label: 'Name' },
-    { key: 'device_type', label: 'Type' },
+    { key: 'device_type', label: 'Type', render: (value) => toTypeLabel(value) },
     {
       key: 'price',
       label: 'Price',
@@ -950,13 +955,13 @@ const ExternalInventory = () => {
                 <p><span className="font-semibold text-gray-700">Inventory ID:</span> {selectedItem.inventory_id}</p>
                 <p><span className="font-semibold text-gray-700">Item ID:</span> {selectedItem.item_id}</p>
                 <p><span className="font-semibold text-gray-700">Name:</span> {selectedItem.name}</p>
-                <p><span className="font-semibold text-gray-700">Type:</span> {selectedItem.device_type}</p>
+                <p><span className="font-semibold text-gray-700">Type:</span> {toTypeLabel(selectedItem.device_type)}</p>
                 <p><span className="font-semibold text-gray-700">Serial:</span> {selectedItem.serial_number || '-'}</p>
                 <p>
                   <span className="font-semibold text-gray-700">
                     {(() => {
-                      const normalizedType = String(selectedItem.device_type || '').trim().toLowerCase();
-                      return normalizedType === 'set-top box' || normalizedType === 'sb' ? 'NU ID' : 'MAC ID';
+                      const normalizedType = String(selectedItem.device_type || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+                      return ['settopbox', 'setupbox', 'sb', 'stb'].includes(normalizedType) ? 'NU ID' : 'MAC ID';
                     })()}:
                   </span>{' '}
                   {selectedItem.mac_id || '-'}
@@ -1034,8 +1039,8 @@ const ExternalInventory = () => {
                   {items.map((item) => (
                     <option key={item.inventory_id} value={item.inventory_id}>
                       {item.item_id} | {item.name} | SN {item.serial_number} | {(() => {
-                        const normalizedType = String(item.device_type || '').trim().toLowerCase();
-                        return normalizedType === 'set-top box' || normalizedType === 'sb' ? 'NU' : 'MAC';
+                        const normalizedType = String(item.device_type || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+                        return ['settopbox', 'setupbox', 'sb', 'stb'].includes(normalizedType) ? 'NU' : 'MAC';
                       })()} {item.mac_id}
                     </option>
                   ))}

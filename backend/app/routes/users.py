@@ -26,9 +26,7 @@ router = APIRouter()
 ALLOWED_CREATE_BY_ROLE = {
     SUPER_ADMIN: [SUPER_ADMIN, MD_DIRECTOR, MANAGER, PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
     MANAGER: [PDIC_STAFF, SUB_DISTRIBUTION_MANAGER, SUB_DISTRIBUTOR, CLUSTER, OPERATOR],
-    SUB_DISTRIBUTOR: [SUB_DISTRIBUTION_MANAGER, CLUSTER, OPERATOR],
     SUB_DISTRIBUTION_MANAGER: [CLUSTER, OPERATOR],
-    CLUSTER: [OPERATOR],
 }
 
 
@@ -61,6 +59,9 @@ async def _can_access_user(current_user: dict, target_user: dict, *, write: bool
     actor_role = normalize_role(current_user.get("role"))
     target_role = normalize_role(target_user.get("role"))
 
+    if actor_role == MD_DIRECTOR and target_role == SUPER_ADMIN:
+        return False
+
     if str(current_user.get("id")) == str(target_user.get("id")):
         return True
 
@@ -91,11 +92,15 @@ async def _can_access_user(current_user: dict, target_user: dict, *, write: bool
         return await _branch_contains_user(root_id, target_user.get("id"))
 
     if actor_role == SUB_DISTRIBUTOR:
+        if write:
+            return False
         if target_role not in {CLUSTER, OPERATOR}:
             return False
         return await _branch_contains_user(current_user.get("id"), target_user.get("id"))
 
     if actor_role == CLUSTER:
+        if write:
+            return False
         return target_role == OPERATOR and str(target_user.get("parent_id")) == str(current_user.get("id"))
 
     return False
@@ -181,6 +186,9 @@ async def get_users(
                 if await _can_access_user(current_user, row, write=False):
                     filtered.append(row)
             result["data"] = filtered
+
+        if actor_role == MD_DIRECTOR:
+            result["data"] = [row for row in result["data"] if normalize_role(row.get("role")) != SUPER_ADMIN]
 
         return {
             "success": True,
@@ -294,6 +302,10 @@ async def create_user(user_data: UserCreate, current_user: dict = Depends(get_cu
 @router.put("/{user_id}")
 async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = Depends(get_current_user)):
     try:
+        actor_role = normalize_role(current_user.get("role"))
+        if actor_role == MD_DIRECTOR:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="MD/Director has read-only access to users")
+
         target_user = await user_service.get_user_by_id(user_id)
         if not target_user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -301,7 +313,6 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
         if not await _can_access_user(current_user, target_user, write=True):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-        actor_role = normalize_role(current_user.get("role"))
         if actor_role in {MD_DIRECTOR, PDIC_STAFF} and str(current_user.get("id")) != str(user_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 

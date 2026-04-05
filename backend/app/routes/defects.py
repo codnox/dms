@@ -16,6 +16,14 @@ from app.middleware.auth_middleware import get_current_user, require_admin_or_ma
 router = APIRouter()
 
 
+def _ensure_not_md_director(current_user: dict) -> None:
+    if current_user.get("role") == "md_director":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MD/Director has read-only access to defects"
+        )
+
+
 @router.get("/replacements")
 async def get_replacement_defects(
     page: int = Query(1, ge=1),
@@ -105,7 +113,7 @@ async def get_defects(
             # Sub distributor visibility is handled by service-side hierarchy filters.
             # Do not set reported_by here, otherwise results are over-filtered to self-only.
             pass
-        elif role not in ["super_admin", "manager", "pdic_staff"]:
+        elif role not in ["super_admin", "md_director", "manager", "pdic_staff"]:
             # Any other non-management role: show only their own reported defects
             reported_by = user_id_str
 
@@ -143,6 +151,8 @@ async def forward_defect_to_management(
     current_user: dict = Depends(require_any_role)
 ):
     """Allow sub distributor to forward a routed defect to manager/admin queue."""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.forward_defect_to_management(
             defect_id=defect_id,
@@ -203,6 +213,8 @@ async def create_defect(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new defect report"""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.create_defect(
             defect_data=defect_data,
@@ -235,6 +247,8 @@ async def update_defect(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Update defect report"""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.update_defect(defect_id, defect_data)
 
@@ -269,6 +283,8 @@ async def delete_defect(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Delete defect report"""
+    _ensure_not_md_director(current_user)
+
     try:
         success = await defect_service.delete_defect(defect_id)
 
@@ -298,6 +314,8 @@ async def update_defect_status(
     current_user: dict = Depends(require_management)
 ):
     """Update defect status"""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.update_defect_status(
             defect_id=defect_id,
@@ -343,6 +361,8 @@ async def resolve_defect(
     current_user: dict = Depends(require_admin_or_manager)
 ):
     """Resolve a defect report"""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.resolve_defect(
             defect_id=defect_id,
@@ -392,6 +412,8 @@ async def replace_defect_device(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide replacement_device_id, mac_address, serial_number, or register_device"
         )
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.replace_defect_device(
             defect_id=defect_id,
@@ -428,6 +450,8 @@ async def confirm_replacement_receipt(
     current_user: dict = Depends(require_any_role)
 ):
     """Confirm replacement device receipt (operator confirmation)."""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.confirm_replacement_receipt(
             defect_id=defect_id,
@@ -466,6 +490,8 @@ async def enquire_replacement_status(
             detail="Only operator, cluster, or sub distributor users can send replacement enquiries"
         )
 
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.enquire_replacement_status(
             defect_id=defect_id,
@@ -497,6 +523,8 @@ async def resend_replacement_confirmation(
     current_user: dict = Depends(require_management)
 ):
     """Resend replacement confirmation reminder to the operator."""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.resend_replacement_confirmation(
             defect_id=defect_id,
@@ -528,6 +556,8 @@ async def mark_replacement_waiting(
     current_user: dict = Depends(require_management)
 ):
     """Mark replacement status as waiting for PDIC shipment."""
+    _ensure_not_md_director(current_user)
+
     try:
         defect = await defect_service.mark_replacement_waiting(
             defect_id=defect_id,

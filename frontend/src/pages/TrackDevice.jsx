@@ -403,15 +403,25 @@ const TrackDevice = () => {
                   <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-4 lg:border-l lg:border-gray-200 lg:pl-6">
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">MAC Address</p>
-                      <p className="font-mono font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'sb' || String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'N/A' : searchResult.mac_address}</p>
+                      <p className="font-mono font-medium text-gray-800">
+                        {['sb', 'stb', 'settopbox', 'setupbox'].includes(String(searchResult.device_type || '').toLowerCase().replace(/[-_\s]+/g, ''))
+                          ? (searchResult.nuid || 'N/A')
+                          : searchResult.mac_address}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Serial Number</p>
-                      <p className="font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'sb' || String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'N/A' : searchResult.serial_number}</p>
+                      <p className="font-medium text-gray-800">
+                        {['sb', 'stb', 'settopbox', 'setupbox'].includes(String(searchResult.device_type || '').toLowerCase().replace(/[-_\s]+/g, ''))
+                          ? (searchResult.nuid || 'N/A')
+                          : searchResult.serial_number}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Device Type</p>
-                      <p className="font-medium text-gray-800">{String(searchResult.device_type || '').toLowerCase() === 'set-top box' ? 'SB' : searchResult.device_type}</p>
+                      <p className="font-medium text-gray-800">
+                        {['sb', 'stb', 'settopbox', 'setupbox'].includes(String(searchResult.device_type || '').toLowerCase().replace(/[-_\s]+/g, '')) ? 'SB' : searchResult.device_type}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Device ID</p>

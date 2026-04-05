@@ -14,6 +14,14 @@ router = APIRouter()
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
+def _ensure_not_md_director(current_user: dict) -> None:
+    if current_user.get("role") == "md_director":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MD/Director has read-only access to distributions"
+        )
+
+
 def _is_likely_text(content: bytes) -> bool:
     if not content:
         return True
@@ -51,6 +59,10 @@ class ReceiptConfirmation(BaseModel):
     notes: Optional[str] = None
 
 
+class ReturnConfirmation(BaseModel):
+    notes: Optional[str] = None
+
+
 @router.post("/bulk-upload")
 async def bulk_upload_distribution(
     file: UploadFile = File(...),
@@ -60,6 +72,8 @@ async def bulk_upload_distribution(
 ):
     """Create a distribution from uploaded CSV/Excel rows using mac_address and/or nuid."""
     filename_lower = (file.filename or "").lower()
+    _ensure_not_md_director(current_user)
+
     if not filename_lower.endswith((".xlsx", ".xls", ".csv")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -211,7 +225,7 @@ async def get_distributions(
     try:
         # Filter by user for non-admin/manager/staff
         user_id = None
-        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
+        if current_user["role"] not in ["super_admin", "md_director", "manager", "pdic_staff"]:
             user_id = current_user["id"]
 
         result = await distribution_service.get_distributions(
@@ -372,6 +386,8 @@ async def create_distribution(
     - operator: can distribute their held devices to operators in the same cluster
     """
     
+    _ensure_not_md_director(current_user)
+
     try:
         distribution = await distribution_service.create_distribution(
             dist_data=dist_data,
@@ -407,6 +423,8 @@ async def confirm_distribution_receipt(
     - received=true  → Distribution becomes APPROVED; receiver can now redistribute devices
     - received=false → Distribution becomes DISPUTED; admin/manager + sender are notified
     """
+    _ensure_not_md_director(current_user)
+
     try:
         distribution = await distribution_service.confirm_receipt(
             distribution_id=distribution_id,
@@ -434,6 +452,40 @@ async def confirm_distribution_receipt(
         )
 
 
+@router.post("/{distribution_id}/confirm-return")
+async def confirm_disputed_distribution_return(
+    distribution_id: str,
+    body: ReturnConfirmation,
+    current_user: dict = Depends(require_management)
+):
+    """PDIC confirms disputed devices are physically back with sender and unlocks redistribution."""
+    _ensure_not_md_director(current_user)
+
+    try:
+        distribution = await distribution_service.confirm_disputed_return(
+            distribution_id=distribution_id,
+            user=current_user,
+            notes=body.notes,
+        )
+        return {
+            "success": True,
+            "message": "Disputed return confirmed successfully",
+            "data": distribution,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to confirm disputed return: {str(e)}"
+        )
+
+
 @router.patch("/{distribution_id}/status")
 async def update_distribution_status(
     distribution_id: str,
@@ -441,6 +493,8 @@ async def update_distribution_status(
     current_user: dict = Depends(get_current_user)
 ):
     """Update distribution status"""
+    _ensure_not_md_director(current_user)
+
     try:
         distribution = await distribution_service.update_distribution_status(
             distribution_id=distribution_id,
@@ -485,6 +539,8 @@ async def cancel_distribution(
     current_user: dict = Depends(get_current_user)
 ):
     """Cancel a distribution (only by creator)"""
+    _ensure_not_md_director(current_user)
+
     try:
         success = await distribution_service.cancel_distribution(
             distribution_id=distribution_id,

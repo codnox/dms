@@ -18,8 +18,6 @@ const ALLOWED_ROLES_BY_CREATOR = {
   super_admin:     ['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator'],
   manager:         ['pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator'],
   sub_distribution_manager: ['cluster', 'operator'],
-  sub_distributor: ['sub_distribution_manager', 'cluster', 'operator'],
-  cluster:         ['operator'],
 };
 
 const ROLE_LABELS = {
@@ -365,14 +363,16 @@ const Users = () => {
   const isSubDist  = currentUser?.role === 'sub_distributor';
   const isCluster  = currentUser?.role === 'cluster';
   const isAdmin    = currentUser?.role === 'super_admin';
+  const isMdDirector = currentUser?.role === 'md_director';
   const isManager  = currentUser?.role === 'manager';
   const isAdminOrManager = ['super_admin', 'manager'].includes(currentUser?.role);
 
   const visibleUsers = useMemo(() => {
+    if (isMdDirector) return users.filter((u) => u.role !== 'super_admin');
     if (!isManager) return users;
     // Managers should not see admin user details in the users surface.
     return users.filter((u) => u.role !== 'super_admin');
-  }, [users, isManager]);
+  }, [users, isManager, isMdDirector]);
 
   const filteredClusterParentOptions = useMemo(() => {
     if (!isAdminOrManager || formData.role !== 'operator') return parentOptions;
@@ -474,10 +474,16 @@ const Users = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
-            {isSubDist ? 'My Users' : isCluster ? 'Operator Management' : 'User Management'}
+            {isSubDist ? 'My Users' : isCluster ? 'Operator Management' : isMdDirector ? 'Users (Read Only)' : 'User Management'}
           </h1>
           <p className="text-gray-500 mt-1">
-            {isSubDist ? 'Clusters and operators under your sub-distribution' : isCluster ? 'Manage operators in your cluster' : 'Manage system users and their permissions'}
+            {isSubDist
+              ? 'View clusters and operators under your sub-distribution'
+              : isCluster
+                ? 'View operators in your cluster'
+                : isMdDirector
+                  ? 'View all users and their details except Super Admin accounts'
+                  : 'Manage system users and their permissions'}
           </p>
         </div>
         {canCreateUsers && (
@@ -517,8 +523,7 @@ const Users = () => {
             <Card>
               <div className="text-center py-10">
                 <Network className="w-14 h-14 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No clusters yet. Create your first cluster to get started.</p>
-                <Button className="mt-4" icon={UserPlus} onClick={openAddModal}>Add Cluster</Button>
+                <p className="text-gray-500">No clusters found under your sub-distribution.</p>
               </div>
             </Card>
           ) : (
@@ -555,13 +560,6 @@ const Users = () => {
                         >
                           <Eye className="w-4 h-4 text-gray-500" />
                         </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); setSelectedUser(cluster); setShowDeleteModal(true); }}
-                          className="p-1.5 hover:bg-red-50 rounded"
-                          title="Delete cluster"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
                         {isCollapsed
                           ? <ChevronRight className="w-4 h-4 text-gray-400" />
                           : <ChevronDown className="w-4 h-4 text-gray-400" />}
@@ -596,13 +594,6 @@ const Users = () => {
                                 title="View operator"
                               >
                                 <Eye className="w-3.5 h-3.5 text-gray-500" />
-                              </button>
-                              <button
-                                onClick={() => { setSelectedUser(op); setShowDeleteModal(true); }}
-                                className="p-1 hover:bg-red-50 rounded"
-                                title="Delete operator"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
                               </button>
                             </div>
                           </div>

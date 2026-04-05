@@ -1,4 +1,12 @@
 const StatusBadge = ({ status, size = 'md' }) => {
+  const normalizeStatusLabel = (rawStatus) => {
+    const normalized = String(rawStatus || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+    if (['sb', 'stb', 'settopbox', 'setupbox'].includes(normalized)) {
+      return 'SB';
+    }
+    return rawStatus;
+  };
+
   const statusConfig = {
     // Device statuses
     'active': { bg: 'bg-green-100/30', text: 'text-green-300', label: 'Active' },
@@ -49,10 +57,11 @@ const StatusBadge = ({ status, size = 'md' }) => {
     lg: 'px-3 py-1.5 text-sm',
   };
 
-  const config = statusConfig[status?.toLowerCase()] || {
+  const normalizedStatus = String(status || '').toLowerCase();
+  const config = statusConfig[normalizedStatus] || {
     bg: 'bg-gray-100',
     text: 'text-gray-700',
-    label: status || 'Unknown'
+    label: normalizeStatusLabel(status) || 'Unknown'
   };
 
   return (

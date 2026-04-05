@@ -67,6 +67,13 @@ const safePct = (num, den) => {
   return Math.round((num / den) * 100);
 };
 
+const isSbDeviceType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  return normalized === 'sb' || normalized === 'stb' || normalized === 'settopbox' || normalized === 'setupbox';
+};
+
+const toDeviceTypeLabel = (value) => (isSbDeviceType(value) ? 'SB' : (value || '-'));
+
 const Reports = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
@@ -519,7 +526,7 @@ const Reports = () => {
       </div>
 
       {reportType === 'devices' && (
-        <Card title="Device Report (Includes MAC ID)">
+        <Card title="Device Report (Includes MAC ID / NUID)">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -539,9 +546,13 @@ const Reports = () => {
                 ) : (
                   deviceReportRows.map((device) => (
                     <tr key={device.id || device._id} className="hover:bg-gray-50">
-                      <td className="py-3 px-3 text-sm text-gray-800">{device.model || device.device_type || '-'}</td>
-                      <td className="py-3 px-3 text-sm text-gray-600">{device.serial_number || '-'}</td>
-                      <td className="py-3 px-3 text-sm font-medium text-gray-800">{device.mac_address || '-'}</td>
+                      <td className="py-3 px-3 text-sm text-gray-800">{device.model || toDeviceTypeLabel(device.device_type)}</td>
+                      <td className="py-3 px-3 text-sm text-gray-600">
+                        {isSbDeviceType(device.device_type) ? (device.nuid || '-') : (device.serial_number || '-')}
+                      </td>
+                      <td className="py-3 px-3 text-sm font-medium text-gray-800">
+                        {isSbDeviceType(device.device_type) ? (device.nuid || '-') : (device.mac_address || '-')}
+                      </td>
                       <td className="py-3 px-3 text-sm text-gray-600">{device.status || '-'}</td>
                       <td className="py-3 px-3 text-sm text-gray-600">{device.current_holder_name || 'PDIC'}</td>
                     </tr>

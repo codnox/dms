@@ -1,10 +1,18 @@
 const normalizeType = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'set-top box' || normalized === 'set top box' || normalized === 'sb' || normalized === 'stb') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  if (normalized === 'settopbox' || normalized === 'setupbox' || normalized === 'sb' || normalized === 'stb') {
     return 'SB';
   }
   return value;
 };
+
+export const isSbDevice = (device) => {
+  const type = normalizeType(device?.device_type || device?.defective_device?.device_type || '');
+  return type === 'SB';
+};
+
+export const getDeviceNuid = (device) =>
+  device?.nuid || device?.defective_device?.nuid || device?.replacement_device?.nuid || 'N/A';
 
 export const getDeviceModel = (device) => {
   const directModel = device?.model || device?.device_model || device?.defective_device?.model || device?.replacement_device?.model;
@@ -20,14 +28,12 @@ export const getDeviceModel = (device) => {
 };
 
 export const getDeviceSerial = (device) => {
-  const type = normalizeType(device?.device_type || device?.defective_device?.device_type || '');
-  if (type === 'SB') return 'N/A';
+  if (isSbDevice(device)) return getDeviceNuid(device);
   return device?.serial_number || device?.device_serial || device?.defective_device?.serial_number || 'N/A';
 };
 
 export const getDeviceMac = (device) => {
-  const type = normalizeType(device?.device_type || device?.defective_device?.device_type || '');
-  if (type === 'SB') return 'N/A';
+  if (isSbDevice(device)) return getDeviceNuid(device);
   return device?.mac_address || device?.defective_device?.mac_address || 'N/A';
 };
 
@@ -36,8 +42,11 @@ export const getDeviceType = (device) =>
 
 export const getDeviceSelectLabel = (device) => {
   const model = getDeviceModel(device);
+  const type = getDeviceType(device);
+  if (isSbDevice(device)) {
+    return `${model} | NUID: ${getDeviceNuid(device)} | Type: ${type}`;
+  }
   const serial = getDeviceSerial(device);
   const mac = getDeviceMac(device);
-  const type = getDeviceType(device);
   return `${model} | SN: ${serial} | MAC: ${mac} | Type: ${type}`;
 };

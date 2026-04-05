@@ -34,8 +34,8 @@ const BOX_TYPE_OPTIONS = ['HD', 'OTT'];
 
 const normalizeDeviceType = (deviceType) => {
   if (!deviceType) return 'ONT';
-  const normalized = String(deviceType).trim().toLowerCase();
-  if (normalized === 'set-top box' || normalized === 'set top box' || normalized === 'sb' || normalized === 'stb') {
+  const normalized = String(deviceType).trim().toLowerCase().replace(/[-_\s]+/g, '');
+  if (normalized === 'settopbox' || normalized === 'setupbox' || normalized === 'sb' || normalized === 'stb') {
     return 'SB';
   }
   const match = DEVICE_TYPE_OPTIONS.find((option) => option.toLowerCase() === String(deviceType).toLowerCase());
