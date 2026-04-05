@@ -43,11 +43,17 @@ class Settings(BaseSettings):
     ENFORCE_HTTPS: bool = os.getenv("ENFORCE_HTTPS", "false").lower() == "true"
     
     # CORS
-    CORS_ORIGINS: str = (
-        "http://localhost:5173,http://127.0.0.1:5173,http://0.0.0.0:5173,"
-        "http://localhost:3002,http://127.0.0.1:3002,http://0.0.0.0:3002"
+    CORS_ORIGINS: str = os.getenv(
+        "CORS_ORIGINS",
+        (
+            "http://localhost:5173,http://127.0.0.1:5173,http://0.0.0.0:5173,"
+            "http://localhost:3002,http://127.0.0.1:3002,http://0.0.0.0:3002"
+        ),
     )
-    CORS_ORIGIN_REGEX: str = r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$"
+    CORS_ORIGIN_REGEX: str = os.getenv(
+        "CORS_ORIGIN_REGEX",
+        r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
+    )
     
     # API
     API_V1_PREFIX: str = "/api"
