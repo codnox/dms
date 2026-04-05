@@ -7,6 +7,7 @@ import DataTable from '../components/ui/DataTable';
 import { dashboardAPI, externalInventoryAPI } from '../services/api';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { resolveApiBaseUrl } from '../utils/apiBaseUrl';
 import {
   Boxes,
   ClipboardCheck,
@@ -85,10 +86,7 @@ const ExternalInventory = () => {
     lines: [],
   });
 
-  const apiBaseUrl = useMemo(
-    () => (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/$/, ''),
-    []
-  );
+  const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
 
   const toAssetUrl = (path) => {
     if (!path) return '';
