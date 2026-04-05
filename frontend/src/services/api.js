@@ -1,7 +1,11 @@
 // API Configuration
 import { getAuthToken } from '../utils/authStorage';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const rawApiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const normalizedApiBaseUrl = rawApiBaseUrl.replace(/\/$/, '');
+const API_BASE_URL = normalizedApiBaseUrl.endsWith('/api')
+  ? normalizedApiBaseUrl
+  : `${normalizedApiBaseUrl}/api`;
 const isDev = import.meta.env.DEV;
 const log = isDev ? console.log : () => {};
 const logError = isDev ? console.error : () => {};
