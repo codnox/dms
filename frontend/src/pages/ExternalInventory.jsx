@@ -1094,4 +1094,3 @@ const ExternalInventory = () => {
 };
 
 export default ExternalInventory;
-
