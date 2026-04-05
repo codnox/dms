@@ -87,3 +87,5 @@ class ReturnResponse(BaseModel):
 class ReturnStatusUpdate(BaseModel):
     status: ReturnStatus
     notes: Optional[str] = None
+    return_amount: Optional[float] = Field(default=None, ge=0)
+    payment_bill_url: Optional[str] = None

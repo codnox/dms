@@ -23,7 +23,8 @@ import {
   Network,
   PackageCheck,
   ArrowLeftRight,
-  Database
+  Database,
+  DollarSign
 } from 'lucide-react';
 import { normalizeRole, ROLE_LABELS, ROLES } from '../../utils/roles';
 
@@ -85,6 +86,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -103,6 +105,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
         { path: '/activities', icon: FileText, label: 'Activities' },
@@ -136,6 +139,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -167,6 +171,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
@@ -194,6 +199,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Dues' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
         { path: '/approvals', icon: CheckSquare, label: 'Approvals' },
       ],
@@ -210,6 +216,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Payments' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Payments' },
         { path: '/returns', icon: RotateCcw, label: 'Return Requests' },
       ],
       [ROLES.OPERATOR]: [
@@ -224,7 +232,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/defects', icon: ClipboardList, label: 'My Defect Reports' },
         { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
         { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
-        { path: '/returns/create', icon: RotateCcw, label: 'Initiate Return' },
+        { path: '/pending-dues', icon: DollarSign, label: 'Pending Payments' },
         { path: '/returns', icon: RotateCcw, label: 'My Returns' },
       ],
     };

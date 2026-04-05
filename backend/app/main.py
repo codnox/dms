@@ -188,7 +188,12 @@ app.add_middleware(
     exempt_urls=[re.compile(r"^/api/auth/login$")],
 )
 
-# Add CORS middleware
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(HttpsEnforcementMiddleware)
+app.add_middleware(ApiActivityLoggingMiddleware)
+
+# Keep CORS as the outermost middleware so all responses (including
+# auth failures, redirects, and handled exceptions) include CORS headers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -199,10 +204,6 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
     max_age=600,
 )
-
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(HttpsEnforcementMiddleware)
-app.add_middleware(ApiActivityLoggingMiddleware)
 
 # Add exception handlers
 add_exception_handlers(app)

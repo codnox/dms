@@ -20,7 +20,7 @@ const VALID_BASE_ROUTES = new Set([
   '/defects/create',
   '/replacements',
   '/returns',
-  '/returns/create',
+  '/pending-dues',
   '/users',
   '/users/hierarchy',
   '/approvals',

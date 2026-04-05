@@ -14,6 +14,7 @@ export const normalizeRole = (role) => {
   const value = String(role).trim().toLowerCase();
   if (value === 'super_admin') return ROLES.SUPER_ADMIN;
   if (value === 'pdic_staff') return ROLES.PDIC_STAFF;
+  if (value === 'staff') return ROLES.PDIC_STAFF;
   return value;
 };
 

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Button from '../components/ui/Button';
@@ -10,7 +9,7 @@ import DeviceIdentity from '../components/ui/DeviceIdentity';
 import { returnsAPI, approvalsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Eye, RotateCcw, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
+import { Eye, RotateCcw, Loader2, PackageCheck, AlertTriangle } from 'lucide-react';
 
 const Returns = () => {
   const { user } = useAuth();
@@ -64,10 +63,15 @@ const Returns = () => {
     }
   }, [user?.role]);
 
-  const canInitiate = ['operator', 'sub_distributor', 'cluster'].includes(user?.role);
+  const roleRoutingKey = {
+    super_admin: 'admin',
+    manager: 'manager',
+    pdic_staff: 'staff',
+  };
   const reviewRole = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) ? user.role : null;
+  const reviewRoleConfigKey = reviewRole ? roleRoutingKey[reviewRole] : null;
   const isReturnApprovalEnabledForRole =
-    !reviewRole || Boolean(routingConfig?.return?.[reviewRole]);
+    !reviewRoleConfigKey || Boolean(routingConfig?.return?.[reviewRoleConfigKey]);
   const canApprove = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
   const canConfirmReceipt = ['super_admin', 'manager', 'pdic_staff'].includes(user?.role) && isReturnApprovalEnabledForRole;
 
@@ -211,11 +215,6 @@ const Returns = () => {
           <h1 className="text-2xl font-bold text-gray-800">Return Requests</h1>
           <p className="text-gray-500 mt-1">Manage device return requests and approvals</p>
         </div>
-        {canInitiate && (
-          <Link to="/returns/create">
-            <Button icon={Plus}>Initiate Return</Button>
-          </Link>
-        )}
       </div>
 
       {/* Stats */}

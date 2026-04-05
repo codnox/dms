@@ -22,22 +22,22 @@ async def get_returns(
         params = []
 
         if status:
-            conditions.append("status = ?")
+            conditions.append("r.status = ?")
             params.append(status)
         if reason:
-            conditions.append("reason = ?")
+            conditions.append("r.reason = ?")
             params.append(reason)
         if requested_by:
-            conditions.append("requested_by = ?")
+            conditions.append("r.requested_by = ?")
             params.append(requested_by)
         if search:
-            conditions.append("(return_id LIKE ? OR device_serial LIKE ?)")
+            conditions.append("(r.return_id LIKE ? OR r.device_serial LIKE ?)")
             like = f"%{search}%"
             params.extend([like, like])
 
         where = " AND ".join(conditions)
 
-        cursor = await db.execute(f"SELECT COUNT(*) FROM returns WHERE {where}", params)
+        cursor = await db.execute(f"SELECT COUNT(*) FROM returns r WHERE {where}", params)
         total = (await cursor.fetchone())[0]
 
         offset = (page - 1) * page_size
@@ -172,7 +172,9 @@ async def update_return_status(
     return_id: str,
     status: str,
     user: Dict[str, Any],
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    return_amount: Optional[float] = None,
+    payment_bill_url: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Update return request status"""
     user_role = str(user.get("role", "")).lower()
@@ -206,6 +208,32 @@ async def update_return_status(
                 "UPDATE returns SET status = ?, received_date = ?, updated_at = ? WHERE id = ?",
                 (status, now, now, int(return_id))
             )
+
+            if return_req.get("defect_id"):
+                set_fragments = [
+                    "payment_due_user_id = ?",
+                    "payment_due_user_name = ?",
+                    "updated_at = ?",
+                ]
+                defect_params = [
+                    str(return_req.get("requested_by") or ""),
+                    str(return_req.get("requested_by_name") or "Unknown"),
+                    now,
+                ]
+
+                if return_amount is not None:
+                    set_fragments.append("return_amount = ?")
+                    defect_params.append(float(return_amount))
+                    set_fragments.append("payment_confirmed = 0")
+                if payment_bill_url:
+                    set_fragments.append("payment_bill_url = ?")
+                    defect_params.append(str(payment_bill_url))
+
+                defect_params.append(int(return_req["defect_id"]))
+                await db.execute(
+                    f"UPDATE defects SET {', '.join(set_fragments)} WHERE id = ? AND COALESCE(payment_confirmed, 0) = 0",
+                    defect_params
+                )
 
         elif status == ReturnStatus.REJECTED.value:
             await db.execute(

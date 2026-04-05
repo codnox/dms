@@ -81,6 +81,14 @@ class DefectReport(BaseModel):
     resolved_by: Optional[str] = None
     resolved_by_name: Optional[str] = None
     resolved_at: Optional[datetime] = None
+    return_amount: Optional[float] = 0
+    payment_bill_url: Optional[str] = None
+    payment_confirmed: bool = False
+    payment_confirmed_at: Optional[datetime] = None
+    payment_confirmed_by: Optional[str] = None
+    payment_confirmed_by_name: Optional[str] = None
+    payment_due_user_id: Optional[str] = None
+    payment_due_user_name: Optional[str] = None
     images: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
@@ -125,6 +133,8 @@ class ReplaceDeviceRequest(BaseModel):
     serial_number: Optional[str] = None
     register_device: Optional[ReplacementDeviceCreate] = None
     notes: Optional[str] = None
+    return_amount: Optional[float] = Field(default=None, ge=0)
+    payment_bill_url: Optional[str] = None
 
 
 class DefectResponse(BaseModel):
@@ -151,6 +161,14 @@ class DefectResponse(BaseModel):
     resolved_by: Optional[str] = None
     resolved_by_name: Optional[str] = None
     resolved_at: Optional[datetime] = None
+    return_amount: Optional[float] = 0
+    payment_bill_url: Optional[str] = None
+    payment_confirmed: bool = False
+    payment_confirmed_at: Optional[datetime] = None
+    payment_confirmed_by: Optional[str] = None
+    payment_confirmed_by_name: Optional[str] = None
+    payment_due_user_id: Optional[str] = None
+    payment_due_user_name: Optional[str] = None
     images: Optional[List[str]] = None
     created_at: datetime
 
@@ -162,6 +180,12 @@ class DefectResolve(BaseModel):
 class DefectStatusUpdate(BaseModel):
     status: DefectStatus
     notes: Optional[str] = None
+    return_amount: Optional[float] = Field(default=None, ge=0)
+    payment_bill_url: Optional[str] = None
+
+
+class DefectPaymentConfirmRequest(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ReplacementConfirmationRequest(BaseModel):

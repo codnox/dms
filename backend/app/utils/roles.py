@@ -27,6 +27,7 @@ ROLE_HIERARCHY = {role: (len(ROLE_ORDER) - index) for index, role in enumerate(R
 LEGACY_ROLE_MAP = {
     "super_admin": SUPER_ADMIN,
     "pdic_staff": PDIC_STAFF,
+    "staff": PDIC_STAFF,
 }
 
 

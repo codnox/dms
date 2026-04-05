@@ -503,7 +503,8 @@ export const distributionsAPI = {
 export const defectsAPI = {
   getDefects: async (params = {}) => {
     const queryString = new URLSearchParams(params).toString();
-    const response = await apiRequest(`/defects?${queryString}`);
+    const endpoint = queryString ? `/defects?${queryString}` : '/defects';
+    const response = await apiRequest(endpoint);
     return response;
   },
 
@@ -528,12 +529,84 @@ export const defectsAPI = {
     return response;
   },
 
-  updateDefectStatus: async (defectId, status, notes) => {
+  updateDefectStatus: async (defectId, status, notes, extra = {}) => {
     const response = await apiRequest(`/defects/${defectId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, notes }),
+      body: JSON.stringify({ status, notes, ...extra }),
     });
     return response;
+  },
+
+  uploadPaymentBill: async (defectId, file) => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const url = `${API_BASE_URL}/defects/${defectId}/payment-bill`;
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
+    });
+
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { message: raw || 'Upload failed' };
+    }
+
+    if (!response.ok) {
+      throw new Error(data?.message || data?.detail || 'Failed to upload payment bill');
+    }
+
+    return data;
+  },
+
+  confirmPayment: async (defectId, notes = '') => {
+    const response = await apiRequest(`/defects/${defectId}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+    return response;
+  },
+
+  getPendingDueUsers: async () => {
+    const response = await apiRequest('/defects/pending-dues/users');
+    return response;
+  },
+
+  getPendingDuesForUser: async (userId) => {
+    const response = await apiRequest(`/defects/pending-dues/users/${encodeURIComponent(userId)}`);
+    return response;
+  },
+
+  getMyPendingDues: async () => {
+    const response = await apiRequest('/defects/pending-dues/me');
+    return response;
+  },
+
+  fetchPaymentBillBlob: async (billPath) => {
+    const token = getAuthToken();
+    const apiOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    const url = /^https?:\/\//i.test(billPath) ? billPath : `${apiOrigin}${billPath}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch bill file');
+    }
+    return {
+      blob: await response.blob(),
+      contentType: response.headers.get('content-type') || '',
+    };
   },
 
   resolveDefect: async (defectId, resolution) => {
@@ -632,10 +705,10 @@ export const returnsAPI = {
     return response;
   },
 
-  updateReturnStatus: async (returnId, status, notes) => {
+  updateReturnStatus: async (returnId, status, notes, extra = {}) => {
     const response = await apiRequest(`/returns/${returnId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, notes }),
+      body: JSON.stringify({ status, notes, ...extra }),
     });
     return response;
   },

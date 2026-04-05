@@ -286,12 +286,11 @@ async def get_defects(
             conditions.append("defect_type = ?")
             params.append(defect_type)
         if reported_by:
-            # Use CAST on both sides for type-safe comparison (SQLite may store as int or text)
-            conditions.append("CAST(reported_by AS TEXT) = CAST(? AS TEXT)")
+            conditions.append("reported_by = ?")
             params.append(str(reported_by))
         if holder_user_id:
             conditions.append(
-                "(CAST(reported_by AS TEXT) = CAST(? AS TEXT) OR device_id IN (SELECT CAST(id AS TEXT) FROM devices WHERE current_holder_id = ?))"
+                "(reported_by = ? OR CAST(device_id AS UNSIGNED) IN (SELECT id FROM devices WHERE current_holder_id = ?))"
             )
             params.extend([str(holder_user_id), str(holder_user_id)])
         if search:
@@ -314,7 +313,7 @@ async def get_defects(
                         "(" 
                         "COALESCE(report_target, 'manager_admin') != 'sub_distributor' "
                         "OR COALESCE(forwarded_to_management, 0) = 1 "
-                        f"OR (COALESCE(report_target, 'manager_admin') = 'sub_distributor' AND CAST(reported_by AS TEXT) IN ({placeholders}))"
+                        f"OR (COALESCE(report_target, 'manager_admin') = 'sub_distributor' AND reported_by IN ({placeholders}))"
                         ")"
                     )
                     params.extend(sorted(operator_ids))
@@ -620,7 +619,9 @@ async def update_defect_status(
     defect_id: str,
     status: str,
     user: Dict[str, Any],
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    return_amount: Optional[float] = None,
+    payment_bill_url: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Update defect status. When approved, automatically creates a return request."""
     user_role = str(user.get("role", "")).lower()
@@ -637,10 +638,25 @@ async def update_defect_status(
         defect = dict(defect)
 
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-        cursor = await db.execute(
-            "UPDATE defects SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now, int(defect_id))
-        )
+        update_sql = "UPDATE defects SET status = ?, updated_at = ?"
+        update_params: List[Any] = [status, now]
+
+        if status == DefectStatus.APPROVED.value:
+            amount = float(return_amount) if return_amount is not None else float(defect.get("return_amount") or 0)
+            update_sql += ", return_amount = ?, payment_due_user_id = ?, payment_due_user_name = ?, payment_confirmed = 0"
+            update_params.extend([
+                amount,
+                str(defect.get("reported_by") or ""),
+                str(defect.get("reported_by_name") or "Unknown"),
+            ])
+            if payment_bill_url:
+                update_sql += ", payment_bill_url = ?"
+                update_params.append(payment_bill_url)
+
+        update_sql += " WHERE id = ?"
+        update_params.append(int(defect_id))
+
+        cursor = await db.execute(update_sql, update_params)
         await db.commit()
         affected = cursor.rowcount
 
@@ -679,7 +695,9 @@ async def update_defect_status(
             title="Defect Report Approved — Return Required" if status == DefectStatus.APPROVED.value else "Defect Status Updated",
             message=(
                 f"Your defect report {defect['report_id']} has been approved. "
-                f"Please return the defective device to PDIC as soon as possible.{extra_msg}"
+                f"Please return the defective device to PDIC as soon as possible."
+                + (f" Due amount: {float(return_amount):.2f}." if status == DefectStatus.APPROVED.value and return_amount is not None and float(return_amount) > 0 else "")
+                + extra_msg
             ) if status == DefectStatus.APPROVED.value else (
                 f"Your defect report {defect['report_id']} status has been updated to {status}."
             ),
@@ -717,6 +735,151 @@ async def update_defect_status(
 
         return await get_defect_by_id(defect_id)
     return None
+
+
+async def set_defect_payment_bill_url(defect_id: str, bill_url: str) -> Optional[Dict[str, Any]]:
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE defects SET payment_bill_url = ?, updated_at = ? WHERE id = ?",
+            (bill_url, now, int(defect_id))
+        )
+        await db.commit()
+        if cursor.rowcount <= 0:
+            return None
+    return await get_defect_by_id(defect_id)
+
+
+async def confirm_defect_payment(
+    defect_id: str,
+    confirmer: Dict[str, Any],
+    notes: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    confirmer_id = str(confirmer.get("_id") or confirmer.get("id") or "")
+    confirmer_name = str(confirmer.get("name") or "Management")
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM defects WHERE id = ?", (int(defect_id),))
+        defect_row = await cursor.fetchone()
+        if not defect_row:
+            return None
+        defect = dict(defect_row)
+
+        amount = float(defect.get("return_amount") or 0)
+        if amount <= 0:
+            raise ValueError("No payment amount is configured for this defect")
+        if int(defect.get("payment_confirmed") or 0) == 1:
+            raise ValueError("Payment has already been confirmed for this defect")
+
+        # Payment confirmation is only valid once defective return has reached PDIC.
+        return_id = defect.get("auto_return_id")
+        if return_id:
+            cursor = await db.execute("SELECT status FROM returns WHERE return_id = ?", (return_id,))
+            return_row = await cursor.fetchone()
+            if return_row and str(dict(return_row).get("status") or "") != "received":
+                raise ValueError("Cannot confirm payment before defective device is marked received at PDIC")
+
+        await db.execute(
+            """UPDATE defects
+            SET payment_confirmed = 1,
+                payment_confirmed_at = ?,
+                payment_confirmed_by = ?,
+                payment_confirmed_by_name = ?,
+                updated_at = ?
+            WHERE id = ?""",
+            (now, confirmer_id, confirmer_name, now, int(defect_id))
+        )
+        await db.commit()
+
+    due_user_id = str(defect.get("payment_due_user_id") or defect.get("reported_by") or "")
+    if due_user_id:
+        await notification_service.create_notification(
+            user_id=due_user_id,
+            title="Defect Return Payment Confirmed",
+            message=(
+                f"Payment for defect {defect.get('report_id')} has been confirmed by {confirmer_name}."
+                + (f" Notes: {notes}" if notes else "")
+            ),
+            notification_type="success",
+            category="defect",
+            link=f"/defects?defectId={defect_id}"
+        )
+
+    return await get_defect_by_id(defect_id)
+
+
+async def get_pending_dues_users() -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT
+                COALESCE(NULLIF(d.payment_due_user_id, ''), d.reported_by) AS user_id,
+                COALESCE(NULLIF(d.payment_due_user_name, ''), d.reported_by_name) AS user_name,
+                COUNT(*) AS due_count,
+                SUM(COALESCE(d.return_amount, 0)) AS total_due
+            FROM defects d
+                        LEFT JOIN returns r ON ((CAST(r.defect_id AS UNSIGNED) = d.id) OR r.return_id = d.auto_return_id)
+            WHERE COALESCE(d.return_amount, 0) > 0
+              AND COALESCE(d.payment_confirmed, 0) = 0
+              AND COALESCE(r.status, '') = 'received'
+            GROUP BY COALESCE(NULLIF(d.payment_due_user_id, ''), d.reported_by),
+                     COALESCE(NULLIF(d.payment_due_user_name, ''), d.reported_by_name)
+            ORDER BY total_due DESC, due_count DESC
+            """
+        )
+        rows = await cursor.fetchall()
+        return rows_to_list(rows)
+
+
+async def get_pending_dues_for_user(user_id: str) -> Dict[str, Any]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT
+                d.id,
+                d.report_id,
+                d.device_id,
+                d.device_serial,
+                d.device_type,
+                d.reported_by,
+                d.reported_by_name,
+                d.return_amount,
+                d.payment_bill_url,
+                d.payment_confirmed,
+                d.payment_confirmed_at,
+                d.auto_return_id,
+                d.status,
+                d.created_at,
+                r.return_id,
+                r.status AS return_status,
+                r.received_date,
+                dev.model AS device_model,
+                dev.manufacturer AS device_manufacturer
+            FROM defects d
+            LEFT JOIN returns r ON ((CAST(r.defect_id AS UNSIGNED) = d.id) OR r.return_id = d.auto_return_id)
+            LEFT JOIN devices dev ON dev.id = d.device_id
+            WHERE COALESCE(NULLIF(d.payment_due_user_id, ''), d.reported_by) = ?
+              AND COALESCE(d.return_amount, 0) > 0
+              AND COALESCE(d.payment_confirmed, 0) = 0
+              AND COALESCE(r.status, '') = 'received'
+            ORDER BY r.received_date DESC, d.updated_at DESC
+            """,
+            (str(user_id),)
+        )
+        rows = await cursor.fetchall()
+        dues = rows_to_list(rows)
+
+        total_due = sum(float(item.get("return_amount") or 0) for item in dues)
+        user_name = dues[0].get("reported_by_name") if dues else None
+
+        return {
+            "user_id": str(user_id),
+            "user_name": user_name,
+            "total_due": total_due,
+            "count": len(dues),
+            "items": dues,
+        }
 
 
 async def resolve_defect(
@@ -769,6 +932,8 @@ async def replace_defect_device(
     serial_number: Optional[str],
     register_device: Optional[Dict[str, Any]],
     notes: Optional[str],
+    return_amount: Optional[float],
+    payment_bill_url: Optional[str],
     resolver: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Replace a defective device by selecting existing stock or registering a new device."""
@@ -865,22 +1030,37 @@ async def replace_defect_device(
         )
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
-        await db.execute(
+        update_sql = (
             """UPDATE defects SET status = ?, replacement_device_id = ?, replacement_requested_at = ?,
-            resolution = ?, resolved_by = ?, resolved_by_name = ?, resolved_at = ?, updated_at = ?
-            WHERE id = ?""",
-            (
-                DefectStatus.REPLACEMENT_PENDING_CONFIRMATION.value,
-                str(new_device["id"]),
-                now,
-                resolution_note,
-                None,
-                None,
-                None,
-                now,
-                int(defect_id)
-            )
+            resolution = ?, resolved_by = ?, resolved_by_name = ?, resolved_at = ?, updated_at = ?"""
         )
+        update_params: List[Any] = [
+            DefectStatus.REPLACEMENT_PENDING_CONFIRMATION.value,
+            str(new_device["id"]),
+            now,
+            resolution_note,
+            None,
+            None,
+            None,
+            now,
+        ]
+
+        if return_amount is not None:
+            update_sql += ", return_amount = ?, payment_due_user_id = ?, payment_due_user_name = ?, payment_confirmed = 0"
+            update_params.extend([
+                float(return_amount),
+                str(defect.get("reported_by") or ""),
+                str(defect.get("reported_by_name") or "Unknown"),
+            ])
+
+        if payment_bill_url:
+            update_sql += ", payment_bill_url = ?"
+            update_params.append(str(payment_bill_url))
+
+        update_sql += " WHERE id = ?"
+        update_params.append(int(defect_id))
+
+        await db.execute(update_sql, update_params)
         await db.commit()
 
     old_device_metadata = _parse_json_metadata(old_device.get("metadata"))

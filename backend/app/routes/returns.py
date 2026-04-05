@@ -19,7 +19,7 @@ def _ensure_not_md_director(current_user: dict) -> None:
 async def get_returns(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = None,
+    return_status: Optional[str] = Query(None, alias="status"),
     reason: Optional[str] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
@@ -34,7 +34,7 @@ async def get_returns(
         result = await return_service.get_returns(
             page=page,
             page_size=page_size,
-            status=status,
+            status=return_status,
             reason=reason,
             requested_by=requested_by,
             search=search
@@ -131,7 +131,9 @@ async def update_return_status(
             return_id=return_id,
             status=status_update.status.value,
             user=current_user,
-            notes=status_update.notes
+            notes=status_update.notes,
+            return_amount=status_update.return_amount,
+            payment_bill_url=status_update.payment_bill_url,
         )
 
         if not return_req:

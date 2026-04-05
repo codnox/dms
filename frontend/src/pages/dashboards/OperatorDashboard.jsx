@@ -91,9 +91,6 @@ const OperatorDashboard = () => {
           <Link to="/defects/create">
             <Button icon={AlertTriangle} variant="danger">Report Defect</Button>
           </Link>
-          <Link to="/returns/create">
-            <Button icon={RotateCcw} variant="secondary">Request Return</Button>
-          </Link>
         </div>
       </div>
 
@@ -203,9 +200,6 @@ const OperatorDashboard = () => {
             {myReturns.length === 0 ? (
               <div className="text-center py-4">
                 <p className="text-gray-500">No return requests</p>
-                <Link to="/returns/create" className="text-sm text-blue-600 hover:text-blue-700 mt-2 inline-block">
-                  Request a return
-                </Link>
               </div>
             ) : (
               myReturns.map((ret) => (

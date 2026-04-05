@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import {
   Plus, Eye, AlertTriangle, MessageSquare, Loader2, RefreshCw,
-  Search, Link2, CheckCircle2, Bell, Package, Info
+  Search, Link2, CheckCircle2, Bell, Package, Info, DollarSign
 } from 'lucide-react';
 
 const DEVICE_TYPE_OPTIONS = [
@@ -55,6 +55,8 @@ const DefectReports = () => {
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
   const [replaceData, setReplaceData] = useState({ notes: '' });
+  const [replaceReturnAmount, setReplaceReturnAmount] = useState('');
+  const [replacePaymentBillFile, setReplacePaymentBillFile] = useState(null);
   const [replacementMode, setReplacementMode] = useState('existing');
   const [replacementFilter, setReplacementFilter] = useState('all');
   const [availableDevices, setAvailableDevices] = useState([]);
@@ -77,6 +79,7 @@ const DefectReports = () => {
   const [enquiryDrafts, setEnquiryDrafts] = useState({});
   const [enquirySubmittingId, setEnquirySubmittingId] = useState(null);
   const [managementEnquiryDefectIds, setManagementEnquiryDefectIds] = useState(new Set());
+  const [confirmPaymentNotes, setConfirmPaymentNotes] = useState('');
 
   const fetchDefects = async () => {
     try {
@@ -214,6 +217,8 @@ const DefectReports = () => {
     setSelectedDefect(row);
     setReplacementMode('existing');
     setReplaceData({ notes: '' });
+    setReplaceReturnAmount(row?.return_amount != null ? String(row.return_amount) : '');
+    setReplacePaymentBillFile(null);
     setReplacementSearch('');
     setReplacementDeviceType(normalizeDeviceType(row?.device_type));
     setSelectedReplacementDeviceId('');
@@ -372,6 +377,23 @@ const DefectReports = () => {
                   Confirm
                 </button>
               )}
+
+              {canReview &&
+                Number(row.return_amount || 0) > 0 &&
+                !row.payment_confirmed &&
+                row.auto_return_status === 'received' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleConfirmPayment(row);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                    title="Confirm payment"
+                  >
+                    <DollarSign className="w-3 h-3" />
+                    Confirm Payment
+                  </button>
+                )}
           </div>
 
           {canConfirmReplacement &&
@@ -469,7 +491,34 @@ const DefectReports = () => {
       setReviewComment('');
       fetchDefects();
     } catch (error) {
-      showToast('Failed to update defect report', 'error');
+      showToast(error.message || 'Failed to update defect report', 'error');
+    }
+  };
+
+  const handleConfirmPayment = async (defectRow) => {
+    try {
+      await defectsAPI.confirmPayment(defectRow._id || defectRow.id, confirmPaymentNotes);
+      showToast('Payment confirmed successfully', 'success');
+      setConfirmPaymentNotes('');
+      fetchDefects();
+      if (selectedDefect && String(selectedDefect._id || selectedDefect.id) === String(defectRow._id || defectRow.id)) {
+        setShowModal(false);
+      }
+    } catch (error) {
+      showToast(error.message || 'Failed to confirm payment', 'error');
+    }
+  };
+
+  const handleOpenPaymentBill = async (defectRow) => {
+    const billPath = defectRow?.payment_bill_url;
+    if (!billPath) return;
+    try {
+      const { blob } = await defectsAPI.fetchPaymentBillBlob(billPath);
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (error) {
+      showToast(error.message || 'Failed to open bill file', 'error');
     }
   };
 
@@ -518,8 +567,25 @@ const DefectReports = () => {
         : { register_device: cleanedNewDeviceData })
     };
 
+    const amountValue = replaceReturnAmount === '' ? null : Number(replaceReturnAmount);
+    if (amountValue !== null && (!Number.isFinite(amountValue) || amountValue < 0)) {
+      showToast('Enter a valid due amount', 'error');
+      return;
+    }
+
     try {
-      await defectsAPI.replaceDevice(selectedDefect._id || selectedDefect.id, payload);
+      let uploadedBillUrl = null;
+      if (replacePaymentBillFile) {
+        const uploadRes = await defectsAPI.uploadPaymentBill(selectedDefect._id || selectedDefect.id, replacePaymentBillFile);
+        uploadedBillUrl = uploadRes?.data?.payment_bill_url || null;
+      }
+
+      const finalPayload = {
+        ...payload,
+        ...(amountValue !== null ? { return_amount: amountValue } : {}),
+        ...(uploadedBillUrl ? { payment_bill_url: uploadedBillUrl } : {}),
+      };
+      await defectsAPI.replaceDevice(selectedDefect._id || selectedDefect.id, finalPayload);
       const deviceLabel =
         replacementMode === 'existing' && selectedReplacementDevice
           ? `${selectedReplacementDevice.device_id} (${selectedReplacementDevice.serial_number})`
@@ -532,6 +598,8 @@ const DefectReports = () => {
       );
       setShowReplaceModal(false);
       setReplaceData({ notes: '' });
+      setReplaceReturnAmount('');
+      setReplacePaymentBillFile(null);
       fetchDefects();
     } catch (error) {
       showToast(error.message || 'Failed to replace device', 'error');
@@ -807,6 +875,15 @@ const DefectReports = () => {
                 Confirm Replacement Receipt
               </Button>
             )}
+            {canReview &&
+              Number(selectedDefect?.return_amount || 0) > 0 &&
+              !selectedDefect?.payment_confirmed &&
+              selectedDefect?.auto_return_status === 'received' && (
+              <Button onClick={() => handleConfirmPayment(selectedDefect)}>
+                <DollarSign className="w-4 h-4 mr-2" />
+                Confirm Payment
+              </Button>
+            )}
           </>
         }
       >
@@ -888,6 +965,25 @@ const DefectReports = () => {
               <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                 <label className="text-xs text-green-600 uppercase tracking-wider">Auto-Created Return Request</label>
                 <p className="font-medium text-green-800 mt-1">{selectedDefect.auto_return_id}</p>
+              </div>
+            )}
+
+            {Number(selectedDefect.return_amount || 0) > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                <label className="text-xs text-amber-700 uppercase tracking-wider">Payment Due Tracking</label>
+                <p className="font-semibold text-amber-900">Amount Due: {Number(selectedDefect.return_amount).toFixed(2)}</p>
+                <p className="text-sm text-amber-800">Due User: {selectedDefect.payment_due_user_name || selectedDefect.reported_by_name || 'N/A'}</p>
+                <p className="text-sm text-amber-800">
+                  Payment Status: {selectedDefect.payment_confirmed ? 'Confirmed' : 'Pending Confirmation'}
+                </p>
+                {selectedDefect.payment_bill_url && (
+                  <button
+                    onClick={() => handleOpenPaymentBill(selectedDefect)}
+                    className="text-sm px-3 py-1.5 rounded bg-amber-700 text-white hover:bg-amber-800"
+                  >
+                    View Uploaded Bill
+                  </button>
+                )}
               </div>
             )}
 
@@ -979,6 +1075,7 @@ const DefectReports = () => {
               </p>
             )}
           </div>
+
         </div>
       </Modal>
 
@@ -988,6 +1085,8 @@ const DefectReports = () => {
         onClose={() => {
           setShowReplaceModal(false);
           setReplaceData({ notes: '' });
+          setReplaceReturnAmount('');
+          setReplacePaymentBillFile(null);
           setSelectedReplacementDevice(null);
           setSelectedReplacementDeviceId('');
         }}
@@ -1277,6 +1376,33 @@ const DefectReports = () => {
               placeholder="Add any note for this replacement mapping..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Due Amount (Optional)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={replaceReturnAmount}
+                onChange={(e) => setReplaceReturnAmount(e.target.value)}
+                placeholder="Set amount user should pay"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Upload Bill (Optional)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                onChange={(e) => setReplacePaymentBillFile(e.target.files?.[0] || null)}
+                className="w-full text-sm"
+              />
+              {replacePaymentBillFile && (
+                <p className="text-xs text-gray-500 mt-1">Selected: {replacePaymentBillFile.name}</p>
+              )}
+            </div>
           </div>
 
           <div className="p-3 rounded-lg border border-indigo-200 bg-indigo-50 text-sm text-indigo-900 flex items-start gap-2">

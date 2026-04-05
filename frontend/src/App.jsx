@@ -12,7 +12,6 @@ import CreateDistribution from './pages/CreateDistribution';
 import DefectReports from './pages/DefectReports';
 import CreateDefectReport from './pages/CreateDefectReport';
 import Returns from './pages/Returns';
-import CreateReturn from './pages/CreateReturn';
 import Users from './pages/Users';
 import UserHierarchy from './pages/UserHierarchy';
 import Approvals from './pages/Approvals';
@@ -33,6 +32,7 @@ import DeliveryConfirmations from './pages/DeliveryConfirmations';
 import ReplacementConfirmation from './pages/ReplacementConfirmation';
 import Replacements from './pages/Replacements';
 import PendingReplacements from './pages/PendingReplacements';
+import PendingDues from './pages/PendingDues';
 
 import BulkImportDevices from './pages/BulkImportDevices';
 import BulkImportDistribution from './pages/BulkImportDistribution';
@@ -190,17 +190,17 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        {/* Returns */}
-        <Route path="returns" element={<Returns />} />
         <Route
-          path="returns/create"
+          path="pending-dues"
           element={
-            <ProtectedRoute allowedRoles={['operator', 'sub_distributor', 'cluster']}>
-              <CreateReturn />
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+              <PendingDues />
             </ProtectedRoute>
           }
         />
+
+        {/* Returns */}
+        <Route path="returns" element={<Returns />} />
 
         {/* Users - not for staff */}
         <Route 

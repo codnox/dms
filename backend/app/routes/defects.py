@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from typing import Optional
 from app.models.defect import (
     DefectCreate,
     DefectUpdate,
     DefectResolve,
     DefectStatusUpdate,
+    DefectPaymentConfirmRequest,
     ReplaceDeviceRequest,
     ReplacementConfirmationRequest,
     DefectEnquiryRequest,
@@ -14,6 +19,8 @@ from app.services import defect_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager, require_management, require_any_role
 
 router = APIRouter()
+PAYMENT_BILL_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "defect_payments"
+PAYMENT_BILL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_not_md_director(current_user: dict) -> None:
@@ -82,11 +89,86 @@ async def get_pending_replacement_defects(
         )
 
 
+@router.get("/pending-dues/users")
+async def get_pending_due_users(
+    current_user: dict = Depends(require_management)
+):
+    """Get user-level pending dues summary for returned defective devices."""
+    _ensure_not_md_director(current_user)
+    try:
+        rows = await defect_service.get_pending_dues_users()
+        return {
+            "success": True,
+            "message": "Pending dues users retrieved successfully",
+            "data": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending dues users: {str(e)}"
+        )
+
+
+@router.get("/pending-dues/users/{user_id}")
+async def get_pending_dues_for_user(
+    user_id: str,
+    current_user: dict = Depends(require_management)
+):
+    """Get pending due items for a specific user."""
+    _ensure_not_md_director(current_user)
+    try:
+        payload = await defect_service.get_pending_dues_for_user(user_id)
+        return {
+            "success": True,
+            "message": "Pending dues details retrieved successfully",
+            "data": payload,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending dues details: {str(e)}"
+        )
+
+
+@router.get("/pending-dues/me")
+async def get_my_pending_dues(
+    current_user: dict = Depends(require_any_role)
+):
+    """Get pending due items for the authenticated field user."""
+    _ensure_not_md_director(current_user)
+    role = str(current_user.get("role") or "").lower()
+    if role not in {"sub_distributor", "cluster", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is available for sub distributor, cluster, and operator roles only",
+        )
+
+    try:
+        user_id = str(current_user.get("id") or current_user.get("_id") or "")
+        payload = await defect_service.get_pending_dues_for_user(user_id)
+        return {
+            "success": True,
+            "message": "Pending payments retrieved successfully",
+            "data": payload,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve pending payments: {str(e)}"
+        )
+
+
 @router.get("")
 async def get_defects(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = None,
+    defect_status: Optional[str] = Query(None, alias="status"),
     severity: Optional[str] = None,
     defect_type: Optional[str] = None,
     search: Optional[str] = None,
@@ -120,7 +202,7 @@ async def get_defects(
         result = await defect_service.get_defects(
             page=page,
             page_size=page_size,
-            status=status,
+            status=defect_status,
             severity=severity,
             defect_type=defect_type,
             reported_by=reported_by,
@@ -321,7 +403,9 @@ async def update_defect_status(
             defect_id=defect_id,
             status=status_update.status.value,
             user=current_user,
-            notes=status_update.notes
+            notes=status_update.notes,
+            return_amount=status_update.return_amount,
+            payment_bill_url=status_update.payment_bill_url,
         )
 
         if not defect:
@@ -351,6 +435,92 @@ async def update_defect_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update defect status '{defect_id}': {str(e)}"
+        )
+
+
+@router.post("/{defect_id}/payment-bill")
+async def upload_defect_payment_bill(
+    defect_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_admin_or_manager),
+):
+    """Upload bill/proof file for a defect-related payment due."""
+    _ensure_not_md_director(current_user)
+
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File name is required")
+
+    allowed_exts = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in allowed_exts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG, PNG, WEBP, and PDF files are allowed"
+        )
+
+    try:
+        content = await file.read()
+        if len(content) > 8 * 1024 * 1024:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be 8MB or less")
+
+        file_name = f"defect_{defect_id}_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}{suffix}"
+        target_path = PAYMENT_BILL_UPLOAD_DIR / file_name
+        with open(target_path, "wb") as out:
+            out.write(content)
+
+        bill_url = f"/api/uploads/defect_payments/{file_name}"
+        defect = await defect_service.set_defect_payment_bill_url(defect_id=defect_id, bill_url=bill_url)
+        if not defect:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Defect report not found")
+
+        return {
+            "success": True,
+            "message": "Payment bill uploaded successfully",
+            "data": {
+                "payment_bill_url": bill_url,
+                "defect": defect,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload payment bill: {str(e)}"
+        )
+
+
+@router.post("/{defect_id}/confirm-payment")
+async def confirm_defect_payment(
+    defect_id: str,
+    payload: DefectPaymentConfirmRequest,
+    current_user: dict = Depends(require_admin_or_manager),
+):
+    """Confirm that user payment for defective return has been received."""
+    _ensure_not_md_director(current_user)
+
+    try:
+        defect = await defect_service.confirm_defect_payment(
+            defect_id=defect_id,
+            confirmer=current_user,
+            notes=payload.notes,
+        )
+        if not defect:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Defect report not found")
+
+        return {
+            "success": True,
+            "message": "Defect payment confirmed successfully",
+            "data": defect,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to confirm defect payment '{defect_id}': {str(e)}"
         )
 
 
@@ -422,6 +592,8 @@ async def replace_defect_device(
             serial_number=replace_data.serial_number,
             register_device=replace_data.register_device.model_dump() if replace_data.register_device else None,
             notes=replace_data.notes,
+            return_amount=replace_data.return_amount,
+            payment_bill_url=replace_data.payment_bill_url,
             resolver=current_user
         )
         return {
