@@ -125,20 +125,25 @@ async def get_users(
     if actor_role in {SUPER_ADMIN, MD_DIRECTOR, MANAGER}:
         parent_id_filter = parent_id
     elif actor_role == PDIC_STAFF:
-        user = await user_service.get_user_by_id(str(current_user["id"]))
-        return {
-            "success": True,
-            "message": "Users retrieved successfully",
-            "data": [user] if user else [],
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": 1 if user else 0,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False,
-            },
-        }
+        # Staff needs role-filtered lookup for distribution recipient selectors.
+        # Keep legacy self-only response for generic, non-role-filtered listing.
+        if normalized_role_filter in {SUB_DISTRIBUTOR, CLUSTER, OPERATOR}:
+            parent_id_filter = parent_id
+        else:
+            user = await user_service.get_user_by_id(str(current_user["id"]))
+            return {
+                "success": True,
+                "message": "Users retrieved successfully",
+                "data": [user] if user else [],
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 1 if user else 0,
+                    "total_pages": 1,
+                    "has_next": False,
+                    "has_prev": False,
+                },
+            }
     elif actor_role == SUB_DISTRIBUTION_MANAGER:
         parent_id_filter = str(current_user["id"])
         if normalized_role_filter == OPERATOR:
@@ -333,8 +338,8 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
 async def delete_user(request: Request, user_id: str, current_user: dict = Depends(get_current_user)):
     actor_role = normalize_role(current_user.get("role"))
 
-    if actor_role != SUPER_ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only super admin can delete users")
+    if actor_role not in {SUPER_ADMIN, SUB_DISTRIBUTION_MANAGER}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     if str(current_user.get("id")) == str(user_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account")
@@ -343,8 +348,12 @@ async def delete_user(request: Request, user_id: str, current_user: dict = Depen
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if not can_mutate_super_admin(current_user.get("id"), actor_role, target_user.get("id"), target_user.get("role")):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete another super admin")
+    if actor_role == SUPER_ADMIN:
+        if not can_mutate_super_admin(current_user.get("id"), actor_role, target_user.get("id"), target_user.get("role")):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete another super admin")
+    else:
+        if not await _can_access_user(current_user, target_user, write=True):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     try:
         success = await user_service.delete_user(user_id)

@@ -91,10 +91,15 @@ async def get_pending_replacement_defects(
 
 @router.get("/pending-dues/users")
 async def get_pending_due_users(
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_any_role)
 ):
     """Get user-level pending dues summary for returned defective devices."""
-    _ensure_not_md_director(current_user)
+    role = str(current_user.get("role") or "").lower()
+    if role not in {"super_admin", "md_director", "manager", "pdic_staff"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is available for management roles only",
+        )
     try:
         rows = await defect_service.get_pending_dues_users()
         return {
@@ -114,10 +119,15 @@ async def get_pending_due_users(
 @router.get("/pending-dues/users/{user_id}")
 async def get_pending_dues_for_user(
     user_id: str,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(require_any_role)
 ):
     """Get pending due items for a specific user."""
-    _ensure_not_md_director(current_user)
+    role = str(current_user.get("role") or "").lower()
+    if role not in {"super_admin", "md_director", "manager", "pdic_staff"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is available for management roles only",
+        )
     try:
         payload = await defect_service.get_pending_dues_for_user(user_id)
         return {

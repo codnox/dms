@@ -48,7 +48,7 @@ const ALLOWED_ROLES_BY_CREATOR = {
   super_admin:     ['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator'],
   manager:         ['pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator'],
   sub_distribution_manager: ['cluster', 'operator'],
-  sub_distributor: ['sub_distribution_manager', 'cluster', 'operator'],
+  sub_distributor: [],
   cluster:         ['operator'],
 };
 

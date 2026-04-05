@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 from app.models.device import DeviceCreate, DeviceUpdate, DeviceType
 from app.services import device_service, notification_service, defect_service
 from app.middleware.auth_middleware import get_current_user, require_admin_or_manager,require_management
+from app.utils.roles import normalize_role
 
 router = APIRouter()
 
@@ -250,7 +251,7 @@ async def request_device_edit(
         from app.database import get_db, rows_to_list
         async with get_db() as db:
             cursor = await db.execute(
-                "SELECT id FROM users WHERE role IN ('super_admin', 'manager')"
+                "SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff')"
             )
             rows = await cursor.fetchall()
             admin_ids = [str(row[0]) for row in rows]
@@ -267,7 +268,7 @@ async def request_device_edit(
 
         return {
             "success": True,
-            "message": f"Edit request sent to {len(admin_ids)} manager(s)/admin(s) for approval."
+            "message": f"Edit request sent to {len(admin_ids)} management user(s) for approval."
         }
     except HTTPException:
         raise
@@ -582,14 +583,21 @@ async def bulk_upload_devices(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_device(
     device_data: DeviceCreate,
-    current_user: dict = Depends(require_management)
+    current_user: dict = Depends(get_current_user)
 ):
     """Register a new device"""
     try:
+        role = normalize_role(current_user.get("role"))
+        if role not in {"super_admin", "manager", "pdic_staff"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only management users can register devices"
+            )
+
         device = await device_service.create_device(
             device_data=device_data,
             created_by=current_user["id"],
-            created_by_name=current_user["name"]
+            created_by_name=(current_user.get("name") or current_user.get("email") or "PDIC Staff")
         )
 
         return {

@@ -177,7 +177,7 @@ function AppRoutes() {
         <Route
           path="replacements"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator']}>
               <Replacements />
             </ProtectedRoute>
           }
@@ -185,7 +185,7 @@ function AppRoutes() {
         <Route
           path="replacements/pending"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator']}>
               <PendingReplacements />
             </ProtectedRoute>
           }
@@ -193,20 +193,27 @@ function AppRoutes() {
         <Route
           path="pending-dues"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator']}>
               <PendingDues />
             </ProtectedRoute>
           }
         />
 
         {/* Returns */}
-        <Route path="returns" element={<Returns />} />
+        <Route
+          path="returns"
+          element={
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+              <Returns />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Users - not for staff */}
         <Route 
           path="users" 
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distribution_manager', 'sub_distributor', 'cluster']}>
               <Users />
             </ProtectedRoute>
           } 
@@ -214,7 +221,7 @@ function AppRoutes() {
         <Route
           path="users/hierarchy"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distribution_manager', 'sub_distributor', 'cluster']}>
               <UserHierarchy />
             </ProtectedRoute>
           }
@@ -224,7 +231,7 @@ function AppRoutes() {
         <Route 
           path="approvals" 
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff']}>
               <Approvals />
             </ProtectedRoute>
           } 
@@ -281,7 +288,7 @@ function AppRoutes() {
         <Route
           path="external-inventory"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator']}>
               <ExternalInventory />
             </ProtectedRoute>
           }
@@ -290,7 +297,7 @@ function AppRoutes() {
         <Route
           path="notifications"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distribution_manager', 'sub_distributor', 'cluster', 'operator']}>
               <Notifications />
             </ProtectedRoute>
           }

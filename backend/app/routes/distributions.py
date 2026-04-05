@@ -22,6 +22,14 @@ def _ensure_not_md_director(current_user: dict) -> None:
         )
 
 
+def _ensure_distribution_create_access(current_user: dict) -> None:
+    if current_user.get("role") == "sub_distribution_manager":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sub Distribution MD/Manager cannot create or bulk upload distributions"
+        )
+
+
 def _is_likely_text(content: bytes) -> bool:
     if not content:
         return True
@@ -73,6 +81,7 @@ async def bulk_upload_distribution(
     """Create a distribution from uploaded CSV/Excel rows using mac_address and/or nuid."""
     filename_lower = (file.filename or "").lower()
     _ensure_not_md_director(current_user)
+    _ensure_distribution_create_access(current_user)
 
     if not filename_lower.endswith((".xlsx", ".xls", ".csv")):
         raise HTTPException(
@@ -387,6 +396,7 @@ async def create_distribution(
     """
     
     _ensure_not_md_director(current_user)
+    _ensure_distribution_create_access(current_user)
 
     try:
         distribution = await distribution_service.create_distribution(

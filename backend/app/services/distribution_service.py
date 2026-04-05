@@ -618,7 +618,7 @@ async def confirm_receipt(
                 (notes, now, int(distribution_id))
             )
             cursor = await db.execute(
-                "SELECT id FROM users WHERE role IN ('super_admin', 'manager') AND status = 'active'"
+                "SELECT id FROM users WHERE role IN ('super_admin', 'manager', 'pdic_staff') AND status = 'active'"
             )
             admin_rows = await cursor.fetchall()
             await db.commit()
@@ -644,7 +644,7 @@ async def confirm_receipt(
                 user_id=dist["from_user_id"],
                 title="Receipt Disputed",
                 message=f"{user['name']} reported NOT receiving your device(s) in distribution "
-                        f"{dist['distribution_id']}. Admin and manager have been notified.",
+                        f"{dist['distribution_id']}. Admin, manager, and PDIC staff have been notified.",
                 notification_type="error", category="distribution",
                 link=f"/distributions?distributionId={distribution_id}"
             )
