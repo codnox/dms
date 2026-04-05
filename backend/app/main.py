@@ -185,7 +185,7 @@ app.add_middleware(
     cookie_secure=settings.CSRF_COOKIE_SECURE,
     cookie_samesite="strict",
     sensitive_cookies={"access_token", "refresh_token"},
-    exempt_urls=[re.compile(r"^/api/auth/login$")],
+    exempt_urls=[re.compile(r"^/api/auth/login$"), re.compile(r"^/auth/login$")],
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -210,6 +210,7 @@ add_exception_handlers(app)
 
 # Include routers
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["Authentication"])
+app.include_router(auth.router, prefix="/auth", tags=["Authentication (Compat)"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["Users"])
 app.include_router(devices.router, prefix=f"{settings.API_V1_PREFIX}/devices", tags=["Devices"])
 app.include_router(distributions.router, prefix=f"{settings.API_V1_PREFIX}/distributions", tags=["Distributions"])

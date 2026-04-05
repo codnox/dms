@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     )
     CORS_ORIGIN_REGEX: str = os.getenv(
         "CORS_ORIGIN_REGEX",
-        r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
+        r"^https?://((localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?|([a-z0-9-]+\.)*netlify\.app)$",
     )
     
     # API
