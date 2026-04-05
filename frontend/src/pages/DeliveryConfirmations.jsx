@@ -21,6 +21,12 @@ import {
   Download
 } from 'lucide-react';
 
+const getSenderDisplayName = (dist) => {
+  const senderType = String(dist?.from_user_type || '').toLowerCase();
+  if (senderType === 'noc' || senderType === 'pdic_staff') return 'PDIC';
+  return dist?.from_user_name || 'Unknown';
+};
+
 const DeliveryConfirmations = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
@@ -241,7 +247,7 @@ const DeliveryConfirmations = () => {
                         <StatusBadge status={dist.status} size="sm" />
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
-                        Sent by <span className="font-medium text-gray-700">{dist.from_user_name}</span>
+                        Sent by <span className="font-medium text-gray-700">{getSenderDisplayName(dist)}</span>
                       </p>
                     </div>
                     <button
@@ -348,7 +354,7 @@ const DeliveryConfirmations = () => {
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-800">{selectedDist.distribution_id}</h3>
                 <p className="text-gray-500">
-                  {selectedDist.from_user_name} → You
+                  {getSenderDisplayName(selectedDist)} → You
                 </p>
                 <StatusBadge status={selectedDist.status} />
               </div>
@@ -369,7 +375,7 @@ const DeliveryConfirmations = () => {
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Sent By</label>
-                <p className="font-medium text-gray-800">{selectedDist.from_user_name}</p>
+                <p className="font-medium text-gray-800">{getSenderDisplayName(selectedDist)}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider">Sender Type</label>
@@ -450,7 +456,7 @@ const DeliveryConfirmations = () => {
               Distribution: <span className="font-mono">{selectedDist?.distribution_id}</span>
             </p>
             <p className="text-sm text-orange-800 mt-1">
-              Sent by <strong>{selectedDist?.from_user_name}</strong> — {selectedDist?.device_count || 0} device(s)
+              Sent by <strong>{getSenderDisplayName(selectedDist)}</strong> — {selectedDist?.device_count || 0} device(s)
             </p>
           </div>
 

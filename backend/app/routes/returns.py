@@ -7,6 +7,14 @@ from app.middleware.auth_middleware import get_current_user, require_admin_or_ma
 router = APIRouter()
 
 
+def _ensure_not_md_director(current_user: dict) -> None:
+    if current_user.get("role") == "md_director":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MD/Director has read-only access to returns"
+        )
+
+
 @router.get("")
 async def get_returns(
     page: int = Query(1, ge=1),
@@ -20,7 +28,7 @@ async def get_returns(
     try:
         # Filter by requester for non-admin/manager
         requested_by = None
-        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
+        if current_user["role"] not in ["super_admin", "md_director", "manager", "pdic_staff"]:
             requested_by = current_user["id"]
 
         result = await return_service.get_returns(
@@ -82,6 +90,8 @@ async def create_return(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new return request"""
+    _ensure_not_md_director(current_user)
+
     try:
         return_req = await return_service.create_return(
             return_data=return_data,
@@ -114,6 +124,8 @@ async def update_return_status(
     current_user: dict = Depends(get_current_user)
 ):
     """Update return request status"""
+    _ensure_not_md_director(current_user)
+
     try:
         return_req = await return_service.update_return_status(
             return_id=return_id,
@@ -158,6 +170,8 @@ async def cancel_return(
     current_user: dict = Depends(get_current_user)
 ):
     """Cancel a return request (only by creator)"""
+    _ensure_not_md_director(current_user)
+
     try:
         success = await return_service.cancel_return(
             return_id=return_id,

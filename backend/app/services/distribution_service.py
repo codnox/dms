@@ -112,6 +112,30 @@ def _build_distribution_mac_nuid_file(
     }
 
 
+def _sender_display_name(user: Dict[str, Any]) -> str:
+    role = str(user.get("role") or "").strip().lower()
+    if role in {"super_admin", "manager", "pdic_staff"}:
+        return "PDIC"
+    return str(user.get("name") or "Unknown")
+
+
+async def _device_has_open_distribution_lock(db, device_id: str) -> bool:
+    cursor = await db.execute(
+        "SELECT device_ids FROM distributions WHERE status IN (?, ?)",
+        (DistributionStatus.PENDING_RECEIPT.value, DistributionStatus.DISPUTED.value),
+    )
+    rows = await cursor.fetchall()
+    target = str(device_id)
+    for row in rows:
+        try:
+            device_ids = [str(x) for x in json.loads(row[0] or "[]")]
+        except (json.JSONDecodeError, TypeError):
+            device_ids = []
+        if target in device_ids:
+            return True
+    return False
+
+
 async def get_distributions(
     page: int = 1,
     page_size: int = 20,
@@ -317,6 +341,12 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         to_role = to_user["role"]
         from_user_id = str(from_user.get("id", from_user.get("_id", "")))
 
+        if from_role in {"super_admin", "manager", "pdic_staff"}:
+            if to_role not in {"sub_distributor", "cluster", "operator"}:
+                raise ValueError(
+                    "Management can only distribute to sub-distributors, clusters, or operators"
+                )
+
         # ── Hierarchy validation for sub-level roles ──────────────────────────
         if from_role == "sub_distributor":
             if to_role == "cluster":
@@ -365,6 +395,10 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
                 raise ValueError(
                     f"Device {device['device_id']} is marked defective and cannot be transferred"
                 )
+            if await _device_has_open_distribution_lock(db, str(dev_id)):
+                raise ValueError(
+                    f"Device {device['device_id']} is already in an unconfirmed or disputed distribution"
+                )
             if from_role in ["super_admin", "manager", "pdic_staff"]:
                 # Management distributes from PDIC stock — must be available
                 if device["status"] != DeviceStatus.AVAILABLE.value:
@@ -393,6 +427,7 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
         
         role_to_type = {
             "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
+            "sub_distribution_manager": "sub_distribution_manager",
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         
@@ -442,10 +477,11 @@ async def create_distribution(dist_data: DistributionCreate, from_user: Dict[str
     # do not appear in the recipient's account before they acknowledge them.
     
     # Notify recipient — ask them to confirm receipt
+    sender_label = _sender_display_name(from_user)
     await notification_service.create_notification(
         user_id=str(to_user["id"]),
         title="Action Required: Confirm Device Receipt",
-        message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {from_user['name']}. "
+        message=f"{len(dist_data.device_ids)} device(s) have been sent to you by {sender_label}. "
             f"An Excel manifest is available in Delivery Confirmations. "
                 f"Please confirm receipt on your Delivery Confirmations page (Distribution ID: {dist_id}).",
         notification_type="warning", category="distribution",
@@ -548,6 +584,7 @@ async def confirm_receipt(
 
     role_to_type = {
         "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
+        "sub_distribution_manager": "sub_distribution_manager",
         "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
     }
 
@@ -586,9 +623,13 @@ async def confirm_receipt(
             admin_rows = await cursor.fetchall()
             await db.commit()
 
+            sender_label = (
+                "PDIC" if str(dist.get("from_user_type") or "").lower() in {"noc", "pdic_staff"}
+                else dist.get("from_user_name")
+            )
             dispute_msg = (
                 f"DISPUTE: {user['name']} reported NOT receiving {dist['device_count']} device(s) "
-                f"sent by {dist['from_user_name']}. Distribution: {dist['distribution_id']}."
+                f"sent by {sender_label}. Distribution: {dist['distribution_id']}."
             )
             for row in admin_rows:
                 await notification_service.create_notification(
@@ -642,6 +683,83 @@ async def confirm_receipt(
             notification_type="success", category="distribution",
             link=f"/distributions?distributionId={distribution_id}"
         )
+
+    return await get_distribution_by_id(distribution_id)
+
+
+async def confirm_disputed_return(
+    distribution_id: str,
+    user: Dict[str, Any],
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """PDIC management confirms disputed devices are back with sender and unlocks redistribution."""
+    dist = await get_distribution_by_id(distribution_id)
+    if not dist:
+        raise ValueError("Distribution not found")
+
+    if dist["status"] != DistributionStatus.DISPUTED.value:
+        raise ValueError("Only disputed distributions can be marked as returned")
+
+    role = str(user.get("role", "")).lower()
+    if role not in {"super_admin", "manager", "pdic_staff"}:
+        raise ValueError("Only PDIC management can confirm disputed return receipt")
+
+    role_to_type = {
+        "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
+        "sub_distribution_manager": "sub_distribution_manager",
+        "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
+    }
+
+    sender_role = str(dist.get("from_user_type") or "")
+    if sender_role == "noc":
+        sender_role = "manager"
+
+    sender_status = DeviceStatus.AVAILABLE.value if sender_role in {"manager", "super_admin", "pdic_staff"} else (
+        DeviceStatus.IN_USE.value if sender_role == "operator" else DeviceStatus.DISTRIBUTED.value
+    )
+
+    sender_holder_type = role_to_type.get(sender_role, "pdic_staff")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+    async with get_db() as db:
+        await db.execute(
+            """UPDATE distributions
+               SET status = ?, notes = COALESCE(?, notes), updated_at = ?, delivery_date = ?
+               WHERE id = ?""",
+            (DistributionStatus.REJECTED.value, notes, now, now, int(distribution_id)),
+        )
+        await db.commit()
+
+    device_ids = dist.get("device_ids", []) or []
+    for dev_id in device_ids:
+        try:
+            await device_service.update_device_holder(
+                device_id=str(dev_id),
+                holder_id=dist["from_user_id"],
+                holder_name=dist["from_user_name"],
+                holder_type=sender_holder_type,
+                location=dist["from_user_name"],
+                status=sender_status,
+                performed_by=str(user.get("id", user.get("_id", ""))),
+                performed_by_name=str(user.get("name") or "PDIC"),
+                from_user_id=dist.get("to_user_id"),
+                from_user_name=dist.get("to_user_name"),
+                notes=f"Disputed return confirmed for distribution {dist.get('distribution_id')}",
+            )
+        except Exception:
+            pass
+
+    await notification_service.create_notification(
+        user_id=str(dist["from_user_id"]),
+        title="Disputed Return Confirmed",
+        message=(
+            f"PDIC confirmed devices for distribution {dist['distribution_id']} are back with you. "
+            "You can distribute these devices again."
+        ),
+        notification_type="success",
+        category="distribution",
+        link=f"/distributions?distributionId={distribution_id}",
+    )
 
     return await get_distribution_by_id(distribution_id)
 

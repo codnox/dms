@@ -28,6 +28,11 @@ MEANINGFUL_ACTIVITY_RULES = [
     ("POST", re.compile(r"^/api/distributions/bulk-upload$"), "Distribution created from bulk upload", "bulk distribution creation"),
     ("PATCH", re.compile(r"^/api/distributions/[^/]+/status$"), "Distribution status updated", "distribution status update"),
     ("POST", re.compile(r"^/api/distributions/[^/]+/receipt$"), "Distribution receipt confirmed", "distribution receipt confirmation"),
+    ("POST", re.compile(r"^/api/users$"), "User account created", "user creation"),
+    ("PUT", re.compile(r"^/api/users/[^/]+$"), "User account updated", "user update"),
+    ("DELETE", re.compile(r"^/api/users/[^/]+$"), "User account deleted", "user deletion"),
+    ("PATCH", re.compile(r"^/api/users/[^/]+/status$"), "User status updated", "user status update"),
+    ("PATCH", re.compile(r"^/api/users/[^/]+/credentials$"), "User credentials updated", "user credential update"),
     ("GET", re.compile(r"^/api/distributions/[^/]+/manifest$"), "Distribution manifest downloaded", "distribution manifest download"),
     ("GET", re.compile(r"^/api/distributions/[^/]+/export-mac-nuid$"), "MAC/NUID export downloaded", "MAC/NUID export download"),
 ]

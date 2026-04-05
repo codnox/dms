@@ -166,11 +166,18 @@ function AppRoutes() {
 
         {/* Defect Reports */}
         <Route path="defects" element={<DefectReports />} />
-        <Route path="defects/create" element={<CreateDefectReport />} />
+        <Route
+          path="defects/create"
+          element={
+            <ProtectedRoute allowedRoles={['operator', 'sub_distributor', 'cluster']}>
+              <CreateDefectReport />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="replacements"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <Replacements />
             </ProtectedRoute>
           }
@@ -178,7 +185,7 @@ function AppRoutes() {
         <Route
           path="replacements/pending"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <PendingReplacements />
             </ProtectedRoute>
           }
@@ -186,13 +193,20 @@ function AppRoutes() {
 
         {/* Returns */}
         <Route path="returns" element={<Returns />} />
-        <Route path="returns/create" element={<CreateReturn />} />
+        <Route
+          path="returns/create"
+          element={
+            <ProtectedRoute allowedRoles={['operator', 'sub_distributor', 'cluster']}>
+              <CreateReturn />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Users - not for staff */}
         <Route 
           path="users" 
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distributor', 'cluster']}>
               <Users />
             </ProtectedRoute>
           } 
@@ -200,7 +214,7 @@ function AppRoutes() {
         <Route
           path="users/hierarchy"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'sub_distributor', 'cluster']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'sub_distributor', 'cluster']}>
               <UserHierarchy />
             </ProtectedRoute>
           }
@@ -240,7 +254,7 @@ function AppRoutes() {
         <Route 
           path="reports" 
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff']}>
               <Reports />
             </ProtectedRoute>
           } 
@@ -249,7 +263,7 @@ function AppRoutes() {
         <Route
           path="backup"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager']}>
               <Backup />
             </ProtectedRoute>
           }
@@ -258,7 +272,7 @@ function AppRoutes() {
         <Route
           path="activities"
           element={
-            <ProtectedRoute allowedRoles={['super_admin']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director']}>
               <Activities />
             </ProtectedRoute>
           }
@@ -267,7 +281,7 @@ function AppRoutes() {
         <Route
           path="external-inventory"
           element={
-            <ProtectedRoute allowedRoles={['super_admin', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
+            <ProtectedRoute allowedRoles={['super_admin', 'md_director', 'manager', 'pdic_staff', 'sub_distributor', 'cluster', 'operator']}>
               <ExternalInventory />
             </ProtectedRoute>
           }

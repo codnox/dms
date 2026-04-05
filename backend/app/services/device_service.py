@@ -7,6 +7,21 @@ from app.models.device import DeviceCreate, DeviceUpdate, DeviceStatus, HolderTy
 from app.utils.helpers import get_pagination, generate_device_id
 
 
+async def _get_locked_distribution_device_ids(db) -> set:
+    """Device ids in distributions that are not yet settled back to sender/receiver."""
+    cursor = await db.execute(
+        "SELECT device_ids FROM distributions WHERE status IN ('pending_receipt', 'disputed')"
+    )
+    rows = await cursor.fetchall()
+    locked_ids = set()
+    for row in rows:
+        try:
+            locked_ids.update(str(x) for x in json.loads(row[0] or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return locked_ids
+
+
 def _augment_device_record(device: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not device:
         return device
@@ -392,7 +407,12 @@ async def get_available_devices(holder_id: Optional[str] = None) -> List[Dict[st
                 (DeviceStatus.AVAILABLE.value,)
             )
         rows = await cursor.fetchall()
-        return [_augment_device_record(item) for item in rows_to_list(rows)]
+        locked_ids = await _get_locked_distribution_device_ids(db)
+        return [
+            _augment_device_record(item)
+            for item in rows_to_list(rows)
+            if str(item.get("id")) not in locked_ids
+        ]
 
 
 async def get_devices_for_replacement(exclude_device_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -422,7 +442,12 @@ async def get_held_devices(holder_id: str) -> List[Dict[str, Any]]:
             (holder_id,)
         )
         rows = await cursor.fetchall()
-        return [_augment_device_record(item) for item in rows_to_list(rows)]
+        locked_ids = await _get_locked_distribution_device_ids(db)
+        return [
+            _augment_device_record(item)
+            for item in rows_to_list(rows)
+            if str(item.get("id")) not in locked_ids
+        ]
 
 
 async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, Any]:
@@ -488,6 +513,51 @@ async def get_user_device_overview(user_id: str, user_role: str) -> Dict[str, An
                    WHERE (
                      (op.role = 'operator' AND cl.parent_id = ?)
                      OR (op.role = 'cluster' AND op.parent_id = ?)
+                   )
+                   AND d.status = 'defective'""",
+                (uid, uid)
+            )
+            defective_subordinate = rows_to_list(await cursor.fetchall())
+
+            all_sub_ids = cluster_device_ids | operator_device_ids
+            for d in defective_subordinate:
+                if str(d["id"]) not in all_sub_ids and str(d["id"]) not in held_device_ids:
+                    operator_devices.append(d)
+                    all_sub_ids.add(str(d["id"]))
+
+            subordinate_devices = cluster_devices + operator_devices
+
+        elif user_role == "sub_distribution_manager":
+            # Devices held by clusters directly under this sub-distribution manager
+            cursor = await db.execute(
+                """SELECT d.* FROM devices d
+                   JOIN users u ON CAST(d.current_holder_id AS TEXT) = CAST(u.id AS TEXT)
+                   WHERE u.parent_id = ? AND u.role = 'cluster'""",
+                (uid,)
+            )
+            cluster_devices = rows_to_list(await cursor.fetchall())
+            cluster_device_ids = {str(d["id"]) for d in cluster_devices}
+
+            # Devices held by operators under the manager's clusters
+            cursor = await db.execute(
+                """SELECT d.* FROM devices d
+                   JOIN users op ON CAST(d.current_holder_id AS TEXT) = CAST(op.id AS TEXT)
+                   JOIN users cl ON op.parent_id = cl.id
+                   WHERE cl.parent_id = ? AND op.role = 'operator'""",
+                (uid,)
+            )
+            operator_devices = rows_to_list(await cursor.fetchall())
+            operator_device_ids = {str(d["id"]) for d in operator_devices}
+
+            # Include defective devices reported by clusters/operators in this manager chain
+            cursor = await db.execute(
+                """SELECT DISTINCT d.* FROM devices d
+                   JOIN defects def ON CAST(def.device_id AS TEXT) = CAST(d.id AS TEXT)
+                   JOIN users reporter ON CAST(def.reported_by AS TEXT) = CAST(reporter.id AS TEXT)
+                   LEFT JOIN users cl ON reporter.parent_id = cl.id
+                   WHERE (
+                     (reporter.role = 'cluster' AND reporter.parent_id = ?)
+                     OR (reporter.role = 'operator' AND cl.parent_id = ?)
                    )
                    AND d.status = 'defective'""",
                 (uid, uid)
@@ -630,6 +700,7 @@ async def repair_device_holder_from_history(device_id: str) -> Optional[Dict[str
 
         role_to_type = {
             "super_admin": "noc", "manager": "noc", "pdic_staff": "pdic_staff",
+            "sub_distribution_manager": "sub_distribution_manager",
             "sub_distributor": "sub_distributor", "cluster": "cluster", "operator": "operator"
         }
         holder_type   = role_to_type.get(recipient["role"], "noc")

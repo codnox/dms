@@ -101,9 +101,12 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/devices', icon: Box, label: 'All Devices' },
         { path: '/distributions', icon: Truck, label: 'All Distributions' },
         { path: '/defects', icon: AlertTriangle, label: 'Defect Reports' },
+        { path: '/replacements', icon: ArrowLeftRight, label: 'Replacements' },
+        { path: '/replacements/pending', icon: AlertTriangle, label: 'Pending Replacements' },
         { path: '/returns', icon: RotateCcw, label: 'Returns' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
         { path: '/activities', icon: FileText, label: 'Activities' },
+        { path: '/backup', icon: Database, label: 'Backup' },
         { path: '/external-inventory', icon: Warehouse, label: 'External Inventory' },
       ],
       [ROLES.MANAGER]: [

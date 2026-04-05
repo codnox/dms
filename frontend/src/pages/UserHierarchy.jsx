@@ -143,16 +143,19 @@ const UserHierarchy = () => {
 
   const creatableRoles = ALLOWED_ROLES_BY_CREATOR[currentUser?.role] || [];
   const isManager = currentUser?.role === 'manager';
+  const isMdDirector = currentUser?.role === 'md_director';
 
   const visibleUsers = useMemo(() => {
+    if (isMdDirector) return allUsers.filter((u) => u.role !== 'super_admin');
     if (!isManager) return allUsers;
     return allUsers.filter((u) => u.role !== 'super_admin');
-  }, [allUsers, isManager]);
+  }, [allUsers, isManager, isMdDirector]);
 
   const visibleRoleEntries = useMemo(() => {
+    if (isMdDirector) return Object.entries(ROLE_LABELS).filter(([role]) => role !== 'super_admin');
     if (!isManager) return Object.entries(ROLE_LABELS);
     return Object.entries(ROLE_LABELS).filter(([role]) => role !== 'super_admin');
-  }, [isManager]);
+  }, [isManager, isMdDirector]);
 
   // ─── fetch all users visible to the current user ───────────────────────────
   const fetchAll = useCallback(async () => {

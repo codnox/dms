@@ -54,7 +54,7 @@ async def get_devices(
     """Get all devices with pagination and filters"""
     try:
         # Filter by holder for non-admin/manager/staff users
-        if current_user["role"] not in ["super_admin", "manager", "pdic_staff"]:
+        if current_user["role"] not in ["super_admin", "md_director", "manager", "pdic_staff"]:
             holder_id = current_user["id"]
 
         result = await device_service.get_devices(
@@ -120,7 +120,7 @@ async def get_available_devices(
     - sub_distributor/cluster/operator: all devices they currently hold"""
     try:
         role = current_user["role"]
-        if role in ["super_admin", "manager", "pdic_staff"]:
+        if role in ["super_admin", "md_director", "manager", "pdic_staff"]:
             devices = await device_service.get_available_devices(holder_id=None)
         else:
             # Sub-level roles can redistribute any device they hold
@@ -151,7 +151,7 @@ async def get_my_device_overview(
     - operator: only their held devices"""
     try:
         role = current_user["role"]
-        if role in ["super_admin", "manager", "pdic_staff"]:
+        if role in ["super_admin", "md_director", "manager", "pdic_staff"]:
             result = await device_service.get_devices(page=1, page_size=2000)
             all_devices = result["data"]
             stats = await device_service.get_device_stats()
@@ -696,6 +696,12 @@ async def update_device_status(
         )
 
     try:
+        if current_user.get("role") == "md_director":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="MD/Director has read-only access to devices"
+            )
+
         device = await device_service.update_device_status(
             device_id=device_id,
             status=status_value,

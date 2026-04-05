@@ -111,7 +111,9 @@ class PermissionChecker:
 
 # Pre-defined role checkers
 require_admin = RoleChecker(["super_admin"])
+require_admin_or_md = RoleChecker(["super_admin", "md_director"])
 require_admin_or_manager = RoleChecker(["super_admin", "manager"])
+require_admin_or_manager_or_md = RoleChecker(["super_admin", "manager", "md_director"])
 require_management = RoleChecker(["super_admin", "manager", "pdic_staff"])
 require_any_role = RoleChecker([
     "super_admin",

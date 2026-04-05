@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from pydantic import BaseModel
 from app.services import dashboard_service
-from app.middleware.auth_middleware import get_current_user, require_admin, require_any_role
+from app.middleware.auth_middleware import get_current_user, require_admin_or_md, require_any_role
 
 router = APIRouter()
 
@@ -154,7 +154,7 @@ async def get_admin_activities(
     search: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_admin_or_md),
 ):
     """Get admin-wide activities with filtering."""
     try:
